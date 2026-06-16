@@ -1,0 +1,94 @@
+/* ==========================================================================
+   Quanta — global stylesheet (the single global CSS layer).
+
+   Load order mirrors the _ds export's styles.css: Tailwind first, then the
+   ported design tokens (colors → typography → spacing → density), then the
+   base element styles. The @theme bridge below maps the _ds *semantic*
+   variables onto Tailwind v4's theme namespace so utilities such as
+   `bg-paper`, `text-muted`, `border-hairline`, `text-accent`, `font-math`,
+   and `text-20` resolve through the same tokens (and follow the dark theme).
+   ========================================================================== */
+
+@import "tailwindcss";
+
+@import "./styles/tokens/colors.css";
+@import "./styles/tokens/typography.css";
+@import "./styles/tokens/spacing.css";
+@import "./styles/density.css";
+@import "./styles/tokens/base.css";
+
+/* The dark theme is driven by [data-theme="dark"] on <html>, not the OS,
+   so register it as a Tailwind variant for `dark:` utilities. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  /* ---- Surfaces ---- */
+  --color-paper: var(--surface-paper);
+  --color-chrome: var(--surface-chrome);
+  --color-raised: var(--surface-raised);
+  --color-hover: var(--surface-hover);
+  --color-selected: var(--surface-selected);
+
+  /* ---- Text ---- */
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-inverse: var(--text-inverse);
+  --color-link: var(--text-link);
+  --color-math: var(--text-math);
+
+  /* ---- Accent (Blueprint) ---- */
+  --color-accent: var(--accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-press: var(--accent-press);
+
+  /* ---- Semantic status ---- */
+  --color-pass: var(--status-pass);
+  --color-warning: var(--status-warning);
+  --color-error: var(--status-error);
+  --color-pass-bg: var(--status-pass-bg);
+  --color-warning-bg: var(--status-warning-bg);
+  --color-error-bg: var(--status-error-bg);
+
+  /* ---- Borders & grid ---- */
+  --color-hairline: var(--border-hairline);
+  --color-strong: var(--border-strong);
+  --color-grid-dot: var(--grid-dot);
+
+  /* ---- Font families (kept byte-identical to tokens/typography.css so the
+         Tailwind font utilities and the --font-* tokens never diverge) ---- */
+  --font-sans: var(--font-geist-sans), "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --font-math: var(--font-stix), "STIX Two Text", "Cambria Math", "STIX Two", Cambria, Georgia, serif;
+
+  /* ---- Type scale (11 / 12 / 13 / 14 / 16 / 20 / 28) ---- */
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-20: 20px;
+  --text-28: 28px;
+
+  /* ---- Radii ---- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Honor reduced-motion globally. The --dur-* tokens are zeroed in
+   tokens/spacing.css, but components may use a hardcoded Tailwind duration
+   (e.g. `duration-150`); this guard neutralizes those too, satisfying the
+   binding motion rule in CLAUDE.md. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
