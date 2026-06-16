@@ -5,10 +5,14 @@ A multi-tenant web app for engineering calculations — a hybrid of **PTC Mathca
 **Stack:** Next.js (App Router) + TypeScript + Tailwind + Supabase. Math via `mathjs` + `MathLive` (natural Mathcad-style entry) + `KaTeX` + **Pyodide** (SymPy / NumPy / SciPy).
 
 ## This repo right now
-Docs + the Claude Design export only — **no app code yet**. Claude Code scaffolds the app at **M0**.
+The **M0 scaffold is in place**: a Next.js (App Router) + TypeScript + Tailwind v4 app with Supabase wired via `@supabase/ssr`, the `_ds` design tokens ported into a global CSS + Tailwind theme, Geist Sans/Mono + STIX Two Text loaded via `next/font`, Pyodide lazy-loaded in a Web Worker, a pure calc-engine seed (`lib/calc`), the Mathcad keymap (`lib/keymap`), and a Compact-default Comfortable/Compact density toggle. Subsequent milestones (M1+) build the schema/RLS, the live-math editor, and the per-screen pages on top. See `DECISIONS.md` for the locked choices.
+
+Local dev: copy `.env.example` to `.env.local`, fill in the Supabase keys, then `npm install` and `npm run dev`. Verify with `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build`.
 
 ## Layout
+- `app/`, `lib/`, `components/` — the application (App Router routes, the calc engine + keymap + Supabase/preferences libs, and UI components).
 - `CLAUDE.md` — project memory (stack, design system, engineering standards). Auto-loaded by Claude Code every session. **Always keep.**
+- `DECISIONS.md` — running log of non-obvious decisions.
 - `quanta-build-tracker.html` — **your build driver**: one row per page/component, each with a checkbox + its paste-ready prompt (DESIGN mockup + FEATURE requirement). Open in a browser.
 - `docs/` — the specs the prompts reference:
   - `quanta-functional-build-brief.md` — how it's built (schema, RLS, engine, per-screen)

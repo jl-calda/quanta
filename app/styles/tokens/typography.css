@@ -1,0 +1,61 @@
+/* ==========================================================================
+   Quanta — Typography tokens  (ported from the _ds export)
+   Geist Sans (UI/body), Geist Mono (formula-edit/code/cells),
+   STIX Two Text (rendered math notation — the product's voice).
+   Type scale: 11 / 12 / 13 / 14 / 16 / 20 / 28. Body 13–14.
+   Build hierarchy with weight + size, never a separate display face.
+
+   NOTE: the three families are self-hosted via `next/font` (Geist Sans/Mono
+   from the `geist` package, STIX Two Text from next/font/google). Each exposes
+   a CSS variable on <html> — --font-geist-sans / --font-geist-mono /
+   --font-stix — which we chain in front of the original fallback stacks here,
+   so the _ds family tokens still resolve to the real fonts with no FOUT.
+   ========================================================================== */
+
+:root {
+  /* ---- Families ---- */
+  --font-sans:  var(--font-geist-sans), 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:  var(--font-geist-mono), 'Geist Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  --font-math:  var(--font-stix), 'STIX Two Text', 'Cambria Math', 'STIX Two', Cambria, Georgia, serif;
+
+  /* ---- Type scale (px) ---- */
+  --text-11: 11px;   /* micro labels, table superscripts */
+  --text-12: 12px;   /* eyebrows, dense UI labels */
+  --text-13: 13px;   /* body default (dense) */
+  --text-14: 14px;   /* body comfortable, inputs */
+  --text-16: 16px;   /* subheads, section titles */
+  --text-20: 20px;   /* panel / dialog titles */
+  --text-28: 28px;   /* worksheet titles, the largest UI size */
+
+  /* ---- Weights (Geist is variable Thin–Black) ---- */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ---- Line heights ---- */
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+
+  /* ---- Letter spacing ---- */
+  --tracking-eyebrow: 0.08em;  /* 11–12px uppercase section eyebrows */
+  --tracking-tight:  -0.01em;  /* large UI sizes */
+  --tracking-normal: 0;
+
+  /* ---- Semantic roles ---- */
+  --type-eyebrow-size:   var(--text-11);
+  --type-eyebrow-weight: var(--weight-semibold);
+
+  --type-body-size:      var(--text-13);
+  --type-body-weight:    var(--weight-regular);
+
+  --type-label-size:     var(--text-12);
+  --type-label-weight:   var(--weight-medium);
+
+  --type-title-size:     var(--text-20);
+  --type-title-weight:   var(--weight-semibold);
+
+  --type-worksheet-title-size: var(--text-28);
+  --type-worksheet-title-weight: var(--weight-semibold);
+}
