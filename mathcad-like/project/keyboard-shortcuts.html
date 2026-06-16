@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Keyboard shortcuts</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .scroll-y { overflow-y: auto; scrollbar-width: thin; }
+  .scroll-y::-webkit-scrollbar { width: 9px; }
+  .scroll-y::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+  .sc-row { transition: background var(--dur-fast) var(--ease-out); }
+  .sc-row:hover { background: var(--surface-hover); }
+  mark.hl { background: color-mix(in srgb, var(--status-warning) 32%, transparent); color: inherit; border-radius: 2px; }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button || !Q.Sub) { return setTimeout(start, 40); }
+    const { Button, IconButton, Badge, Sub, Sup, Frac, Op } = Q;
+    const { useState, useMemo } = React;
+
+    const svg = (c, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      search: (s) => svg(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></>, s),
+      close: (s) => svg(<path d="M6 6l12 12M18 6 6 18"/>, s),
+      kbd: (s) => svg(<><rect x="3" y="6" width="18" height="12" rx="1.6"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></>, s),
+      star: (s) => svg(<path d="M12 3l2.2 5.6L20 9.2l-4.4 3.7L17 19l-5-3.3L7 19l1.4-6.1L4 9.2l5.8-.6z"/>, s),
+    };
+    const QMark = ({ size = 22 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- keycap chip: 2px bottom border per spec ---- */
+    function Key({ children, wide }) {
+      return (
+        <kbd style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: wide ? 'auto' : 22, height: 22, padding: wide ? '0 8px' : '0 5px', background: 'var(--surface-raised)', border: '1px solid var(--border-strong)', borderBottom: '2px solid var(--border-strong)', borderRadius: 4, font: '600 11px/1 var(--font-mono)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</kbd>
+      );
+    }
+    function Combo({ keys }) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {keys.map((k, i) => {
+            if (k === '+') return <span key={i} style={{ color: 'var(--text-muted)', font: '11px var(--font-sans)' }}>+</span>;
+            if (k === 'or') return <span key={i} style={{ color: 'var(--text-muted)', font: '10.5px var(--font-sans)', margin: '0 1px' }}>or</span>;
+            return <Key key={i} wide={k.length > 2}>{k}</Key>;
+          })}
+        </span>
+      );
+    }
+
+    /* ---- data ---- */
+    const GROUPS = [
+      { group: 'Math entry', note: 'Notation builds as you type — natural 2D math.', items: [
+        { label: 'Make an assignment ( := )', keys: [':'] },
+        { label: 'Evaluate a result ( = )', keys: ['='] },
+        { label: 'Stacked fraction', keys: ['/'] },
+        { label: 'Superscript / exponent', keys: ['^'] },
+        { label: 'Subscript (index)', keys: ['_'] },
+        { label: 'Literal subscript — type F.t for Fₜ', keys: ['.'] },
+        { label: 'Index subscript', keys: ['['] },
+        { label: 'Square root', keys: ['\\'] },
+        { label: 'Absolute value', keys: ['|'] },
+        { label: 'Expand the selection up the expression', keys: ['Space'], signature: true },
+      ]},
+      { group: 'Operators & Greek', note: 'Type a letter, then convert.', items: [
+        { label: 'Convert letters to Greek — p then Ctrl+G makes π', keys: ['Ctrl', '+', 'G'] },
+        { label: 'Insert summation', keys: ['Ctrl', '+', 'Shift', '+', 'S'] },
+        { label: 'Insert product', keys: ['Ctrl', '+', 'Shift', '+', 'P'] },
+        { label: 'Insert integral', keys: ['Ctrl', '+', 'Shift', '+', 'I'] },
+        { label: 'Insert derivative', keys: ['Ctrl', '+', '/'] },
+        { label: 'Insert partial derivative', keys: ['Ctrl', '+', 'Shift', '+', 'D'] },
+        { label: 'Insert limit', keys: ['Ctrl', '+', 'L'] },
+        { label: 'Insert range variable', keys: [';'] },
+        { label: 'Insert matrix', keys: ['Ctrl', '+', 'M'] },
+      ]},
+      { group: 'Selection & navigation', note: 'Move through placeholders.', items: [
+        { label: 'Expand selection (the signature Mathcad key)', keys: ['Space'], signature: true },
+        { label: 'Next / previous placeholder', keys: ['Tab', 'or', 'Shift', '+', 'Tab'] },
+        { label: 'Move within the expression', keys: ['←', 'or', '→'] },
+        { label: 'Remove to the left', keys: ['Backspace'] },
+      ]},
+      { group: 'Regions', note: 'Build a worksheet region by region.', items: [
+        { label: 'Start a math region — just type', keys: ['A–Z'] },
+        { label: 'Convert an empty region to text', keys: ['Space'] },
+        { label: 'New region below', keys: ['Ctrl', '+', 'Enter'] },
+        { label: 'Delete the selected region', keys: ['Ctrl', '+', 'Del'] },
+      ]},
+      { group: 'Calculation', note: null, items: [
+        { label: 'Recalculate the worksheet', keys: ['F9'] },
+        { label: 'Recalculate to here', keys: ['Shift', '+', 'F9'] },
+        { label: 'Toggle Auto / Manual calc', keys: ['Ctrl', '+', 'Shift', '+', 'A'] },
+      ]},
+      { group: 'App', note: null, items: [
+        { label: 'Save worksheet', keys: ['Ctrl', '+', 'S'] },
+        { label: 'Undo', keys: ['Ctrl', '+', 'Z'] },
+        { label: 'Redo', keys: ['Ctrl', '+', 'Shift', '+', 'Z'] },
+        { label: 'Find', keys: ['Ctrl', '+', 'F'] },
+        { label: 'Command palette', keys: ['Ctrl', '+', 'K'] },
+        { label: 'Export', keys: ['Ctrl', '+', 'P'] },
+        { label: 'Open this reference', keys: ['/'] },
+      ]},
+    ];
+
+    function Hi({ text, q }) {
+      if (!q) return text;
+      const i = text.toLowerCase().indexOf(q.toLowerCase());
+      if (i < 0) return text;
+      return <>{text.slice(0, i)}<mark className="hl">{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>;
+    }
+
+    function Row({ it, q }) {
+      return (
+        <div className="sc-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 8px', borderRadius: 'var(--radius-sm)' }}>
+          <span style={{ flex: 1, minWidth: 0, font: '12.5px/1.4 var(--font-sans)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {it.signature && <span style={{ display: 'inline-flex', color: 'var(--accent)', flex: '0 0 auto' }}>{I.star(13)}</span>}
+            <span><Hi text={it.label} q={q} /></span>
+          </span>
+          <Combo keys={it.keys} />
+        </div>
+      );
+    }
+
+    function GroupCol({ g, q }) {
+      return (
+        <div style={{ breakInside: 'avoid', marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 8px 6px', borderBottom: '1px solid var(--border-hairline)', marginBottom: 4 }}>
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{g.group}</span>
+            {g.note && <span style={{ font: '11px/1.3 var(--font-sans)', color: 'var(--text-muted)' }}>{g.note}</span>}
+          </div>
+          {g.items.map((it, i) => <Row key={i} it={it} q={q} />)}
+        </div>
+      );
+    }
+
+    /* ====================== the modal ====================== */
+    function ShortcutsModal() {
+      const [q, setQ] = useState('');
+      const filtered = useMemo(() => {
+        if (!q.trim()) return GROUPS;
+        const lc = q.toLowerCase();
+        return GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => it.label.toLowerCase().includes(lc) || g.group.toLowerCase().includes(lc)) })).filter((g) => g.items.length);
+      }, [q]);
+      const count = filtered.reduce((n, g) => n + g.items.length, 0);
+
+      return (
+        <div role="dialog" aria-label="Keyboard shortcuts" style={{ width: 880, maxWidth: '95vw', height: 600, display: 'flex', flexDirection: 'column', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-modal)', overflow: 'hidden' }}>
+          {/* header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', borderBottom: '1px solid var(--border-hairline)', flex: '0 0 auto' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+              <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{I.kbd(19)}</span>
+              <span style={{ font: '600 15px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>Keyboard shortcuts</span>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)', background: 'var(--accent-tint)', borderRadius: 99, padding: '4px 9px' }}>
+              Keymap: <strong style={{ color: 'var(--accent)', fontWeight: 600 }}>Mathcad</strong>
+            </span>
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+              <div style={{ position: 'relative', width: 300 }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>{I.search(15)}</span>
+                <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search shortcuts…" style={{ width: '100%', height: 32, padding: '0 12px 0 32px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-paper)', font: '12.5px/1 var(--font-sans)', color: 'var(--text-primary)', outline: 'none' }} onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent)'; }} onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none'; }} />
+              </div>
+            </div>
+            <span style={{ font: '11.5px/1 var(--font-mono)', color: 'var(--text-muted)' }}>{count}</span>
+            <IconButton label="Close" size="sm">{I.close(18)}</IconButton>
+          </div>
+
+          {/* body — multi-column masonry */}
+          <div className="scroll-y" style={{ flex: 1, minHeight: 0, padding: '16px 18px 8px' }}>
+            {count === 0 ? (
+              <div style={{ textAlign: 'center', padding: '70px 0', color: 'var(--text-muted)' }}>
+                <div style={{ font: '600 14px/1.3 var(--font-sans)', color: 'var(--text-primary)', marginBottom: 6 }}>No shortcuts match “{q}”</div>
+                <div style={{ font: '12.5px/1.5 var(--font-sans)' }}>Try a different term, or clear the search.</div>
+              </div>
+            ) : (
+              <div style={{ columnWidth: 380, columnGap: 28 }}>
+                {filtered.map((g) => <GroupCol key={g.group} g={g} q={q} />)}
+              </div>
+            )}
+          </div>
+
+          {/* footer */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--border-hairline)', background: 'var(--surface-chrome)', flex: '0 0 auto' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '11.5px/1.4 var(--font-sans)', color: 'var(--text-muted)' }}>
+              <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{I.star(13)}</span> Signature Mathcad keys
+            </span>
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>
+              Open this any time with <Key>/</Key>
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====================== keymap preference ====================== */
+    function KeymapPref() {
+      const [keymap, setKeymap] = useState('mathcad');
+      const opts = [
+        { id: 'mathcad', label: 'Mathcad', desc: 'Space expands the selection; “.” makes a literal subscript; type-to-math. Recommended for engineers moving from Mathcad / BlockPad.' },
+        { id: 'default', label: 'Default', desc: 'Standard editor keys. Space inserts a space; arrows move the caret normally.' },
+      ];
+      return (
+        <div style={{ width: 380, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <div style={{ padding: '13px 16px 11px', borderBottom: '1px solid var(--border-hairline)' }}>
+            <div style={{ font: '600 13.5px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>Keymap</div>
+            <div style={{ font: '12px/1.5 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>How keys behave inside a math region.</div>
+          </div>
+          <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {opts.map((o) => {
+              const on = keymap === o.id;
+              return (
+                <button key={o.id} onClick={() => setKeymap(o.id)} style={{ display: 'flex', gap: 11, padding: '11px 12px', border: '1px solid ' + (on ? 'var(--accent)' : 'var(--border-hairline)'), borderRadius: 'var(--radius-sm)', background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', cursor: 'pointer', textAlign: 'left' }}>
+                  <span style={{ flex: '0 0 auto', width: 16, height: 16, borderRadius: '50%', border: '1.5px solid ' + (on ? 'var(--accent)' : 'var(--border-strong)'), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+                    {on && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ font: '600 13px/1.2 var(--font-sans)', color: on ? 'var(--accent)' : 'var(--text-primary)' }}>{o.label}</span>
+                      {o.id === 'mathcad' && <span style={{ font: '9.5px/1 var(--font-sans)', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '2px 4px' }}>Default</span>}
+                    </span>
+                    <span style={{ display: 'block', font: '11.5px/1.5 var(--font-sans)', color: 'var(--text-muted)', marginTop: 4 }}>{o.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    /* ====================== math input bar w/ inline hint chips ====================== */
+    function MathBar() {
+      const tools = [
+        { sym: <Frac num={<span style={{ fontSize: '0.7em' }}>a</span>} den={<span style={{ fontSize: '0.7em' }}>b</span>} />, hint: '/', label: 'Fraction' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>x<sup style={{ fontSize: '0.7em' }}>n</sup></span>, hint: '^', label: 'Exponent' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>x<sub style={{ fontSize: '0.7em' }}>i</sub></span>, hint: '_', label: 'Subscript' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>√</span>, hint: '\\', label: 'Root' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>:=</span>, hint: ':', label: 'Assign' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>|x|</span>, hint: '|', label: 'Absolute' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)' }}>π</span>, hint: '⌃G', label: 'Greek' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)', fontSize: 18 }}>Σ</span>, hint: null, label: 'Sum' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)', fontSize: 18 }}>∫</span>, hint: null, label: 'Integral' },
+        { sym: <span style={{ fontFamily: 'var(--font-math)', fontSize: 18 }}>∂</span>, hint: null, label: 'Partial' },
+      ];
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: 5, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-sm)' }}>
+          {tools.map((t, i) => (
+            <React.Fragment key={i}>
+              {(i === 7) && <span style={{ width: 1, height: 26, background: 'var(--border-hairline)', margin: '0 3px' }} />}
+              <button title={t.label + (t.hint ? '  (' + t.hint + ')' : '')} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 34, border: '1px solid transparent', borderRadius: 'var(--radius-sm)', background: 'transparent', cursor: 'pointer', color: 'var(--text-primary)' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ fontSize: 15, color: 'var(--text-math)' }}>{t.sym}</span>
+                {t.hint && <span style={{ position: 'absolute', bottom: -1, right: -1, font: '8px/1 var(--font-mono)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderBottom: '2px solid var(--border-strong)', borderRadius: 3, padding: '1px 2px', minWidth: 11, textAlign: 'center' }}>{t.hint}</span>}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+
+    /* ====================== board ====================== */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    );
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Keyboard shortcuts">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Keyboard entry</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Keyboard shortcuts &amp; keymap</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 680 }}>Mathcad-style keyboard entry is Quanta&rsquo;s primary input model. The reference modal (7.25) and the Keymap preference (7.26) are shown below, with the math input bar carrying inline key hints.</p>
+
+          {/* 7.25 modal */}
+          <div style={{ marginTop: 32 }}>
+            <Label k="7.25" sub="Searchable, multi-column, grouped — keys shown as keycap chips with a 2px bottom border.">Keyboard-shortcuts reference</Label>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+              <ShortcutsModal />
+            </div>
+          </div>
+
+          {/* 7.26 + math bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 28, marginTop: 32, alignItems: 'start' }}>
+            <div>
+              <Label k="7.26" sub="A Preferences setting — Mathcad is the default.">Keymap preference</Label>
+              <KeymapPref />
+            </div>
+            <div>
+              <Label k="—" sub="Each tool shows its key hint as a small chip (fraction = /, exponent = ^, subscript = _, root = backslash, Greek = Ctrl+G).">Math input bar — inline hints</Label>
+              <div style={{ padding: '28px 22px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', display: 'flex', justifyContent: 'center' }}>
+                <MathBar />
+              </div>
+              <div style={{ marginTop: 12, padding: '11px 13px', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-raised)', font: '12px/1.6 var(--font-sans)', color: 'var(--text-muted)' }}>
+                The same hints appear on the floating keypad in the editor, so the keyboard path is always discoverable — click to learn the key, then type it next time.
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+
+# next / build
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# env / secrets
+.env
+.env*.local
+.env.development.local
+.env.production.local
+
+# supabase (local dev)
+supabase/.branches
+supabase/.temp
+supabase/.env
+
+# test / coverage
+coverage/
+
+# deploy / tooling
+.vercel
+.turbo
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

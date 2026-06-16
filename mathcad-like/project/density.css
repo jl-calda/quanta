@@ -1,0 +1,56 @@
+/* ============================================================================
+   Quanta — density system.  Comfortable / Compact.  Default: Compact.
+   These --d-* tokens resolve inside inline styles, so flipping the
+   [data-density] attribute on <html> recascades the whole app instantly.
+   Math-region legibility is intentionally NOT scaled here.
+   ============================================================================ */
+
+:root {                              /* Compact (default) */
+  --d-row-y: 6px;                    /* table / list row vertical padding */
+  --d-row-x: 12px;                   /* table / list row horizontal padding */
+  --d-cell-y: 6px;                   /* dense table cell padding */
+  --d-card-pad: 11px;                /* card body padding */
+  --d-gap: 10px;                     /* grid / toolbar gaps */
+  --d-gap-lg: 16px;                  /* card-grid gaps */
+  --d-section: 22px;                 /* vertical rhythm between sections */
+  --d-ctrl-h: 30px;                  /* inputs / buttons */
+  --d-ctrl-h-sm: 26px;
+  --d-thumb: 122px;                  /* card thumbnails (gallery/dashboard) */
+  --d-thumb-sm: 96px;
+  --d-pad-panel: 12px;               /* panel / header inner padding */
+  --d-body: 13px;
+  --d-meta: 11px;
+
+  /* tighten the design-system spacing tokens one step (DS components inherit) */
+  --space-6: 18px;
+  --space-4: 12px;
+  --space-3: 9px;
+  --space-2: 6px;
+}
+
+:root[data-density="comfortable"] {
+  --d-row-y: 11px;
+  --d-row-x: 16px;
+  --d-cell-y: 9px;
+  --d-card-pad: 16px;
+  --d-gap: 18px;
+  --d-gap-lg: 20px;
+  --d-section: 34px;
+  --d-ctrl-h: 36px;
+  --d-ctrl-h-sm: 30px;
+  --d-thumb: 168px;
+  --d-thumb-sm: 132px;
+  --d-pad-panel: 16px;
+  --d-body: 14px;
+  --d-meta: 12px;
+
+  /* restore the original DS spacing scale */
+  --space-6: 24px;
+  --space-4: 16px;
+  --space-3: 12px;
+  --space-2: 8px;
+}
+
+/* the floating toggle never collides with content */
+#q-density-toggle { user-select: none; }
+#q-density-toggle button:focus-visible { outline: 2px solid var(--accent, #1F5FBF); outline-offset: 1px; }

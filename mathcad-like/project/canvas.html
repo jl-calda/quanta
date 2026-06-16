@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Canvas specimen</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+
+  .field { background: #E7EAEF; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+  .gutter { background-image: repeating-linear-gradient(to bottom, var(--border-strong) 0 3px, transparent 3px 7px); }
+
+  .region { position: relative; border-radius: var(--radius-sm); border: 1px solid transparent; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+  .region:hover { background: color-mix(in srgb, var(--accent-tint) 45%, transparent); }
+  .region.sel { background: var(--surface-selected); border-color: var(--accent); }
+
+  .region .chrome { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+  .region:hover .chrome, .region.sel .chrome, .region.demo .chrome { opacity: 1; }
+
+  @keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .ed-caret { animation: caret-blink 1.05s steps(1) infinite; }
+  @media (prefers-reduced-motion: reduce) { .ed-caret { animation: none; } }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Sub) { return setTimeout(start, 40); }
+    const { Sub, Sup, Frac, Op, Sqrt } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const Ic = {
+      grip: (s) => svg(<><circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/></>, s),
+      indentR: (s) => svg(<><path d="M4 6h16M11 12h9M4 18h16M4 9.5 7 12l-3 2.5"/></>, s),
+      indentL: (s) => svg(<><path d="M4 6h16M11 12h9M4 18h16M7 9.5 4 12l3 2.5"/></>, s),
+      span: (s) => svg(<><path d="M3 6v12M21 6v12M7.5 12h9M10 9l-2.5 3 2.5 3M14 9l2.5 3-2.5 3"/></>, s),
+      border: (s) => svg(<rect x="4" y="4" width="16" height="16" rx="1.5"/>, s),
+      kebab: (s) => svg(<><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></>, s),
+      split: (s) => svg(<><path d="M12 4.5v15M4 8.5h4.5M4 12h4.5M4 15.5h4.5M15.5 8.5H20M15.5 12H20M15.5 15.5H20"/></>, s),
+      plus: (s) => svg(<path d="M12 6.5v11M6.5 12h11"/>, s),
+    };
+
+    const QMark = ({ size = 22 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- math helpers ---- */
+    const It = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+    const M = ({ children, size = 16 }) => <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '0.14em', rowGap: 2, fontFamily: 'var(--font-math)', fontSize: size, color: 'var(--text-math)', lineHeight: 1.25 }}>{children}</span>;
+    const Res = (children, tone) => <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.16em', padding: '1px 7px', borderRadius: 4, marginLeft: '0.12em', background: tone === 'pass' ? 'var(--status-pass-bg)' : 'var(--accent-tint)', color: tone === 'pass' ? 'var(--status-pass)' : 'var(--accent)', fontWeight: 600 }}>{children}</span>;
+    const num = (v, un) => <>{v}{un && <span style={{ fontFamily: 'var(--font-sans)', fontStyle: 'normal', fontWeight: 600, fontSize: '0.74em', marginLeft: '0.16em', letterSpacing: '0.01em' }}>{un}</span>}</>;
+    const UnitTok = ({ children }) => <span style={{ fontFamily: 'var(--font-sans)', fontStyle: 'normal', fontWeight: 500, color: 'var(--status-pass)', fontSize: '0.74em', marginLeft: '0.2em', letterSpacing: '0.01em' }}>{children}</span>;
+    const EditCaret = () => <span style={{ display: 'inline-block', width: 2, height: '1.05em', transform: 'translateY(0.15em)', background: 'var(--accent)', margin: '0 1px', borderRadius: 1 }} className="ed-caret" />;
+    const Note = ({ children }) => <span style={{ font: '12px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>{children}</span>;
+    const Heading = ({ children }) => <h3 style={{ margin: 0, font: '600 15px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{children}</h3>;
+    const Eye = ({ children }) => <div style={{ font: '600 10px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }}>{children}</div>;
+
+    /* ---- selection / hover region chrome ---- */
+    const TBtn = ({ icon, label, on }) => (
+      <button title={label} aria-label={label} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, border: 'none', background: on ? 'var(--accent-tint)' : 'transparent', borderRadius: 4, color: on ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }}>{icon(15)}</button>
+    );
+    const Sep = () => <span style={{ width: 1, height: 15, background: 'var(--border-hairline)', margin: '0 1px' }} />;
+    function SelChrome({ spanOn }) {
+      return (
+        <div className="chrome" style={{ position: 'absolute', top: -15, right: 6, display: 'flex', alignItems: 'center', gap: 1, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 6, boxShadow: 'var(--shadow-popover)', padding: 2, zIndex: 8 }}>
+          <TBtn icon={Ic.indentL} label="Outdent" />
+          <TBtn icon={Ic.indentR} label="Indent" />
+          <Sep />
+          <TBtn icon={Ic.span} label="Span all columns" on={spanOn} />
+          <TBtn icon={Ic.border} label="Region border" />
+          <Sep />
+          <TBtn icon={Ic.kebab} label="More" />
+        </div>
+      );
+    }
+
+    /* ---- region wrapper ---- */
+    function Region({ children, sel, indent = 0, demo, spanOn }) {
+      return (
+        <div className={'region' + (sel ? ' sel' : '') + (demo ? ' demo' : '')} style={{ position: 'relative', marginLeft: indent * 26, padding: '7px 10px' }}>
+          {indent > 0 && <span style={{ position: 'absolute', left: -14, top: 5, bottom: 5, borderLeft: '1px dashed var(--accent)', opacity: 0.5 }} />}
+          <span className="chrome" style={{ position: 'absolute', left: -19, top: 8, color: 'var(--text-muted)', cursor: 'grab' }}>{Ic.grip(15)}</span>
+          {children}
+          {(sel || demo) && <SelChrome spanOn={spanOn} />}
+        </div>
+      );
+    }
+
+    /* ---- a page shell ---- */
+    function Page({ children, w = 540, header = true, footer = true, pageNo = 1, pageTotal = 3 }) {
+      return (
+        <div style={{ width: w, margin: '0 auto', background: 'var(--surface-paper)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-sm)' }}>
+          {header && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 26px', borderBottom: '1px solid var(--border-hairline)', font: '9px/1 var(--font-sans)', letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              <span>Skyline Tower · N. Brunel · 14 Jun 2026 · Rev B</span>
+              <span>Page {pageNo} of {pageTotal}</span>
+            </div>
+          )}
+          <div className="q-grid" style={{ position: 'relative', padding: '20px 26px 26px' }}>
+            <div style={{ position: 'absolute', inset: '8px 14px', border: '1px dashed var(--border-hairline)', opacity: 0.6, pointerEvents: 'none' }} />
+            <div style={{ position: 'relative' }}>{children}</div>
+          </div>
+          {footer && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 26px', borderTop: '1px solid var(--border-hairline)', font: '9px/1 var(--font-sans)', color: 'var(--text-muted)' }}>
+              <span>Quanta</span><span>Roof anchor point — pull-out check</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ---- column gutter wrapper: renders N columns with dashed gutters ---- */
+    function ColRow({ ratios, children }) {
+      // children is array of column contents; insert gutter between
+      const cols = React.Children.toArray(children);
+      const tmpl = ratios.map((r) => r + 'fr').join(' min-content '.repeat(1)).trim();
+      // build grid-template-columns with gutters
+      const parts = [];
+      ratios.forEach((r, i) => { if (i) parts.push('15px'); parts.push(r + 'fr'); });
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: parts.join(' '), alignItems: 'stretch' }}>
+          {cols.map((c, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <div style={{ display: 'flex', justifyContent: 'center' }}><span className="gutter" style={{ width: 1 }} /></div>}
+              <div style={{ minWidth: 0 }}>{c}</div>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+
+    /* ---- insert line between rows ---- */
+    function InsertLine() {
+      return (
+        <div style={{ position: 'relative', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ position: 'absolute', left: 0, right: 0, height: 1, background: 'var(--accent)', opacity: 0.35 }} />
+          <button style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 9px', borderRadius: 99, border: '1px solid var(--accent)', background: 'var(--surface-paper)', color: 'var(--accent)', font: '500 10.5px/1 var(--font-sans)', cursor: 'pointer' }}>{Ic.plus(11)} Insert</button>
+        </div>
+      );
+    }
+
+    /* ====================== FRAMES ====================== */
+
+    /* (a) single column */
+    function FrameSingle() {
+      return (
+        <Page>
+          <Region><Eye>1 · Design basis</Eye><Heading>Roof anchor — pull-out check</Heading></Region>
+          <Region><Note>The anchor resists a factored tie-back force at the roof edge. Capacity is the lesser of steel tensile failure and concrete cone breakout; this page covers the steel check in reading order, top to bottom.</Note></Region>
+          <Region sel><M><Sub base="F" sub="t" /><Op>:=</Op><span>12</span><UnitTok>kN</UnitTok><EditCaret /><span style={{ marginLeft: 10, font: '9px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)' }}>editing</span><span style={{ display: 'inline-flex', border: '1px solid var(--accent)', borderRadius: 4, overflow: 'hidden', height: 18, marginLeft: 6, verticalAlign: 'middle' }}><span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, background: 'var(--accent)', color: '#fff', fontFamily: 'var(--font-math)', fontStyle: 'italic', fontSize: 10 }}>√x</span><span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, background: 'var(--surface-raised)', color: 'var(--text-muted)', fontSize: 9, fontWeight: 500 }}>Aa</span></span><span style={{ marginLeft: 12 }}><Note>applied tie-back force (ULS)</Note></span></M></Region>
+          <Region><M><Sub base="N" sub="Rd" /><Op>=</Op><It>φ</It><Op>·</Op><Sub base="A" sub="s" /><Op>·</Op><Sub base="f" sub="ub" /><Op>=</Op>{Res(num('52.8', 'kN'), 'pass')}<span style={{ marginLeft: '0.4em', font: '600 11px/1 var(--font-sans)', textTransform: 'uppercase', color: 'var(--status-pass)' }}>OK</span></M></Region>
+        </Page>
+      );
+    }
+
+    /* (b) multi column: 2-col then 3-col */
+    function FrameMulti() {
+      return (
+        <Page>
+          <Region><Eye>2 · Anchor tensile capacity</Eye><Heading>Side-by-side: equation + note</Heading></Region>
+          {/* 2-col row */}
+          <ColRow ratios={[1.3, 1]}>
+            <div>
+              <Region sel><M size={15}><Sub base="A" sub="s" /><Op>=</Op><Frac num={<It>π</It>} den="4" /><Op>·</Op><Op>(</Op>0.85<Op>·</Op><It>d</It><Op>)</Op><Sup base="" sup="2" /><Op>=</Op>{Res(num('157', 'mm²'))}</M></Region>
+              <Region><M size={15}><Sub base="N" sub="Rd" /><Op>=</Op><It>φ</It><Op>·</Op><Sub base="A" sub="s" /><Op>·</Op><Sub base="f" sub="ub" /><Op>=</Op>{Res(num('52.8', 'kN'), 'pass')}</M></Region>
+            </div>
+            <div>
+              <Region><Note>Tensile stress area taken at the thread root for SS316 A4-70 anchors. Capacity is governed by the bolt, not the concrete cone, at this edge distance.</Note></Region>
+            </div>
+          </ColRow>
+          <InsertLine />
+          <Region><Eye>Reading order →</Eye><Heading>Three parallel checks</Heading></Region>
+          {/* 3-col row */}
+          <ColRow ratios={[1, 1, 1]}>
+            <Region><Eye>Tension</Eye><M size={14}><span style={{ fontStyle: 'italic' }}>UR</span><Sub base="" sub="t" /><Op>=</Op>{Res(<span>0.23</span>, 'pass')}</M></Region>
+            <Region><Eye>Shear</Eye><M size={14}><span style={{ fontStyle: 'italic' }}>UR</span><Sub base="" sub="v" /><Op>=</Op>{Res(<span>0.41</span>, 'pass')}</M></Region>
+            <Region><Eye>Combined</Eye><M size={14}><span style={{ fontStyle: 'italic' }}>UR</span><Op>=</Op>{Res(<span>0.47</span>, 'pass')}</M></Region>
+          </ColRow>
+        </Page>
+      );
+    }
+
+    /* (c) spanning region inside a 2-col page */
+    function FrameSpan() {
+      const Tbl = () => {
+        const head = ['Mark', 'Qty', 'Dia', 'Force', 'Cap.', 'UR'];
+        const rows = [['A1', '4', '16', '12.0', '52.8', '0.23'], ['A2', '4', '16', '18.5', '52.8', '0.35'], ['A3', '2', '12', '41.0', '29.7', '1.38']];
+        return (
+          <div style={{ border: '1px solid var(--border-strong)', borderRadius: 4, overflow: 'hidden' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', background: 'var(--surface-raised)' }}>
+              <thead><tr style={{ background: 'var(--surface-chrome)' }}>{head.map((h, i) => <th key={i} style={{ padding: '4px 10px', font: '600 9.5px/1 var(--font-sans)', letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', textAlign: i ? 'right' : 'left', borderRight: i < 5 ? '1px solid var(--border-hairline)' : 'none', borderBottom: '1px solid var(--border-strong)' }}>{h}</th>)}</tr></thead>
+              <tbody>{rows.map((r, ri) => <tr key={ri} style={{ borderTop: ri ? '1px solid var(--border-hairline)' : 'none' }}>{r.map((c, ci) => { const red = ci === 5 && r[5] === '1.38'; return <td key={ci} style={{ padding: '4px 10px', font: '11px/1.3 var(--font-mono)', color: red ? 'var(--status-error)' : 'var(--text-primary)', background: red ? 'var(--status-error-bg)' : 'transparent', textAlign: ci ? 'right' : 'left', fontWeight: ci === 0 ? 600 : 400, borderRight: ci < 5 ? '1px solid var(--border-hairline)' : 'none' }}>{c}{red && <span style={{ fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 9, marginLeft: 4 }}>FAIL</span>}</td>; })}</tr>)}</tbody>
+            </table>
+          </div>
+        );
+      };
+      return (
+        <Page>
+          {/* 2-col row */}
+          <ColRow ratios={[1, 1]}>
+            <Region><Eye>Left cell</Eye><M size={14}><Sub base="N" sub="Rd" /><Op>=</Op>{Res(num('52.8', 'kN'), 'pass')}</M></Region>
+            <Region><Eye>Right cell</Eye><M size={14}><Sub base="V" sub="Rd" /><Op>=</Op>{Res(num('31.6', 'kN'), 'pass')}</M></Region>
+          </ColRow>
+          <InsertLine />
+          {/* spanning region */}
+          <Region sel spanOn>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+              <Eye>Spans all columns</Eye>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: '9.5px/1 var(--font-sans)', color: 'var(--accent)', background: 'var(--accent-tint)', borderRadius: 3, padding: '2px 5px' }}>{Ic.span(12)} full width</span>
+            </div>
+            <Heading>Anchor schedule</Heading>
+            <div style={{ marginTop: 8 }}><Tbl /></div>
+          </Region>
+        </Page>
+      );
+    }
+
+    /* (d) indentation */
+    function FrameIndent() {
+      return (
+        <Page>
+          <Region><Eye>Derivation</Eye><Heading>Concrete cone — sub-steps</Heading></Region>
+          <Region><M size={15}><Sub base="N" sub="cb" /><Op>=</Op><Frac num={<Sub base="A" sub="Nc" />} den={<Sub base="A" sub="Nc0" />} /><Op>·</Op><Sub base="ψ" sub="ed" /><Op>·</Op><Sub base="N" sub="b" /></M></Region>
+          <Region indent={1}><M size={14}><span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>where&nbsp;</span><Sub base="N" sub="b" /><Op>=</Op><Sub base="k" sub="c" /><Op>·</Op><Sqrt>{<Sub base="f" sub="ck" />}</Sqrt><Op>·</Op><Sup base="h" sup="1.5" /><Op>=</Op>{Res(num('38.4', 'kN'))}</M></Region>
+          <Region indent={2} sel><M size={14}><span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>and&nbsp;</span><Sub base="ψ" sub="ed" /><Op>=</Op>0.7<Op>+</Op>0.3<Op>·</Op><Frac num={<Sub base="c" sub="min" />} den={<>1.5<Sub base="h" sub="ef" /></>} /><Op>=</Op>{Res(<span>0.86</span>)}</M></Region>
+          <Region indent={1}><M size={14}><span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>so&nbsp;</span><Sub base="N" sub="cb" /><Op>=</Op>{Res(num('29.7', 'kN'), 'pass')}<span style={{ marginLeft: '0.4em', font: '600 10px/1 var(--font-sans)', textTransform: 'uppercase', color: 'var(--status-pass)' }}>OK</span></M></Region>
+        </Page>
+      );
+    }
+
+    /* (e) controls & affordances */
+    function SplitControl() {
+      const [n, setN] = useState(2);
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 6, boxShadow: 'var(--shadow-popover)', padding: '4px 8px' }}>
+          <span style={{ display: 'inline-flex', color: 'var(--text-muted)' }}>{Ic.split(15)}</span>
+          <span style={{ font: '11px/1 var(--font-sans)', color: 'var(--text-muted)' }}>Columns</span>
+          <div style={{ display: 'inline-flex', border: '1px solid var(--border-strong)', borderRadius: 4, overflow: 'hidden' }}>
+            {[1, 2, 3].map((k, i) => <button key={k} onClick={() => setN(k)} style={{ width: 26, height: 22, border: 'none', borderLeft: i ? '1px solid var(--border-hairline)' : 'none', cursor: 'pointer', background: n === k ? 'var(--accent-tint)' : 'var(--surface-raised)', color: n === k ? 'var(--accent)' : 'var(--text-muted)', font: '600 11px/1 var(--font-mono)' }}>{k}</button>)}
+          </div>
+        </div>
+      );
+    }
+    function FrameControls() {
+      const [ratio, setRatio] = useState(58);
+      return (
+        <Page footer={false}>
+          <Region><Eye>Affordances</Eye><Heading>Row controls & snapping</Heading></Region>
+
+          {/* split control floating above a 2-col row */}
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 8px' }}><SplitControl /></div>
+
+          {/* a 2-col row with a draggable split handle */}
+          <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: ratio + 'fr 15px ' + (100 - ratio) + 'fr', alignItems: 'stretch' }}>
+            <div style={{ minWidth: 0 }}><Region><M size={14}><Sub base="A" sub="s" /><Op>=</Op>{Res(num('157', 'mm²'))}</M></Region></div>
+            {/* drag handle in the gutter */}
+            <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+              <span className="gutter" style={{ width: 1 }} />
+              <input type="range" min="35" max="70" value={ratio} onChange={(e) => setRatio(+e.target.value)} aria-label="Split ratio" style={{ position: 'absolute', top: '50%', left: '50%', width: 80, transform: 'translate(-50%,-50%) rotate(0deg)', accentColor: 'var(--accent)' }} />
+              <span style={{ position: 'absolute', top: -2, left: '50%', transform: 'translateX(-50%)', width: 8, height: 22, borderRadius: 3, background: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }} />
+            </div>
+            <div style={{ minWidth: 0 }}><Region><Note>Drag the gutter handle to set the split ratio. The note column resizes; both cells stay snapped to the grid.</Note></Region></div>
+          </div>
+
+          <InsertLine />
+
+          {/* snapping demo: a region mid-drag snapping to an indent stop */}
+          <div style={{ position: 'relative', padding: '4px 0' }}>
+            <Eye>Snapping to an indent stop</Eye>
+            {/* snap guide */}
+            <span style={{ position: 'absolute', left: 26, top: 34, bottom: 4, borderLeft: '2px dashed var(--accent)' }} />
+            <div style={{ marginTop: 18, marginLeft: 26, position: 'relative' }}>
+              <div className="region demo" style={{ position: 'relative', padding: '7px 10px', background: 'var(--surface-selected)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-sm)' }}>
+                <span style={{ position: 'absolute', left: -19, top: 8, color: 'var(--accent)', cursor: 'grabbing' }}>{Ic.grip(15)}</span>
+                <M size={14}><span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>where&nbsp;</span><Sub base="ψ" sub="ed" /><Op>=</Op>{Res(<span>0.86</span>)}</M>
+                <span style={{ position: 'absolute', top: -10, left: -2, font: '9px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)', background: 'var(--surface-paper)', padding: '1px 4px', borderRadius: 3 }}>snap to indent 1</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 14, padding: '9px 12px', border: '1px solid var(--border-hairline)', borderRadius: 6, background: 'var(--surface-chrome)', display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{Ic.span(15)}</span>
+            <Note>Side-by-side is achieved by <strong style={{ color: 'var(--text-primary)' }}>splitting a row into columns</strong> or <strong style={{ color: 'var(--text-primary)' }}>spanning</strong> — never by free-dragging a region. Regions only snap to columns and indent stops, so recalc order stays predictable.</Note>
+          </div>
+        </Page>
+      );
+    }
+
+    /* ====================== board ====================== */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    );
+
+    function Frame({ children }) {
+      return <div className="field" style={{ padding: '26px 22px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>{children}</div>;
+    }
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 72px' }} data-screen-label="Canvas specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Editor surface</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Canvas — hybrid-flow column grid</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 660 }}>A4 pages on warm paper over a blueprint dot-grid. Regions flow top-to-bottom in reading-order rows; a row can split into columns, a region can span all columns or indent in steps — but placement is always <strong style={{ color: 'var(--text-primary)' }}>snapped to the grid</strong>, never free.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))', gap: 24, marginTop: 32 }}>
+            <div><Label k="(a)" sub="Full-width text + math stacked in reading order — like a document.">Single-column row</Label><Frame><FrameSingle /></Frame></div>
+            <div><Label k="(b)" sub="A 2-column row (math + note) and a 3-column row. Recalc order is left-to-right within the row.">Multi-column rows + gutter</Label><Frame><FrameMulti /></Frame></div>
+            <div><Label k="(c)" sub="A wide table spans all columns inside an otherwise multi-column page.">Spanning region</Label><Frame><FrameSpan /></Frame></div>
+            <div><Label k="(d)" sub="One- and two-step indents for sub-steps of a derivation, with a dashed indent guide.">Indentation</Label><Frame><FrameIndent /></Frame></div>
+            <div style={{ gridColumn: '1 / -1' }}><Label k="(e)" sub="Insert line, column-split control (1/2/3 + drag-to-resize), per-region indent/outdent & span toggles, and snapping to columns and indent stops.">Controls & affordances</Label><Frame><div style={{ maxWidth: 560, margin: '0 auto' }}><FrameControls /></div></Frame></div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

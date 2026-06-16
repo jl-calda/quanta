@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Home</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--surface-paper); color: var(--text-primary); font-family: var(--font-sans); }
+  #root { height: 100vh; }
+  * { box-sizing: border-box; }
+
+  .q-grid-mini {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 12px 12px;
+    background-position: -1px -1px;
+  }
+  .scroll-x { overflow-x: auto; scrollbar-width: thin; }
+  .scroll-x::-webkit-scrollbar { height: 8px; }
+  .scroll-x::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+  .scroll-y { overflow-y: auto; scrollbar-width: thin; }
+
+  .q-link { color: var(--text-link); text-decoration: none; cursor: pointer; }
+  .q-link:hover { text-decoration: underline; }
+
+  .row-hover:hover { background: var(--surface-hover); }
+  .card-lift { transition: box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
+  .card-lift:hover { box-shadow: var(--shadow-sm); border-color: var(--border-strong); }
+  .tpl-card:hover .tpl-thumb { border-color: var(--accent); }
+
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button || !Q.Badge) { return setTimeout(start, 40); }
+    const { Button, IconButton, Badge, Input, Sub, Frac, Sup, Op, Sqrt } = Q;
+    const { useState, useEffect, useRef } = React;
+
+    /* ---------------- icons (Lucide, 1.5px) ---------------- */
+    const I = (d, size = 18) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+    );
+    const HomeI   = (s) => I(<><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5h5v5"/></>, s);
+    const SheetI  = (s) => I(<><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></>, s);
+    const TplI    = (s) => I(<><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></>, s);
+    const ShareI  = (s) => I(<><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M16 19a4.4 4.4 0 0 1 5.5-3.7"/></>, s);
+    const TrashI  = (s) => I(<><path d="M4 7h16M9.5 7V5h5v2M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></>, s);
+    const SearchI = (s) => I(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></>, s);
+    const ChevronD= (s) => I(<path d="m6 9 6 6 6-6"/>, s);
+    const PlusI   = (s) => I(<path d="M12 5v14M5 12h14"/>, s);
+    const KebabI  = (s) => I(<><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></>, s);
+    const FolderI = (s) => I(<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v8.5A1.5 1.5 0 0 1 17.5 20h-13A1.5 1.5 0 0 1 3 18.5z"/>, s);
+    const ImportI = (s) => I(<><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17"/></>, s);
+    const BlankI  = (s) => I(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4"/></>, s);
+    const SettingsI=(s) => I(<><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></>, s);
+    const ClockI  = (s) => I(<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>, s);
+    const ArrowR  = (s) => I(<path d="M5 12h14M13 6l6 6-6 6"/>, s);
+
+    const QLogo = ({ size = 26 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/>
+        <line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+        <line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/>
+      </svg>
+    );
+
+    const It = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+
+    /* ---------------- data ---------------- */
+    const RECENTS = [
+      { title: 'Roof anchor point — pull-out check', project: 'Acme Safety', edited: '2 hours ago', status: 'pass', preview: 0 },
+      { title: 'Lifeline span — mid-span deflection', project: 'Edge Protection', edited: 'Yesterday', status: 'warning', preview: 1 },
+      { title: 'Guardrail post — point load', project: 'Mezzanine 3', edited: '2 days ago', status: 'pass', preview: 2 },
+      { title: 'Bolt group — eccentric shear', project: 'Plant 7 Retrofit', edited: '28 Apr', status: 'pass', preview: 3 },
+    ];
+
+    const TEMPLATES = [
+      { title: 'Lifeline span deflection', cat: 'Fall protection', preview: 1 },
+      { title: 'Guardrail point-load check', cat: 'Barriers', preview: 2 },
+      { title: 'Bolt group capacity', cat: 'Connections', preview: 3 },
+      { title: 'Ladder cage loading', cat: 'Access', preview: 0 },
+      { title: 'Anchor pull-out (concrete)', cat: 'Anchors', preview: 0 },
+      { title: 'Beam UDL — moment & shear', cat: 'Beams', preview: 1 },
+    ];
+
+    const PROJECTS = [
+      { kind: 'folder', name: 'Acme Safety Engineering', project: '—', owner: 'You', status: null, modified: 'Today' },
+      { kind: 'sheet', name: 'Roof anchor point — pull-out check', project: 'Acme Safety', owner: 'You', status: 'pass', modified: '2 hours ago' },
+      { kind: 'sheet', name: 'Lifeline span — mid-span deflection', project: 'Edge Protection', owner: 'M. Okafor', status: 'warning', modified: 'Yesterday' },
+      { kind: 'folder', name: 'Plant 7 Retrofit', project: '—', owner: 'You', status: null, modified: '28 Apr' },
+      { kind: 'sheet', name: 'Bolt group — eccentric shear', project: 'Plant 7 Retrofit', owner: 'You', status: 'pass', modified: '28 Apr' },
+      { kind: 'sheet', name: 'Ladder cage — rung loading', project: 'Access Systems', owner: 'R. Vasquez', status: 'pass', modified: '21 Apr' },
+      { kind: 'sheet', name: 'Guardrail post — point load', project: 'Mezzanine 3', owner: 'You', status: 'error', modified: '19 Apr' },
+    ];
+
+    /* ---------------- mini worksheet preview ---------------- */
+    function MiniPreview({ variant = 0, scale = 1 }) {
+      const fs = 9.5 * scale;
+      const lineRow = { display: 'flex', alignItems: 'center', gap: '0.35em', font: fs + 'px/1.3 var(--font-math)', color: 'var(--text-math)', whiteSpace: 'nowrap' };
+      const chip = (val, unit, tone) => (
+        <span style={{
+          display: 'inline-flex', alignItems: 'baseline', gap: '0.18em', padding: '0.5px 4px',
+          borderRadius: 3, background: tone === 'warn' ? 'var(--status-warning-bg)' : 'var(--accent-tint)',
+          color: tone === 'warn' ? 'var(--status-warning)' : 'var(--accent)', fontWeight: 600,
+        }}><span>{val}</span><span style={{ fontSize: '0.8em' }}>{unit}</span></span>
+      );
+      const eyebrow = (t) => (
+        <div style={{ font: '600 ' + (6.5 * scale) + 'px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{t}</div>
+      );
+      const sets = [
+        (<>
+          {eyebrow('1 · Inputs')}
+          <div style={lineRow}><Sub base="F" sub="t" /><Op>:=</Op><span>12</span><span style={{ fontSize: '0.82em' }}>kN</span></div>
+          <div style={lineRow}><It>d</It><Op>:=</Op><span>16</span><span style={{ fontSize: '0.82em' }}>mm</span></div>
+          {eyebrow('2 · Capacity')}
+          <div style={lineRow}><Sub base="N" sub="Rd" /><Op>=</Op>{chip('21.4', 'kN', 'ok')}</div>
+        </>),
+        (<>
+          {eyebrow('Deflection')}
+          <div style={lineRow}><It>w</It><Op>:=</Op><span>1.8</span><span style={{ fontSize: '0.82em' }}>kN/m</span></div>
+          <div style={lineRow}><span style={{ fontStyle: 'italic' }}>δ</span><Op>=</Op><Frac num={<span>5<It>w</It><Sup base="L" sup="4" /></span>} den={<span>384<It>EI</It></span>} /><Op>=</Op>{chip('38', 'mm', 'warn')}</div>
+        </>),
+        (<>
+          {eyebrow('Point load')}
+          <div style={lineRow}><It>P</It><Op>:=</Op><span>1.5</span><span style={{ fontSize: '0.82em' }}>kN</span></div>
+          <div style={lineRow}><Sub base="M" sub="Ed" /><Op>=</Op><It>P</It><Op>·</Op><It>h</It><Op>=</Op>{chip('1.65', 'kN·m', 'ok')}</div>
+          <div style={lineRow}><Sub base="σ" sub="b" /><Op>=</Op>{chip('142', 'MPa', 'ok')}</div>
+        </>),
+        (<>
+          {eyebrow('Bolt group')}
+          <div style={lineRow}><Sub base="V" sub="Ed" /><Op>:=</Op><span>84</span><span style={{ fontSize: '0.82em' }}>kN</span></div>
+          <div style={lineRow}><Sub base="r" sub="max" /><Op>=</Op><Sqrt>{<span><Sup base="x" sup="2" /><Op>+</Op><Sup base="y" sup="2" /></span>}</Sqrt></div>
+          <div style={lineRow}><Sub base="F" sub="v" /><Op>=</Op>{chip('19.2', 'kN', 'ok')}</div>
+        </>),
+      ];
+      return (
+        <div className="q-grid-mini" style={{
+          height: '100%', width: '100%', background: 'var(--surface-paper)',
+          padding: '12px 13px', overflow: 'hidden',
+        }}>
+          {sets[variant]}
+        </div>
+      );
+    }
+
+    /* ---------------- nav rail ---------------- */
+    function NavRail() {
+      const [active, setActive] = useState('home');
+      const items = [
+        { id: 'home', label: 'Home', icon: HomeI },
+        { id: 'worksheets', label: 'Worksheets', icon: SheetI },
+        { id: 'templates', label: 'Templates', icon: TplI },
+        { id: 'shared', label: 'Shared with me', icon: ShareI },
+        { id: 'trash', label: 'Trash', icon: TrashI },
+      ];
+      return (
+        <nav style={{
+          width: 232, flex: '0 0 232px', height: '100vh',
+          background: 'var(--surface-chrome)', borderRight: '1px solid var(--border-hairline)',
+          display: 'flex', flexDirection: 'column', padding: '18px 12px 12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 8px 18px' }}>
+            <QLogo size={24} />
+            <span style={{ font: '600 18px/1 var(--font-sans)', letterSpacing: '-0.01em' }}>Quanta</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {items.map((it) => {
+              const on = active === it.id;
+              return (
+                <button key={it.id} onClick={() => setActive(it.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 11, width: '100%',
+                  padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
+                  background: on ? 'var(--accent-tint)' : 'transparent',
+                  color: on ? 'var(--accent)' : 'var(--text-primary)',
+                  font: (on ? '600' : '500') + ' 13px/1 var(--font-sans)', textAlign: 'left',
+                  transition: 'background var(--dur-fast) var(--ease-out)',
+                }}
+                onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'var(--surface-hover)'; }}
+                onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent'; }}>
+                  <span style={{ display: 'inline-flex', color: on ? 'var(--accent)' : 'var(--text-muted)' }}>{it.icon(19)}</span>
+                  {it.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 18, padding: '0 10px' }}>
+            <div style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10 }}>Projects</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {['Acme Safety Engineering', 'Edge Protection', 'Plant 7 Retrofit'].map((p, i) => (
+                <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 9, font: '12.5px/1.2 var(--font-sans)', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 2, flex: '0 0 auto', background: ['var(--accent)', 'var(--status-pass)', 'var(--text-muted)'][i] }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 14, borderTop: '1px solid var(--border-hairline)' }}>
+            <button style={{
+              display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-hairline)', background: 'var(--surface-raised)', cursor: 'pointer', width: '100%', textAlign: 'left',
+            }}>
+              <span style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--ink)', color: 'var(--text-inverse)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: '600 11px/1 var(--font-sans)', flex: '0 0 auto' }}>A</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', font: '600 12px/1.2 var(--font-sans)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Acme Safety Eng.</span>
+                <span style={{ display: 'block', font: '11px/1.2 var(--font-sans)', color: 'var(--text-muted)' }}>Team · 14 seats</span>
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>{ChevronD(15)}</span>
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 8px' }}>
+              <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#1F5FBF', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: '600 11px/1 var(--font-sans)', flex: '0 0 auto' }}>NB</span>
+              <span style={{ flex: 1, minWidth: 0, font: '12.5px/1.2 var(--font-sans)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Nadia Brunel</span>
+              <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{SettingsI(17)}</span>
+            </div>
+          </div>
+        </nav>
+      );
+    }
+
+    /* ---------------- new worksheet split button ---------------- */
+    function NewWorksheetButton() {
+      const [open, setOpen] = useState(false);
+      const ref = useRef(null);
+      useEffect(() => {
+        const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+      }, []);
+      const menu = [
+        { icon: BlankI, label: 'Blank worksheet', sub: 'Start from an empty page' },
+        { icon: TplI, label: 'From template', sub: 'Pick a pre-built calc' },
+        { icon: ImportI, label: 'Import .xlsx / Mathcad', sub: 'Bring an existing file' },
+      ];
+      return (
+        <div ref={ref} style={{ position: 'relative', flex: '0 0 auto' }}>
+          <div style={{ display: 'inline-flex', height: 38, borderRadius: 'var(--radius-sm)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: '100%',
+              background: 'var(--accent)', color: 'var(--text-inverse)', border: 'none',
+              font: '500 13px/1 var(--font-sans)', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--accent-press)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent)'}>
+              {PlusI(17)} New worksheet
+            </button>
+            <button onClick={() => setOpen((o) => !o)} aria-label="More new options" style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: '100%',
+              background: 'var(--accent)', color: 'var(--text-inverse)', border: 'none',
+              borderLeft: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--accent-press)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent)'}>
+              <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }}>{ChevronD(16)}</span>
+            </button>
+          </div>
+          {open && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 268, zIndex: 60,
+              background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)',
+              borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-popover)', padding: 6,
+            }}>
+              {menu.map((m) => (
+                <button key={m.label} onClick={() => setOpen(false)} style={{
+                  display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '8px 9px',
+                  border: 'none', background: 'transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <span style={{ color: 'var(--text-muted)', display: 'inline-flex', flex: '0 0 auto' }}>{m.icon(18)}</span>
+                  <span>
+                    <span style={{ display: 'block', font: '500 13px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{m.label}</span>
+                    <span style={{ display: 'block', font: '11.5px/1.3 var(--font-sans)', color: 'var(--text-muted)' }}>{m.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ---------------- top bar ---------------- */
+    function TopBar({ mode, setMode }) {
+      return (
+        <header style={{
+          display: 'flex', alignItems: 'center', gap: 24,
+          padding: '0 32px', height: 72, flex: '0 0 72px',
+          borderBottom: '1px solid var(--border-hairline)', background: 'var(--surface-paper)',
+        }}>
+          <div style={{ flex: '0 0 auto', minWidth: 200 }}>
+            <div style={{ font: '600 18px/1.2 var(--font-sans)', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Good afternoon, Nadia</div>
+            <div style={{ font: '12.5px/1.3 var(--font-sans)', color: 'var(--text-muted)', marginTop: 2 }}>Acme Safety Engineering · 3 projects</div>
+          </div>
+
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 460, position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>{SearchI(16)}</span>
+              <input placeholder="Search worksheets, templates, functions…" style={{
+                width: '100%', height: 38, padding: '0 12px 0 34px', borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-strong)', background: 'var(--surface-raised)',
+                font: '13.5px/1 var(--font-sans)', color: 'var(--text-primary)', outline: 'none',
+              }}
+              onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent)'; }}
+              onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none'; }} />
+              <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', border: '1px solid var(--border-hairline)', borderRadius: 4, padding: '2px 5px', pointerEvents: 'none' }}>⌘K</span>
+            </div>
+          </div>
+
+          <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ display: 'inline-flex', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+              {[['home', 'Populated'], ['empty', 'New account']].map(([v, l]) => (
+                <button key={v} onClick={() => setMode(v)} style={{
+                  padding: '6px 10px', border: 'none', cursor: 'pointer',
+                  background: mode === v ? 'var(--accent-tint)' : 'var(--surface-raised)',
+                  color: mode === v ? 'var(--accent)' : 'var(--text-muted)',
+                  font: (mode === v ? '600' : '500') + ' 11.5px/1 var(--font-sans)',
+                }}>{l}</button>
+              ))}
+            </div>
+            <NewWorksheetButton />
+          </div>
+        </header>
+      );
+    }
+
+    /* ---------------- section header ---------------- */
+    function SectionHeader({ title, action, first }) {
+      return (
+        <div style={{
+          display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+          marginTop: first ? 0 : 34, marginBottom: 16,
+          paddingTop: first ? 0 : 28, borderTop: first ? 'none' : '1px solid var(--border-hairline)',
+        }}>
+          <h2 style={{ margin: 0, font: '600 15px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>{title}</h2>
+          {action && <span className="q-link" style={{ font: '12.5px/1 var(--font-sans)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>{action} {ArrowR(14)}</span>}
+        </div>
+      );
+    }
+
+    const Avatar = ({ name, bg }) => {
+      const initials = name === 'You' ? 'NB' : name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+      return <span style={{ width: 22, height: 22, borderRadius: '50%', background: bg, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: '600 10px/1 var(--font-sans)', flex: '0 0 auto' }}>{initials}</span>;
+    };
+    const ownerColor = (n) => n === 'You' ? '#1F5FBF' : n[0] === 'M' ? '#1E8E5A' : '#7A5BBF';
+
+    const StatusChip = ({ status }) => {
+      if (status === 'pass') return <Badge tone="pass" dot>All current</Badge>;
+      if (status === 'warning') return <Badge tone="warning" dot>Needs recalculate</Badge>;
+      if (status === 'error') return <Badge tone="error" dot>Has errors</Badge>;
+      return null;
+    };
+
+    /* ---------------- recent card ---------------- */
+    function RecentCard({ item }) {
+      return (
+        <div className="card-lift" style={{
+          border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)',
+          background: 'var(--surface-raised)', overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{ height: 'var(--d-thumb)', borderBottom: '1px solid var(--border-hairline)', position: 'relative' }}>
+            <MiniPreview variant={item.preview} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, var(--surface-raised))' }} />
+          </div>
+          <div style={{ padding: '12px 14px 13px' }}>
+            <div style={{ font: '600 13.5px/1.35 var(--font-sans)', color: 'var(--text-primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 36 }}>{item.title}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9 }}>
+              <span style={{ font: '11px/1 var(--font-sans)', color: 'var(--text-muted)', background: 'var(--chrome)', border: '1px solid var(--border-hairline)', borderRadius: 4, padding: '3px 6px' }}>{item.project}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>{ClockI(13)} {item.edited}</span>
+              <StatusChip status={item.status} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ---------------- template card ---------------- */
+    function TemplateCard({ item }) {
+      return (
+        <div className="tpl-card" style={{ flex: '0 0 210px', width: 210, cursor: 'pointer' }}>
+          <div className="tpl-thumb card-lift" style={{
+            height: 'var(--d-thumb)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)',
+            overflow: 'hidden', background: 'var(--surface-raised)', position: 'relative',
+          }}>
+            <MiniPreview variant={item.preview} scale={0.95} />
+            <span style={{ position: 'absolute', top: 8, right: 8, font: '10px/1 var(--font-sans)', color: 'var(--accent)', background: 'var(--accent-tint)', borderRadius: 4, padding: '3px 6px', letterSpacing: '0.02em' }}>Template</span>
+          </div>
+          <div style={{ padding: '10px 2px 0' }}>
+            <div style={{ font: '600 13px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{item.title}</div>
+            <div style={{ font: '11.5px/1.2 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{item.cat}</div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ---------------- projects table ---------------- */
+    const COLS = '1fr 168px 150px 160px 116px 40px';
+    function ProjectsTable() {
+      return (
+        <div style={{ border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--surface-raised)' }}>
+          <div style={{
+            display: 'grid', gridTemplateColumns: COLS, gap: 16, padding: 'var(--d-row-y) var(--d-row-x)',
+            borderBottom: '1px solid var(--border-hairline)', background: 'var(--surface-chrome)',
+            font: '600 11px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)',
+          }}>
+            <span>Name</span><span>Project</span><span>Owner</span><span>Calc status</span><span>Modified</span><span></span>
+          </div>
+          {PROJECTS.map((r, i) => (
+            <div key={i} className="row-hover" style={{
+              display: 'grid', gridTemplateColumns: COLS, gap: 16, alignItems: 'center', padding: 'var(--d-row-y) var(--d-row-x)',
+              borderBottom: i < PROJECTS.length - 1 ? '1px solid var(--border-hairline)' : 'none',
+              cursor: 'pointer', transition: 'background var(--dur-fast) var(--ease-out)',
+            }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{ color: r.kind === 'folder' ? 'var(--accent)' : 'var(--text-muted)', display: 'inline-flex', flex: '0 0 auto' }}>{r.kind === 'folder' ? FolderI(18) : SheetI(17)}</span>
+                <span style={{ font: (r.kind === 'folder' ? '600 ' : '500 ') + '13px/1.3 var(--font-sans)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              </span>
+              <span style={{ font: '12.5px/1.2 var(--font-sans)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.project}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <Avatar name={r.owner} bg={ownerColor(r.owner)} />
+                <span style={{ font: '12.5px/1.2 var(--font-sans)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.owner}</span>
+              </span>
+              <span>{r.status ? <StatusChip status={r.status} /> : <span style={{ color: 'var(--text-muted)', font: '12.5px var(--font-sans)' }}>—</span>}</span>
+              <span style={{ font: '12.5px/1.2 var(--font-sans)', color: 'var(--text-muted)' }}>{r.modified}</span>
+              <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <IconButton label="More" size="sm">{KebabI(17)}</IconButton>
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ---------------- empty state ---------------- */
+    function EmptyState() {
+      const suggestions = TEMPLATES.slice(0, 3);
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 72px - 64px)', padding: '40px 0' }}>
+          <div style={{ width: '100%', maxWidth: 520, textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, margin: '0 auto 20px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-raised)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+              <QLogo size={30} />
+            </div>
+            <h2 style={{ margin: '0 0 8px', font: '600 22px/1.25 var(--font-sans)', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Create your first worksheet</h2>
+            <p style={{ margin: '0 auto 22px', maxWidth: 380, font: '13.5px/1.55 var(--font-sans)', color: 'var(--text-muted)' }}>
+              Write calculations that render as textbook math, track units, and recalculate the moment any value changes.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 36 }}>
+              <Button variant="primary" iconLeft={PlusI(16)} style={{ height: 40, fontSize: 14 }}>New worksheet</Button>
+              <Button variant="secondary" iconLeft={ImportI(16)} style={{ height: 40, fontSize: 14 }}>Import a file</Button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
+              <span style={{ font: '11px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Or start from a template</span>
+              <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              {suggestions.map((t) => (
+                <div key={t.title} className="card-lift" style={{ border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)', overflow: 'hidden', cursor: 'pointer', textAlign: 'left' }}>
+                  <div style={{ height: 84, borderBottom: '1px solid var(--border-hairline)' }}><MiniPreview variant={t.preview} scale={0.78} /></div>
+                  <div style={{ padding: '9px 11px' }}>
+                    <div style={{ font: '600 12px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{t.title}</div>
+                    <div style={{ font: '11px/1.2 var(--font-sans)', color: 'var(--text-muted)', marginTop: 2 }}>{t.cat}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ---------------- main ---------------- */
+    function Main({ mode, setMode }) {
+      return (
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          <TopBar mode={mode} setMode={setMode} />
+          <div className="scroll-y" style={{ flex: 1, padding: mode === 'empty' ? '0 32px' : '28px 32px 48px' }}>
+            {mode === 'empty' ? <EmptyState /> : (
+              <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+                <SectionHeader title="Continue working" action="All worksheets" first />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18 }}>
+                  {RECENTS.map((r, i) => <RecentCard key={i} item={r} />)}
+                </div>
+
+                <SectionHeader title="Start from a template" action="Browse templates" />
+                <div className="scroll-x" style={{ display: 'flex', gap: 16, paddingBottom: 10, margin: '0 -32px', padding: '0 32px 10px' }}>
+                  {TEMPLATES.map((t, i) => <TemplateCard key={i} item={t} />)}
+                </div>
+
+                <SectionHeader title="Your projects" action="Open file browser" />
+                <ProjectsTable />
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [mode, setMode] = useState('home');
+      return (
+        <div style={{ display: 'flex', height: '100vh' }} data-screen-label="Dashboard / Home">
+          <NavRail />
+          <Main mode={mode} setMode={setMode} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

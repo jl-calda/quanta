@@ -1,0 +1,63 @@
+/* ==========================================================================
+   Quanta — Base element styles
+   Minimal, token-driven defaults so consuming surfaces inherit the
+   "engineering ledger" feel without extra wiring.
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-13);
+  line-height: var(--leading-normal);
+  font-weight: var(--weight-regular);
+  color: var(--text-primary);
+  background: var(--surface-paper);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv01', 'ss01';
+  text-wrap: pretty;
+}
+
+h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: var(--weight-semibold); line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); }
+p { margin: 0; }
+
+a { color: var(--text-link); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+code, kbd, pre, samp { font-family: var(--font-mono); }
+
+/* The eyebrow: 11–12px uppercase tracked — section labels only */
+.q-eyebrow {
+  font-size: var(--text-11);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Math notation helper — apply to any rendered equation block */
+.q-math {
+  font-family: var(--font-math);
+  color: var(--text-math);
+  font-feature-settings: 'ss01';
+}
+
+/* Monospace formula-edit helper */
+.q-formula {
+  font-family: var(--font-mono);
+  font-size: var(--text-14);
+  color: var(--text-primary);
+}
+
+/* Visible keyboard focus ring — accessibility floor */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+::selection { background: var(--blueprint-tint); color: var(--ink); }

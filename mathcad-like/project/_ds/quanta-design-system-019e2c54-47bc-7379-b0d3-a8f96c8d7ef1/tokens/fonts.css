@@ -1,0 +1,10 @@
+/* ==========================================================================
+   Quanta — Webfonts
+   Geist Sans  : UI, labels, body
+   Geist Mono  : formula-edit, code, table cells
+   STIX Two Text : math notation (textbook serif w/ true math glyphs)
+   Loaded from Google Fonts CDN. All three are genuine open fonts — Geist is
+   Vercel's own family, STIX Two is the AMS/STI Pub scientific face.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=STIX+Two+Text:ital,wght@0,400..700;1,400..700&display=swap');

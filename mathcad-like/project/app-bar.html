@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — App bar specimen</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 0.9s linear infinite; transform-origin: center; }
+
+  /* tooltip */
+  .tt { position: relative; }
+  .tt::after {
+    content: attr(data-tt);
+    position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(-3px);
+    background: var(--ink); color: var(--text-inverse); font: 500 11.5px/1 var(--font-sans);
+    padding: 6px 9px; border-radius: 5px; white-space: nowrap; box-shadow: var(--shadow-popover);
+    opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); z-index: 20;
+  }
+  .tt::before {
+    content: ''; position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-bottom-color: var(--ink); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); z-index: 20;
+  }
+  .tt:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .tt:hover::before { opacity: 1; }
+
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button) { return setTimeout(start, 40); }
+    const { Button, Badge } = Q;
+    const { useState, useEffect } = React;
+
+    const svg = (c, s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      menu: (s) => svg(<><path d="M4 7h16M4 12h16M4 17h16"/></>, s),
+      lock: (s) => svg(<><rect x="5" y="10.5" width="14" height="9.5" rx="1.6"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></>, s),
+      refresh: (s) => svg(<><path d="M20.5 11A8.5 8.5 0 1 0 18 17.5"/><path d="M20.5 5.5V11H15"/></>, s),
+      check: (s) => svg(<path d="M5 12l4.5 4.5L19 7"/>, s),
+      spinner: (s) => svg(<><path d="M12 3a9 9 0 1 0 9 9" opacity="0.9"/></>, s),
+      dot: (s) => svg(<circle cx="12" cy="12" r="5"/>, s),
+      play: (s) => svg(<path d="M8 5.5l10 6.5-10 6.5z"/>, s),
+      share: (s) => svg(<><circle cx="18" cy="5.5" r="2.3"/><circle cx="6" cy="12" r="2.3"/><circle cx="18" cy="18.5" r="2.3"/><path d="M8.1 10.8 15.9 6.7M8.1 13.2l7.8 4.1"/></>, s),
+      comment: (s) => svg(<path d="M5 5h14a1.2 1.2 0 0 1 1.2 1.2v8.4A1.2 1.2 0 0 1 19 15.8H9.5L5.5 19.5V6.2A1.2 1.2 0 0 1 6.7 5z"/>, s),
+      sparkle: (s) => svg(<><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z"/><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8z"/></>, s),
+      alert: (s) => svg(<><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></>, s),
+    };
+
+    const QMark = ({ size = 20 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- autosave status indicator ---- */
+    function AutosaveStatus({ state }) {
+      if (state === 'saving') return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}><span className="spin" style={{ display: 'inline-flex', color: 'var(--text-muted)' }}>{I.spinner(13)}</span>Saving…</span>;
+      if (state === 'unsaved') return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '11.5px/1 var(--font-sans)', color: 'var(--status-warning)' }}><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>*</span>Unsaved</span>;
+      return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}><span style={{ display: 'inline-flex', color: 'var(--status-pass)' }}>{I.check(13)}</span>Saved</span>;
+    }
+
+    /* ---- calc-status chip ---- */
+    function CalcChip({ variant }) {
+      if (variant === 'current') return <Badge tone="pass" dot>All current</Badge>;
+      if (variant === 'needs') return <Badge tone="warning" dot>Needs recalculate</Badge>;
+      return <Badge tone="error" dot>1 error</Badge>;
+    }
+
+    /* ---- the app bar ---- */
+    function AppBar({ calcMode, setCalcMode, autosave, calc }) {
+      const ghost = (icon, tt, badge) => (
+        <span className="tt" data-tt={tt} style={{ position: 'relative' }}>
+          <button aria-label={tt} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: 'none', background: 'transparent', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}>{icon}</button>
+          {badge != null && <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 15, height: 15, padding: '0 4px', borderRadius: 99, background: 'var(--accent)', color: '#fff', font: '600 9.5px/15px var(--font-sans)', textAlign: 'center', pointerEvents: 'none' }}>{badge}</span>}
+        </span>
+      );
+      return (
+        <header style={{ display: 'flex', alignItems: 'center', gap: 12, height: 40, padding: '0 10px', background: 'var(--surface-chrome)', borderBottom: '1px solid var(--border-hairline)' }}>
+          {/* left */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto', minWidth: 0 }}>
+            <span className="tt" data-tt="Menu"><button aria-label="Menu" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: 'none', background: 'transparent', borderRadius: 6, color: 'var(--text-muted)', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}>{I.menu(18)}</button></span>
+            <span style={{ width: 1, height: 18, background: 'var(--border-hairline)' }} />
+            <QMark size={18} />
+            <input defaultValue="Roof anchor point — pull-out check" spellCheck={false} style={{ border: 'none', background: 'transparent', outline: 'none', font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', width: 256, padding: '5px 6px', borderRadius: 4 }} onFocus={(e) => e.target.style.background = 'var(--surface-raised)'} onBlur={(e) => e.target.style.background = 'transparent'} />
+            <span className="tt" data-tt="Shared · read-only for viewers" style={{ display: 'inline-flex', color: 'var(--text-muted)' }}>{I.lock(14)}</span>
+            <AutosaveStatus state={autosave} />
+          </div>
+
+          {/* center */}
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 9 }}>
+            <div style={{ display: 'inline-flex', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', height: 26 }}>
+              {['Auto', 'Manual'].map((m) => {
+                const on = calcMode === m.toLowerCase();
+                return <button key={m} onClick={() => setCalcMode(m.toLowerCase())} style={{ padding: '0 11px', height: '100%', border: 'none', borderLeft: m === 'Manual' ? '1px solid var(--border-hairline)' : 'none', cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', color: on ? 'var(--accent)' : 'var(--text-muted)', font: (on ? '600' : '500') + ' 12px/1 var(--font-sans)' }}>{m}</button>;
+              })}
+            </div>
+            <span className="tt" data-tt={calcMode === 'auto' ? 'Auto mode recalculates automatically' : 'Recalculate now'}>
+              <button disabled={calcMode === 'auto'} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', cursor: calcMode === 'auto' ? 'not-allowed' : 'pointer', color: calcMode === 'auto' ? 'var(--text-muted)' : 'var(--text-primary)', font: '500 12px/1 var(--font-sans)', opacity: calcMode === 'auto' ? 0.5 : 1 }}>{I.refresh(14)} Recalculate</button>
+            </span>
+            <CalcChip variant={calc} />
+          </div>
+
+          {/* right */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
+            <span className="tt" data-tt="Present mode"><button style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--text-muted)', font: '500 12.5px/1 var(--font-sans)', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}>{I.play(14)} Present</button></span>
+            <Button variant="primary" size="sm" iconLeft={I.share(15)} style={{ height: 30 }}>Share</Button>
+            {ghost(I.comment(18), 'Comments', 3)}
+            <span className="tt" data-tt="Ask Quanta AI"><button aria-label="Ask Quanta AI" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)', background: 'var(--accent-tint)', borderRadius: 6, color: 'var(--accent)', cursor: 'pointer' }}>{I.sparkle(17)}</button></span>
+            <span className="tt" data-tt="Nadia Brunel"><span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: '600 11px/1 var(--font-sans)', marginLeft: 3, cursor: 'pointer' }}>NB</span></span>
+          </div>
+        </header>
+      );
+    }
+
+    /* ---- specimen scaffolding ---- */
+    const Label = ({ children }) => <div style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{children}</div>;
+    const Caption = ({ children }) => <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 8 }}>{children}</div>;
+
+    function Frame({ children, pad }) {
+      return <div style={{ border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>{children}</div>;
+    }
+
+    function Board() {
+      const [calcMode, setCalcMode] = useState('manual');
+      const [autosave, setAutosave] = useState('saved');
+      const [calc, setCalc] = useState('current');
+
+      // live cycle the autosave state (Saving → Saved → Unsaved → …)
+      useEffect(() => {
+        const order = ['saving', 'saved', 'unsaved'];
+        let i = 1;
+        const t = setInterval(() => { i = (i + 1) % order.length; setAutosave(order[i]); }, 1800);
+        return () => clearInterval(t);
+      }, []);
+
+      return (
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 40px 64px' }} data-screen-label="App bar specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Editor component</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>App bar</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 640 }}>The 40px top bar of the worksheet editor. Hover the icon buttons for tooltips; the autosave status cycles live through its three states.</p>
+
+          {/* full-width bar */}
+          <div style={{ marginTop: 32 }}>
+            <Label>Full width · 40px</Label>
+            <Frame><AppBar calcMode={calcMode} setCalcMode={setCalcMode} autosave={autosave} calc={calc} /></Frame>
+            <Caption>Left: menu · wordmark · editable title · lock · live autosave status. Center: Auto/Manual toggle · Recalculate (disabled under Auto) · calc-status chip. Right: Present · Share · comments (badge) · AI · avatar.</Caption>
+          </div>
+
+          {/* zoomed detail — center calc controls at 2x */}
+          <div style={{ marginTop: 40 }}>
+            <Label>Zoomed detail · calc controls (2×)</Label>
+            <div style={{ border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-paper)', padding: '36px 40px', display: 'flex', justifyContent: 'center', backgroundImage: 'radial-gradient(var(--grid-dot) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+              <div style={{ transform: 'scale(2)', transformOrigin: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+                  <div style={{ display: 'inline-flex', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', height: 26 }}>
+                    {['Auto', 'Manual'].map((m) => { const on = calcMode === m.toLowerCase(); return <button key={m} onClick={() => setCalcMode(m.toLowerCase())} style={{ padding: '0 11px', height: '100%', border: 'none', borderLeft: m === 'Manual' ? '1px solid var(--border-hairline)' : 'none', cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', color: on ? 'var(--accent)' : 'var(--text-muted)', font: (on ? '600' : '500') + ' 12px/1 var(--font-sans)' }}>{m}</button>; })}
+                  </div>
+                  <button disabled={calcMode === 'auto'} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', cursor: calcMode === 'auto' ? 'not-allowed' : 'pointer', color: calcMode === 'auto' ? 'var(--text-muted)' : 'var(--text-primary)', font: '500 12px/1 var(--font-sans)', opacity: calcMode === 'auto' ? 0.5 : 1 }}>{I.refresh(14)} Recalculate</button>
+                  <CalcChip variant={calc} />
+                </div>
+              </div>
+            </div>
+            <Caption>Toggle Auto/Manual above to see the Recalculate button enable and disable. Switch the calc chip below to preview it here.</Caption>
+          </div>
+
+          {/* variant strips */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 40 }}>
+            <div>
+              <Label>Autosave states</Label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--surface-raised)' }}>
+                {[['saving', 'After an edit — writing to the server'], ['saved', 'Steady state — all changes persisted'], ['unsaved', 'Edits pending (offline or paused)']].map(([st, desc], i) => (
+                  <div key={st} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', borderTop: i ? '1px solid var(--border-hairline)' : 'none' }}>
+                    <span style={{ width: 92, flex: '0 0 auto' }}><AutosaveStatus state={st} /></span>
+                    <span style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)' }}>{desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label>Calc-status chips</Label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--surface-raised)' }}>
+                {[['current', 'All regions evaluated, units consistent'], ['needs', 'A value changed — recalc pending (Manual)'], ['error', 'A region failed — unit mismatch or undefined']].map(([v, desc], i) => (
+                  <button key={v} onClick={() => setCalc(v)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', borderTop: i ? '1px solid var(--border-hairline)' : 'none', border: i ? '' : 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', background: calc === v ? 'var(--surface-selected)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                    <span style={{ width: 132, flex: '0 0 auto' }}><CalcChip variant={v} /></span>
+                    <span style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)' }}>{desc}</span>
+                  </button>
+                ))}
+              </div>
+              <Caption>Click a chip to preview it in the bar and zoom above.</Caption>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

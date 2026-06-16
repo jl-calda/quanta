@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Left panel specimen</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+
+  .scroll-y { overflow-y: auto; scrollbar-width: thin; }
+  .scroll-y::-webkit-scrollbar { width: 8px; }
+  .scroll-y::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+
+  .lp-row { transition: background var(--dur-fast) var(--ease-out); }
+  .lp-row:hover { background: var(--surface-hover); }
+  .lp-row .row-add { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+  .lp-row:hover .row-add { opacity: 1; }
+
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button || !Q.Sub) { return setTimeout(start, 40); }
+    const { Sub, Sup } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      search: (s) => svg(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></>, s),
+      plus: (s) => svg(<path d="M12 6v12M6 12h12"/>, s),
+      plusSm: (s) => svg(<path d="M12 7v10M7 12h10"/>, s),
+      chevR: (s) => svg(<path d="m9.5 6 6 6-6 6"/>, s),
+      folder: (s) => svg(<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h3.8l2 2.5h7.2A1.5 1.5 0 0 1 19 10v8A1.5 1.5 0 0 1 17.5 19.5h-13A1.5 1.5 0 0 1 3 18z"/>, s),
+      folderOpen: (s) => svg(<><path d="M3.5 18.5 6 11a1.4 1.4 0 0 1 1.3-1h12.2a.9.9 0 0 1 .85 1.2l-2 6.5a1.4 1.4 0 0 1-1.34 1H4.5A1 1 0 0 1 3.5 18.5z"/><path d="M3.2 16V6.5A1.5 1.5 0 0 1 4.7 5h3.6l2 2.5h6.5A1.5 1.5 0 0 1 18.3 9v1.5"/></>, s),
+      sheet: (s) => svg(<><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></>, s),
+      alert: (s) => svg(<><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></>, s),
+      hash: (s) => svg(<path d="M9 4 7 20M17 4l-2 16M5 9h14M4 15h14"/>, s),
+      dot: (s) => svg(<circle cx="12" cy="12" r="4"/>, s),
+    };
+
+    const QMark = ({ size = 22 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    // math-styled name (italic var + true subscript)
+    const Name = ({ b, s, sup }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic', fontSize: 13.5 }}>{b}{s && <sub style={{ fontSize: '0.66em', fontStyle: 'normal' }}>{s}</sub>}{sup && <sup style={{ fontSize: '0.66em', fontStyle: 'normal' }}>{sup}</sup>}</span>;
+
+    /* =================== shared panel chrome =================== */
+    function PanelTabs({ tab, setTab }) {
+      const tabs = [['outline', 'Outline'], ['variables', 'Variables'], ['files', 'Files']];
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', padding: '0 4px', borderBottom: '1px solid var(--border-hairline)', flex: '0 0 auto' }}>
+          {tabs.map(([id, label]) => {
+            const on = tab === id;
+            return (
+              <button key={id} onClick={() => setTab(id)} style={{ position: 'relative', flex: 1, height: 36, border: 'none', background: 'none', cursor: 'pointer', color: on ? 'var(--text-primary)' : 'var(--text-muted)', font: (on ? '600' : '500') + ' 12px/1 var(--font-sans)' }}>
+                {label}
+                {on && <span style={{ position: 'absolute', left: 8, right: 8, bottom: -1, height: 2, background: 'var(--accent)' }} />}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    /* =================== OUTLINE =================== */
+    const OUTLINE = [
+      { t: 'Roof anchor point — pull-out check', lvl: 0, page: 1, kind: 'title' },
+      { t: 'Design inputs', lvl: 1, page: 1 },
+      { t: 'Anchor tensile capacity', lvl: 1, page: 1, current: true },
+      { t: 'Tensile stress area', lvl: 2, page: 1 },
+      { t: 'Capacity check', lvl: 2, page: 1 },
+      { t: 'Utilization', lvl: 1, page: 1 },
+      { t: 'Anchor schedule', lvl: 1, page: 1, tag: 'table' },
+      { t: 'Capacity vs. edge distance', lvl: 1, page: 2, tag: 'plot' },
+      { t: 'Concrete cone breakout', lvl: 0, page: 2 },
+      { t: 'CCD method', lvl: 1, page: 2 },
+      { t: 'Edge & spacing factors', lvl: 2, page: 2 },
+      { t: 'Summary & sign-off', lvl: 0, page: 3 },
+    ];
+    function OutlineTab() {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px 7px', flex: '0 0 auto' }}>
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Contents</span>
+            <button style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: 'var(--accent)', font: '500 11.5px/1 var(--font-sans)', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}>{I.plusSm(13)} heading</button>
+          </div>
+          <div className="scroll-y" style={{ flex: 1, minHeight: 0, padding: '0 6px 8px' }}>
+            {OUTLINE.map((o, i) => (
+              <button key={i} className="lp-row" style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '6px 8px', paddingLeft: 8 + o.lvl * 15, border: 'none', background: o.current ? 'var(--accent-tint)' : 'transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', borderLeft: '2px solid ' + (o.current ? 'var(--accent)' : 'transparent') }}>
+                {o.lvl > 0 && <span style={{ width: 4, height: 4, borderRadius: '50%', background: o.current ? 'var(--accent)' : 'var(--border-strong)', flex: '0 0 auto' }} />}
+                <span style={{ flex: 1, minWidth: 0, font: (o.lvl === 0 ? '600 ' : '400 ') + (o.lvl === 0 ? '12.5' : '12') + 'px/1.3 var(--font-sans)', color: o.current ? 'var(--accent)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.t}</span>
+                {o.tag && <span style={{ font: '9px/1 var(--font-mono)', color: 'var(--text-muted)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '1px 3px', flex: '0 0 auto' }}>{o.tag}</span>}
+                <span style={{ font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', flex: '0 0 auto', width: 12, textAlign: 'right' }}>{o.page}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* =================== VARIABLES =================== */
+    const VARS = [
+      { area: 'Design inputs', items: [
+        { name: <Name b="F" s="t" />, val: '12.0', unit: 'kN', refs: 3 },
+        { name: <Name b="φ" />, val: '0.75', unit: '', refs: 2 },
+        { name: <Name b="d" />, val: '16', unit: 'mm', refs: 4 },
+        { name: <Name b="f" s="ub" />, val: '700', unit: 'MPa', refs: 1 },
+      ] },
+      { area: 'Anchor tensile capacity', items: [
+        { name: <Name b="A" s="s" />, val: '157', unit: 'mm²', refs: 2 },
+        { name: <Name b="N" s="Rd" />, val: '52.8', unit: 'kN', refs: 3 },
+      ] },
+      { area: 'Utilization', items: [
+        { name: <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic', fontSize: 13.5 }}>UR</span>, val: '0.23', unit: '', refs: 1 },
+        { name: <Name b="M" s="a" />, val: '—', unit: '', refs: 0, err: 'Units don’t match' },
+      ] },
+    ];
+    function VariablesTab() {
+      const [q, setQ] = useState('');
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+          <div style={{ padding: '9px 10px 8px', flex: '0 0 auto' }}>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>{I.search(14)}</span>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search variables…" style={{ width: '100%', height: 30, padding: '0 10px 0 30px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '12px/1 var(--font-sans)', color: 'var(--text-primary)', outline: 'none' }} onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent)'; }} onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none'; }} />
+            </div>
+          </div>
+          <div className="scroll-y" style={{ flex: 1, minHeight: 0, padding: '0 6px 8px' }}>
+            {VARS.map((g) => {
+              const items = g.items.filter((it) => !q || (typeof it.name === 'string' ? it.name : '').toLowerCase().includes(q.toLowerCase()) || true);
+              return (
+                <div key={g.area} style={{ marginBottom: 4 }}>
+                  <div style={{ padding: '8px 8px 5px', font: '600 9.5px/1 var(--font-sans)', letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{g.area}</div>
+                  {items.map((it, i) => (
+                    <button key={i} className="lp-row" style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 8px', border: 'none', background: 'transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: it.err ? 'var(--status-error)' : 'var(--accent)', flex: '0 0 auto' }} />
+                      <span style={{ flex: 1, minWidth: 0 }}>{it.name}</span>
+                      {it.err ? (
+                        <span title={it.err} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--status-error)', font: '10.5px/1 var(--font-sans)' }}>{I.alert(13)}</span>
+                      ) : (
+                        <>
+                          <span style={{ font: '12px/1 var(--font-mono)', color: 'var(--text-primary)', flex: '0 0 auto' }}>{it.val}</span>
+                          <span style={{ font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', width: 30, flex: '0 0 auto' }}>{it.unit}</span>
+                          <span title={it.refs + ' references'} style={{ font: '10px/1 var(--font-sans)', color: 'var(--text-muted)', flex: '0 0 auto', width: 30, textAlign: 'right' }}>{it.refs === 0 ? '—' : 'used ' + it.refs + '×'}</span>
+                        </>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--border-hairline)', padding: '8px 12px', font: '11px/1.4 var(--font-sans)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-flex', color: 'var(--status-error)' }}>{I.alert(13)}</span> 1 name has a unit conflict
+          </div>
+        </div>
+      );
+    }
+
+    /* =================== FILES =================== */
+    const TREE = [
+      { name: 'Zoo lifeline retrofit', folder: true, open: true, lvl: 0 },
+      { name: 'Anchors', folder: true, open: true, lvl: 1 },
+      { name: 'Roof anchor point — pull-out check', lvl: 2, active: true },
+      { name: 'Column anchors — grid A', lvl: 2 },
+      { name: 'Column anchors — grid B', lvl: 2 },
+      { name: 'Spans', folder: true, lvl: 1 },
+      { name: 'Calc check log', folder: true, lvl: 1 },
+      { name: 'Edge Protection', folder: true, lvl: 0 },
+      { name: 'Shared library', folder: true, lvl: 0 },
+    ];
+    function FilesTab() {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px 7px', flex: '0 0 auto' }}>
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Project</span>
+          </div>
+          <div className="scroll-y" style={{ flex: 1, minHeight: 0, padding: '0 6px 8px' }}>
+            {TREE.map((f, i) => (
+              <button key={i} className="lp-row" style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '6px 8px', paddingLeft: 8 + f.lvl * 15, border: 'none', background: f.active ? 'var(--accent-tint)' : 'transparent', borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left', borderLeft: '2px solid ' + (f.active ? 'var(--accent)' : 'transparent') }}>
+                {f.folder && <span style={{ display: 'inline-flex', color: 'var(--text-muted)', transform: f.open ? 'rotate(90deg)' : 'none', transition: 'transform var(--dur-fast)', flex: '0 0 auto' }}>{I.chevR(12)}</span>}
+                {!f.folder && <span style={{ width: 12, flex: '0 0 auto' }} />}
+                <span style={{ display: 'inline-flex', color: f.folder ? 'var(--accent)' : (f.active ? 'var(--accent)' : 'var(--text-muted)'), flex: '0 0 auto' }}>{f.folder ? (f.open ? I.folderOpen(15) : I.folder(15)) : I.sheet(14)}</span>
+                <span style={{ flex: 1, minWidth: 0, font: (f.folder ? '600 ' : '400 ') + '12px/1.3 var(--font-sans)', color: f.active ? 'var(--accent)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* =================== a single 240px panel =================== */
+    function Panel({ initial }) {
+      const [tab, setTab] = useState(initial);
+      return (
+        <div style={{ width: 240, height: 460, display: 'flex', flexDirection: 'column', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+          <PanelTabs tab={tab} setTab={setTab} />
+          {tab === 'outline' && <OutlineTab />}
+          {tab === 'variables' && <VariablesTab />}
+          {tab === 'files' && <FilesTab />}
+        </div>
+      );
+    }
+
+    const Label = ({ children }) => <div style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{children}</div>;
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 40px 64px' }} data-screen-label="Left panel specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Editor component</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Left panel</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 640 }}>The 240px navigator beside the canvas, with three tabs. Each is shown as a separate frame; the tabs are live, so you can switch any frame.</p>
+
+          <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 32 }}>
+            <div><Label>Outline</Label><Panel initial="outline" /></div>
+            <div><Label>Variables</Label><Panel initial="variables" /></div>
+            <div><Label>Files</Label><Panel initial="files" /></div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

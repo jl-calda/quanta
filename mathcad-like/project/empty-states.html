@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Empty states</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .board-grid {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button) { return setTimeout(start, 40); }
+    const { Button } = Q;
+
+    // thin-line spot icon, drawn at 34px in a 24-grid (1.4px stroke for spot scale)
+    const spot = (children) => (
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+    );
+
+    const ICONS = {
+      // 1 — no worksheets: a sheet with a plus
+      worksheet: spot(<><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M12 11v6M9 14h6"/></>),
+      // 2 — empty folder: open folder
+      folder: spot(<><path d="M3.5 18.5 6 11a1.4 1.4 0 0 1 1.3-1h12.2a.9.9 0 0 1 .85 1.2l-2 6.5a1.4 1.4 0 0 1-1.34 1H4.5A1 1 0 0 1 3.5 18.5z"/><path d="M3.2 16V6.5A1.5 1.5 0 0 1 4.7 5h3.6l2 2.5h6.5A1.5 1.5 0 0 1 18.3 9v1.5"/></>),
+      // 3 — no results: magnifier
+      search: spot(<><circle cx="11" cy="11" r="6.5"/><path d="m20 20-3.6-3.6"/><path d="M8.6 11h4.8"/></>),
+      // 4 — nothing shared: share nodes
+      share: spot(<><circle cx="18" cy="6" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.1 10.8 15.9 7.2M8.1 13.2l7.8 3.6"/></>),
+      // 5 — no version history: clock with arrow
+      history: spot(<><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 8v4.2l3 1.8"/></>),
+      // 6 — AI idle: sparkle
+      sparkle: spot(<><path d="M12 3.5l1.8 4.7 4.7 1.8-4.7 1.8L12 16.5l-1.8-4.7L5.5 10l4.7-1.8z"/><path d="M18.5 15l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></>),
+      // 7 — offline: cloud with slash
+      offline: spot(<><path d="M7 18h10a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 8.2 9.3"/><path d="M7 18a3.4 3.4 0 0 1-.6-6.7"/><path d="M4 4l16 16"/></>),
+      // 8 — no errors: shield check
+      ok: spot(<><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 11.5l2.2 2.2 3.8-4"/></>),
+    };
+
+    // tone -> {fg, bg} for the icon medallion
+    const TONE = {
+      neutral: { fg: 'var(--text-muted)', bg: 'var(--surface-chrome)' },
+      accent: { fg: 'var(--accent)', bg: 'var(--accent-tint)' },
+      pass: { fg: 'var(--status-pass)', bg: 'var(--status-pass-bg)' },
+      warning: { fg: 'var(--status-warning)', bg: 'var(--status-warning-bg)' },
+    };
+
+    const STATES = [
+      { id: 1, ctx: 'Worksheets', icon: ICONS.worksheet, tone: 'accent', headline: 'Create your first worksheet', body: 'Write calculations that render as textbook math, track units, and recalculate the moment a value changes.', action: 'New worksheet', secondary: 'Browse templates' },
+      { id: 2, ctx: 'Folder', icon: ICONS.folder, tone: 'neutral', headline: 'This folder is empty', body: 'Add a worksheet here, or import an existing .xlsx or Mathcad file to get started.', action: 'New worksheet', secondary: 'Import a file' },
+      { id: 3, ctx: 'Search', icon: ICONS.search, tone: 'neutral', headline: 'No matches for “anchor pull-back”', body: 'Check the spelling, or clear the filters to widen the search across all projects.', action: 'Clear filters', actionVariant: 'secondary' },
+      { id: 4, ctx: 'Shared', icon: ICONS.share, tone: 'neutral', headline: 'Nothing shared with you yet', body: 'When a colleague shares a worksheet or project, it will appear here.', action: 'Invite a colleague', actionVariant: 'secondary' },
+      { id: 5, ctx: 'Version history', icon: ICONS.history, tone: 'neutral', headline: 'No earlier versions yet', body: 'Versions are saved automatically as you work, so you can always step back.', action: 'Name current version', actionVariant: 'secondary' },
+      { id: 6, ctx: 'AI assistant', icon: ICONS.sparkle, tone: 'accent', headline: 'Ask Quanta to draft, check, or explain', body: 'Describe a calculation in plain words, or ask why a result flags. Quanta keeps the units honest.', action: 'Ask Quanta' },
+      { id: 7, ctx: 'Connection', icon: ICONS.offline, tone: 'warning', headline: 'You’re offline', body: 'Changes are saved locally and will sync automatically when you reconnect.', action: 'Retry now', actionVariant: 'secondary' },
+      { id: 8, ctx: 'Calc errors', icon: ICONS.ok, tone: 'pass', headline: 'No errors — all regions are current', body: 'Every region evaluated cleanly with consistent units. Nothing needs your attention.', action: 'Recalculate', actionVariant: 'secondary' },
+    ];
+
+    function Medallion({ icon, tone }) {
+      const t = TONE[tone];
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60, borderRadius: 'var(--radius-lg)', background: t.bg, color: t.fg, border: '1px solid color-mix(in srgb, ' + t.fg + ' 18%, transparent)' }}>{icon}</span>
+      );
+    }
+
+    function Card({ s }) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid var(--border-hairline)', background: 'var(--surface-chrome)' }}>
+            <span style={{ font: '600 10.5px/1 var(--font-sans)', letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{s.id < 10 ? '0' + s.id : s.id} · {s.ctx}</span>
+          </div>
+          <div className="board-grid" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 32px 36px' }}>
+            <Medallion icon={s.icon} tone={s.tone} />
+            <h3 style={{ margin: '20px 0 0', font: '600 16px/1.35 var(--font-sans)', letterSpacing: '-0.005em', color: 'var(--text-primary)', maxWidth: 320, textWrap: 'balance' }}>{s.headline}</h3>
+            <p style={{ margin: '8px 0 0', font: '13px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 340, textWrap: 'pretty' }}>{s.body}</p>
+            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+              <Button variant={s.actionVariant || 'primary'}>{s.action}</Button>
+              {s.secondary && <Button variant="ghost">{s.secondary}</Button>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Board() {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }} data-screen-label="Empty states board">
+          <header style={{ padding: '40px 48px 26px', maxWidth: 1280, margin: '0 auto', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14 }}>
+              <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+              <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Empty states</span>
+            </div>
+            <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Empty states</h1>
+            <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 600 }}>One pattern, eight contexts: a thin-line spot icon, a plain-spoken headline, a single supporting line in the app’s voice, and exactly one primary action. An invitation to act — never a dead end.</p>
+          </header>
+          <div style={{ flex: 1, maxWidth: 1280, margin: '0 auto', width: '100%', padding: '0 48px 56px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 20 }}>
+              {STATES.map((s) => <Card key={s.id} s={s} />)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

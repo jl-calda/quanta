@@ -1,0 +1,92 @@
+/* ==========================================================================
+   Quanta — Color tokens
+   "Precision instrument / engineering ledger." Light theme is default.
+   Base palette + semantic aliases. Dark theme scoped to [data-theme="dark"].
+   ========================================================================== */
+
+:root {
+  /* ---- Base palette (light) ---- */
+  --paper:          #FCFCFA;  /* worksheet pages — warm near-white */
+  --chrome:         #F4F5F7;  /* ribbon, panels, bars */
+  --rule:           #E2E5EA;  /* hairline 1px dividers, region borders */
+  --ink:            #15181D;  /* primary text + rendered math */
+  --muted:          #6B7280;  /* secondary / supporting text */
+
+  --blueprint:      #1F5FBF;  /* primary accent — actions, links, selection */
+  --blueprint-tint: #E8F0FC;  /* selected-region fill, hover wash */
+
+  --pass:           #1E8E5A;  /* evaluated results, OK / PASS */
+  --warning:        #C6890B;  /* redefinition, near-limit utilization */
+  --error:          #C2392B;  /* unit mismatch, calc error, FAIL */
+
+  /* derived washes for semantic states (light) */
+  --pass-tint:      #E4F3EB;
+  --warning-tint:   #FAF1DC;
+  --error-tint:     #F8E7E4;
+
+  /* a hair-darker rule for stronger separation */
+  --rule-strong:    #D2D6DD;
+  /* blueprint dot-grid dot color */
+  --grid-dot:       #D8DEE7;
+
+  /* ---- Semantic aliases (theme-agnostic names consumers should use) ---- */
+  --surface-paper:       var(--paper);
+  --surface-chrome:      var(--chrome);
+  --surface-raised:      #FFFFFF;       /* modals, popovers, menus */
+  --surface-selected:    var(--blueprint-tint);
+  --surface-hover:       #ECEEF1;
+
+  --border-hairline:     var(--rule);
+  --border-strong:       var(--rule-strong);
+  --border-focus:        var(--blueprint);
+
+  --text-primary:        var(--ink);
+  --text-muted:          var(--muted);
+  --text-inverse:        #FCFCFA;
+  --text-link:           var(--blueprint);
+  --text-math:           var(--ink);
+
+  --accent:              var(--blueprint);
+  --accent-tint:         var(--blueprint-tint);
+  --accent-press:        #18509F;       /* darker blueprint for press */
+
+  --status-pass:         var(--pass);
+  --status-warning:      var(--warning);
+  --status-error:        var(--error);
+  --status-pass-bg:      var(--pass-tint);
+  --status-warning-bg:   var(--warning-tint);
+  --status-error-bg:     var(--error-tint);
+
+  /* focus ring */
+  --focus-ring:          var(--blueprint);
+}
+
+/* ==========================================================================
+   Dark theme — canvas #14171C, lifted semantic hues (~+15% L)
+   ========================================================================== */
+[data-theme="dark"] {
+  --paper:          #14171C;
+  --chrome:         #1B1F26;
+  --rule:           #2A2F38;
+  --ink:            #E8EAED;
+  --muted:          #99A1AD;
+
+  --blueprint:      #5B9BFF;
+  --blueprint-tint: #1B2A40;
+
+  --pass:           #46B07C;
+  --warning:        #E0A93A;
+  --error:          #E0685B;
+
+  --pass-tint:      #16271F;
+  --warning-tint:   #2A2415;
+  --error-tint:     #2C1B18;
+
+  --rule-strong:    #3A4150;
+  --grid-dot:       #262C36;
+
+  --surface-raised:      #1F242C;
+  --surface-hover:       #232831;
+  --text-inverse:        #14171C;
+  --accent-press:        #7DB0FF;
+}

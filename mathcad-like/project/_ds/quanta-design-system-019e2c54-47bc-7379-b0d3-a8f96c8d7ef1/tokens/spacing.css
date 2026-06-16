@@ -1,0 +1,68 @@
+/* ==========================================================================
+   Quanta — Spacing, radii, shadows, layout primitives
+   Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 — dense but breathable.
+   Radii: 4 (inputs/buttons/regions) · 6 (panels/cards) · 8 (modals).
+   Structure with rules + hairline borders; shadows are restrained.
+   ========================================================================== */
+
+:root {
+  /* ---- Spacing ---- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+
+  /* ---- Radii ---- */
+  --radius-sm: 4px;   /* inputs, buttons, math regions */
+  --radius-md: 6px;   /* panels, cards */
+  --radius-lg: 8px;   /* modals */
+  --radius-full: 999px;
+
+  /* ---- Borders ---- */
+  --border-width: 1px;
+  --border-width-strong: 2px;  /* active region outline, focus */
+
+  /* ---- Shadows (restrained — borders do the structural work) ---- */
+  --shadow-none:  none;
+  --shadow-sm:    0 1px 2px rgba(21, 24, 29, 0.05);
+  --shadow-popover: 0 4px 12px rgba(21, 24, 29, 0.10), 0 0 0 1px rgba(21, 24, 29, 0.04);
+  --shadow-modal: 0 16px 48px rgba(21, 24, 29, 0.18), 0 2px 8px rgba(21, 24, 29, 0.08);
+
+  /* ---- Focus ring ---- */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 1px;
+
+  /* ---- Blueprint dot-grid (the canvas signature) ---- */
+  --grid-size: 16px;
+  --grid-dot-radius: 1px;
+
+  /* ---- Motion (calm, precise; respects reduced motion) ---- */
+  --ease-standard: cubic-bezier(0.2, 0, 0.13, 1.5); /* @kind other */
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);   /* @kind other */
+  --dur-fast:   90ms;   /* @kind other */
+  --dur-base:   150ms;  /* @kind other */
+  --dur-slow:   240ms;  /* @kind other */
+}
+
+[data-theme="dark"] {
+  --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Blueprint dot-grid utility — apply to any worksheet canvas */
+.q-grid {
+  background-image: radial-gradient(var(--grid-dot) var(--grid-dot-radius), transparent var(--grid-dot-radius));
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: -1px -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms; /* @kind other */
+    --dur-base: 0ms; /* @kind other */
+    --dur-slow: 0ms; /* @kind other */
+  }
+}

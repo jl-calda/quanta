@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Quanta — Build Tracker</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap');
+:root{
+  --paper:#FCFCFA;--chrome:#F4F5F7;--rule:#E2E5EA;--rule-strong:#D2D6DD;--ink:#15181D;--muted:#6B7280;
+  --accent:#1F5FBF;--accent-tint:#E8F0FC;--pass:#1E8E5A;--pass-tint:#E4F3EB;--warning:#C6890B;
+  --grid-dot:#D8DEE7;--surface-hover:#ECEEF1;--violet:#7a4ad0;--violet-tint:#f0eafc;
+  --font-sans:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'Geist Mono',ui-monospace,'SF Mono',monospace;
+  --radius-sm:4px;--radius-md:6px;--shadow-sm:0 1px 2px rgba(21,24,29,.05);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;}
+body{background:var(--chrome);color:var(--ink);font-family:var(--font-sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+::selection{background:var(--accent-tint);}
+.wrap{max-width:960px;margin:0 auto;padding:22px 20px 72px;}
+
+.hd{display:flex;align-items:center;gap:11px;margin-bottom:6px;}
+.title{font:600 18px/1.1 var(--font-sans);letter-spacing:-.01em;}
+.eyebrow{font:11px/1 var(--font-sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+.lede{font:13px/1.55 var(--font-sans);color:var(--muted);max-width:780px;margin:8px 0 0;}
+.lede b{color:var(--ink);font-weight:600;}
+
+/* progress */
+.progwrap{position:sticky;top:0;z-index:5;background:var(--chrome);padding:12px 0 11px;border-bottom:1px solid var(--rule);margin:14px 0 8px;}
+.progtop{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
+.progpct{font:600 22px/1 var(--font-sans);letter-spacing:-.01em;}
+.progmeta{font:12px var(--font-mono);color:var(--muted);}
+.progcur{margin-left:auto;font:11.5px var(--font-sans);color:var(--accent);background:var(--accent-tint);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:99px;padding:3px 10px;}
+.bar{height:7px;background:var(--rule);border-radius:99px;overflow:hidden;}
+.bar > i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .3s cubic-bezier(.16,1,.3,1);}
+.bar.done > i{background:var(--pass);}
+
+/* toolbar */
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px;}
+.search{flex:1;min-width:170px;height:30px;padding:0 10px;border:1px solid var(--rule);border-radius:var(--radius-sm);background:var(--paper);font:13px var(--font-sans);color:var(--ink);}
+.search:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.btn{border:1px solid var(--rule);background:var(--paper);color:var(--muted);font:12px var(--font-sans);padding:6px 11px;border-radius:var(--radius-sm);cursor:pointer;}
+.btn:hover{background:var(--surface-hover);}
+.btn.warn{color:var(--warning);}
+.toglabel{display:inline-flex;align-items:center;gap:6px;font:12px var(--font-sans);color:var(--muted);cursor:pointer;user-select:none;}
+
+/* group */
+.grp{margin-top:24px;}
+.grp-h{display:flex;align-items:baseline;gap:10px;padding-bottom:9px;margin-bottom:12px;border-bottom:1px solid var(--rule);}
+.grp-h h2{font:600 14px/1.2 var(--font-sans);margin:0;}
+.grp-h .note{font:12px/1 var(--font-sans);color:var(--muted);}
+.grp-h .ct{margin-left:auto;font:11px var(--font-mono);color:var(--muted);}
+
+/* card */
+.card{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);margin-bottom:10px;overflow:hidden;transition:border-color .12s,box-shadow .12s;}
+.card:hover{border-color:var(--rule-strong);box-shadow:var(--shadow-sm);}
+.card.on{opacity:.6;}
+.card-h{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;}
+.chk{flex:0 0 auto;width:17px;height:17px;border:1.5px solid var(--rule-strong);border-radius:var(--radius-sm);display:inline-flex;align-items:center;justify-content:center;color:#fff;background:var(--paper);transition:.12s;}
+.chk.y{background:var(--pass);border-color:var(--pass);}
+.nm{font:600 13.5px/1.25 var(--font-sans);}
+.card.on .nm{text-decoration:line-through;text-decoration-color:var(--rule-strong);}
+.file{font:11px var(--font-mono);color:var(--muted);background:var(--chrome);border:1px solid var(--rule);border-radius:var(--radius-sm);padding:2px 6px;white-space:nowrap;}
+.refs{font:10.5px var(--font-mono);color:var(--muted);white-space:nowrap;}
+.spacer{margin-left:auto;}
+.copy{border:1px solid var(--rule);background:var(--paper);color:var(--accent);font:600 12px var(--font-sans);padding:5px 11px;border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap;transition:.12s;}
+.copy:hover{background:var(--accent-tint);border-color:var(--accent);}
+.copy.ok{background:var(--pass);border-color:var(--pass);color:#fff;}
+.chev{color:var(--muted);transition:transform .15s;flex:0 0 auto;}
+.card.open .chev{transform:rotate(90deg);}
+.body{display:none;border-top:1px solid var(--rule);}
+.card.open .body{display:block;}
+pre.prompt{margin:0;padding:12px 13px;font:12px/1.6 var(--font-mono);color:var(--ink);white-space:pre-wrap;word-wrap:break-word;background:#FBFBF9;}
+.hide-done .card.on{display:none;}
+.foot{margin-top:24px;font:11.5px/1.6 var(--font-sans);color:var(--muted);text-align:center;}
+.foot code{font-family:var(--font-mono);}
+svg{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hd">
+    <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" stroke-width="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" stroke-width="1.5" stroke-linecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--pass)"/></svg>
+    <div><div class="title">Quanta — Build Tracker</div><div class="eyebrow">Per-screen progress · design mockup + feature prompt</div></div>
+  </div>
+  <p class="lede">One row per page/component. Each carries its paste-ready prompt with <b>DESIGN</b> (the Claude Design mockup) and <b>FEATURE</b> (the requirement) shown as two halves — expand a row, copy, and prompt Claude. Tick it when shipped. Build order runs top to bottom.</p>
+
+  <div class="progwrap">
+    <div class="progtop">
+      <span class="progpct" id="pct">0%</span>
+      <span class="progmeta" id="meta"></span>
+      <span class="progcur" id="cur"></span>
+    </div>
+    <div class="bar" id="bar"><i></i></div>
+  </div>
+
+  <div class="tools">
+    <input class="search" id="search" placeholder="Search screens, files, prompt text…"/>
+    <button class="btn" id="expand">Expand all</button>
+    <button class="btn" id="collapse">Collapse all</button>
+    <label class="toglabel"><input type="checkbox" id="hideDone"/> Hide done</label>
+    <button class="btn warn" id="reset">Reset</button>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="foot">Progress saves automatically. Order: Foundations → Pages → Editor zones → Components → Modals → Catalogues.</div>
+
+</div>
+
+<script>
+const ITEMS = [
+/* ───────── Foundations ───────── */
+{g:"Foundations", n:"Scaffold", f:"build · M0", r:"Func §1", p:
+"Implement the project scaffold (Foundation — no page mockup).\nDESIGN: n/a (foundational).\nFEATURE (Build M0 / Func §1): create a Next.js App Router + TypeScript + Tailwind project with Supabase (@supabase/ssr). Port the _ds tokens from mathcad-like/project/_ds into the Tailwind theme + a global CSS layer; load Geist Sans/Mono + STIX Two Text; lazy-load Pyodide in a Web Worker; create the folder structure (/lib/calc, /lib/keymap, app/, components/). Add the Compact-default Comfortable/Compact density toggle.\nHonor CLAUDE.md."},
+{g:"Foundations", n:"Data layer (schema + RLS + auth)", f:"build · M1", r:"Func §1", p:
+"Implement the data layer (Foundation).\nDESIGN: n/a (foundational).\nFEATURE (Build M1 / Func §1): full Supabase schema + enums (profiles, workspaces, workspace_members, projects, worksheets [JSONB content], worksheet_versions, worksheet_collaborators, comments, templates, tags, unit_systems, audit_log); RLS helper functions + policies on every table; auth (email/password, magic link, Google, SSO); profile + first-workspace bootstrap trigger; middleware protecting /app; invite-acceptance via invited_email on sign-in.\nHonor CLAUDE.md; RLS on every query + UI gating."},
+{g:"Foundations", n:"Calc engine (the crux)", f:"build · M2", r:"Func §2", p:
+"Implement the calc engine (Foundation — the crux).\nDESIGN: n/a (foundational).\nFEATURE (Build M2 / Func §2): a pure, deterministic, unit-tested module in /lib/calc — mathjs (parse, numeric, units, matrices, toTex) on the main thread; SymPy + NumPy/SciPy via Pyodide in a Web Worker (symbolic + heavy numeric + the runtime for Python scripted controls); MathLive (input); KaTeX (render). Pipeline: parse (units-aware AST) -> dependency graph -> topological sort -> dirty-track -> recalculate (Auto/Manual; recalc-to-here). Result formatting (decimals/sigfig/notation/radix/fractions); show-steps; conditional formatting; typed per-region error model. Identical on client/worker/Node.\nHonor CLAUDE.md."},
+{g:"Foundations", n:"Design-system components", f:"_ds · M3", r:"_ds bundle", p:
+"Implement the design-system components (Foundation).\nDESIGN (Claude Design): the _ds tokens + components in mathcad-like/project/_ds (read _ds_bundle.js for exact props); match the visual output.\nFEATURE (Build M3): recreate as typed React — Badge, Button, IconButton, Card, Input, Select, Checkbox, Switch, Tabs, Dialog, Toast, Tooltip, and the math primitives Var/Sub/Sup/Frac/Sqrt/Op/Unit/Math + MathRegion. Then build the screens-index page.\nHonor CLAUDE.md; port tokens exactly."},
+
+/* ───────── Pages ───────── */
+{g:"Pages — full screens", n:"Sign in / Sign up", f:"Sign in.html", r:"Mockup 4.1 · Func 4.1", p:
+"Implement Sign in / Sign up.\nDESIGN (Claude Design mockup): Sign in.html — split layout, dark brand panel with the live-math motif + tabbed sign-in / create-account form. Port _ds tokens; match it.\nFEATURE (Func 4.1): Supabase Auth — email+password, magic link, Google OAuth, SAML SSO; sign-up creates a profile (trigger) and a first workspace if none; middleware redirects unauthenticated /app visitors here; invite-acceptance upgrades an invited_email row on sign-in. Zod validation; specific inline errors.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Dashboard / Home", f:"Dashboard.html", r:"Mockup 4.2 · Func 4.2", p:
+"Implement the Dashboard (Server Component).\nDESIGN (Claude Design mockup): Dashboard.html — nav rail, recents with rendered math previews, templates row, projects table, empty state. Port _ds tokens; match it.\nFEATURE (Func 4.2): RLS-scoped reads of recent worksheets (+calc_status), templates, projects; 'New worksheet' split-button -> createWorksheet Server Action (blank or from template) -> redirect /w/[id]; global search across title + tags; the workspace switcher re-scopes all queries.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Worksheet editor (CORE)", f:"editor.html + *-app.jsx", r:"Mockup 4.3 · Func 4.3/5.x", p:
+"Implement the Worksheet editor at /w/[id] — the core screen.\nDESIGN (Claude Design mockup): editor.html + editor-app.jsx + editor-canvas.jsx + editor-icons.jsx + app-bar/ribbon/left-panel/canvas. Port _ds tokens; match it.\nFEATURE (Func 4.3 / 5.x): load worksheet (RLS) -> hydrate engine -> render content tree; structural ops (add/move/delete region, columns 1-N, indent, span) + content edits update tree + engine (dirty-track, recalc per calc_mode); debounced autosave; version snapshots; Realtime presence; read-only for viewers/commenters. Natural Mathcad-style entry + unit awareness throughout.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Template gallery", f:"templates.html + gallery-app.jsx", r:"Mockup 4.4 · Func 4.4", p:
+"Implement the Template gallery.\nDESIGN (Claude Design mockup): templates.html + gallery-app.jsx + gallery-thumbs.jsx — filterable grid with math thumbnails, Your-templates tab, Preview drawer. Port _ds tokens; match it.\nFEATURE (Func 4.4): list templates (public/workspace/author) with discipline/standard/type filters (searchParams); 'Use template' -> clone content into a new worksheet + bump usage_count -> open; Preview = read-only editor in a drawer; 'Save as template' inserts a row + generated thumbnail.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"File browser", f:"files.html + files-app.jsx", r:"Mockup 4.5 · Func 4.5", p:
+"Implement the File browser at /worksheets.\nDESIGN (Claude Design mockup): files.html + files-app.jsx — projects tree + dense data table, multi-select action bar, grid view, empty folder. Port _ds tokens; match it.\nFEATURE (Func 4.5): projects tree (parent_id) + non-deleted worksheets scoped to workspace; list/grid, sort/filter via searchParams; Server Actions createFolder/rename/move/duplicate/softDelete/restore + bulk; breadcrumb; search title+tags; role-gated; prevent folder cycles; virtualize large lists.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Reference library", f:"reference.html + reference-app.jsx", r:"Mockup 4.6 · Func 4.6", p:
+"Implement the Reference library.\nDESIGN (Claude Design mockup): reference.html + reference-app.jsx + reference-data.jsx — functions/units/constants browser with worked examples and an Insert action. Port _ds tokens; match it.\nFEATURE (Func 4.6): a shipped JSON catalog in /lib/calc/reference + /lib/units + /lib/constants (no DB), searchable + categorized (expand categories per Matrix G4); the detail pane renders a LIVE worked example by running the engine (unit-aware, can't drift); 'Insert into worksheet' dispatches an insert at the caret.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Settings", f:"settings.html + settings-app.jsx", r:"Mockup 4.7 · Func 4.7", p:
+"Implement Settings.\nDESIGN (Claude Design mockup): settings.html + settings-app.jsx — Calculation + Units & formatting sections with a live preview and save patterns. Port _ds tokens; match it.\nFEATURE (Func 4.7): per-user prefs (profiles jsonb) + per-workspace defaults (workspaces.settings jsonb) for NEW worksheets; live result-format preview via the engine formatter (unit-aware); save-on-change toast; workspace defaults editable by owner/admin only; keymap (Mathcad/Default) + density live here too.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Shared", f:"shared.html + shared-app.jsx", r:"Mockup 4.8 · Func 4.8", p:
+"Implement Shared.\nDESIGN (Claude Design mockup): shared.html + shared-app.jsx — shared-with-me / by-me tables, activity feed, and the reusable Share dialog. Port _ds tokens; match it.\nFEATURE (Func 4.8): tables joining worksheet_collaborators with effective role + last activity; 'Manage access' opens the Share dialog; revoke = delete a grant (sheet owner/admin); handle pending email invites and link-shared sheets.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Version history", f:"history.html + history-app.jsx", r:"Mockup 4.9 · Func 4.9", p:
+"Implement Version history.\nDESIGN (Claude Design mockup): history.html + history-app.jsx — timeline, single-version diff highlights, side-by-side compare with synced scroll. Port _ds tokens; match it.\nFEATURE (Func 4.9): worksheet_versions timeline; select -> read-only render; Compare = region-level diff (added/changed/removed by id + content hash) side-by-side with synced scroll; Restore writes content back AND snapshots current first (editor/owner); Name version updates the label.\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Print / export preview", f:"export.html + export-app.jsx", r:"Mockup 4.10 · Func 4.10", p:
+"Implement Print / export preview.\nDESIGN (Claude Design mockup): export.html + export-app.jsx — WYSIWYG paginated pages + live export options (format, margins, steps, watermark). Port _ds tokens; match it.\nFEATURE (Func 4.10): deterministic server-side evaluation (pure engine in Node) so exported values match the screen; PDF (Puppeteer/React-PDF, embed Geist + KaTeX fonts, plots -> vector/png), Word, Excel (SheetJS), HTML; options (size/margins/borders/expand-steps/inputs-summary/watermark/range); artifacts -> exports bucket via signed URLs; gated by view+ (a workspace setting can disable for viewers).\nHonor CLAUDE.md."},
+{g:"Pages — full screens", n:"Workspace admin", f:"admin.html + admin-app.jsx", r:"Mockup 4.11 · Func 4.11", p:
+"Implement Workspace admin (owner/admin only — gate route + RLS).\nDESIGN (Claude Design mockup): admin.html + admin-app.jsx — members table + invite modal, roles & permissions matrix, audit log. Port _ds tokens; match it.\nFEATURE (Func 4.11): members table (+profiles) — invite (status='invited' + email; accept on sign-in), change role, suspend/remove; roles & permissions matrix over the role->capability map; seat usage vs seats; audit_log. Can't remove the last owner; downgrading an owner who owns worksheets prompts ownership transfer.\nHonor CLAUDE.md."},
+
+/* ───────── Editor zones ───────── */
+{g:"Editor zones", n:"App bar", f:"app-bar.html", r:"Mockup 5.1 · Func 5.1", p:
+"Implement the editor App bar.\nDESIGN (Claude Design mockup): app-bar.html — the 40px bar: autosave states, calc controls, status chips, tooltips + zoomed detail. Port _ds tokens; match it.\nFEATURE (Func 5.1): title edit -> debounced rename; autosave indicator (Saving/Saved/*Unsaved) from the save queue; Auto/Manual toggle writes calc_mode + triggers recompute; status chip from engine state (current/stale/error + counts); presence avatars; Share/comments/AI buttons open panels. Tooltips on icon buttons.\nHonor CLAUDE.md."},
+{g:"Editor zones", n:"Ribbon (all tabs)", f:"ribbon.html + ribbon-app.jsx", r:"Mockup 5.2 · Func 5.2", p:
+"Implement the full Ribbon.\nDESIGN (Claude Design mockup): ribbon.html + ribbon-app.jsx + ribbon-icons.jsx — all 11 tabs as frames, collapsed state, quick-access strip. Port _ds tokens; match it.\nFEATURE (Func 5.2): a command dispatcher — every control fires a typed editor command (insertRegion, setColumns, indent, setResultFormat, toggleShowSteps, insertFunction, insertUnit, recalculate, etc.) handled by the editor reducer; controls reflect the current selection; disable commands not allowed for role; collapsed + quick-access are secondary states; include the math-operator groups that drive natural entry.\nHonor CLAUDE.md."},
+{g:"Editor zones", n:"Left panel", f:"left-panel.html", r:"Mockup 5.3 · Func 5.3", p:
+"Implement the editor Left panel (~240px, three tabs).\nDESIGN (Claude Design mockup): left-panel.html — Outline / Variables / Files as three live frames. Port _ds tokens; match it.\nFEATURE (Func 5.3): Outline (from text-region headings + tagged regions, click scrolls, auto outline numbering); Variables (live from the engine symbol table — name, value+unit, definition location, reference count, error flag; click scrolls to definition); Files (project tree, current sheet highlighted).\nHonor CLAUDE.md."},
+{g:"Editor zones", n:"Math region (the heart)", f:"math-region.html", r:"Mockup 6.1 · Func 6.1/§2", p:
+"Implement the Math region (the product's heart).\nDESIGN (Claude Design mockup): math-region.html — natural 2D formula editor: live notation build, unit tokens, show-steps, mode toggle. Port _ds tokens; match it.\nFEATURE (Func 6.1 / §2): PRIMARY input = natural Mathcad-style 2D entry via MathLive (typing builds notation live: '/' stacked fraction, '^' superscript, '_' subscript, function/Greek names insert symbols, space exits a subexpression, ':' -> ':='); plain-text mode secondary. UNIT-AWARE: '12 kN','700 MPa','16 mm' attach units, dimensional analysis, auto-convert, inline mismatch; results carry + display their unit. Pipeline entry -> units-aware AST -> recalc -> render (STIX/KaTeX); show-steps; symbolic '->' results; all states from Mockup 6.1. Bind to /lib/calc; rendered math >= ~18-20px.\nHonor CLAUDE.md."},
+{g:"Editor zones", n:"Canvas surface", f:"canvas.html", r:"Mockup 5.4 · Func 5.4", p:
+"Implement the Canvas.\nDESIGN (Claude Design mockup): canvas.html — hybrid-flow column grid: single/multi-column, spanning, indentation, controls. Port _ds tokens; match it.\nFEATURE (Func 5.4): render the content tree and own structural editing — create a region (type to start a math region with natural Mathcad entry), reorder via drag (within/between cells; never free-floats), set row columns 1-N + drag split ratio, span-all-columns, indent/outdent, delete, multi-select group ops; reading order recomputed on any change and fed to the engine. Hybrid-flow over the dot-grid; read-only for viewers; virtualize long docs.\nHonor CLAUDE.md."},
+
+/* ───────── Core region components ───────── */
+{g:"Core region components", n:"Table / spreadsheet", f:"in editor / inspector", r:"Mockup 6.3 · Func 6.3", p:
+"Implement the Table / spreadsheet region.\nDESIGN (Claude Design mockup): shown inside editor.html / the inspector — match the worksheet's table styling.\nFEATURE (Func/Mockup 6.3): a grid bound to the table payload; cells with '=' formulas evaluated by the engine; A1 + named refs; per-column units (unit-aware); lookups (Vlookup/Hlookup/Index/Match/Interp); conditional formatting; a formula bar (Geist Mono) for the selected cell; named ranges, sort/filter, array formulas; cell outputs can define worksheet names; clean banded table in read mode.\nHonor CLAUDE.md."},
+{g:"Core region components", n:"Plot", f:"in editor / inspector", r:"Mockup 6.4 · Func 6.4", p:
+"Implement the Plot region.\nDESIGN (Claude Design mockup): shown inside editor.html / the inspector — match the worksheet's plot styling.\nFEATURE (Func/Mockup 6.4): bind traces to expressions / ranges / table columns; recompute trace data on dependency change (sample the x-range, evaluate y via the engine with units, convert to axis units); types xy (line/scatter/column/bar/stem/waterfall/error/box), polar, contour, 3D surface, plot-by-formula; drag axis ranges, hover read-out, legend toggles; empty state until x/y chosen.\nHonor CLAUDE.md."},
+{g:"Core region components", n:"Input controls", f:"in editor / canvas", r:"Mockup 6.7 · Func 6.7", p:
+"Implement the Input controls.\nDESIGN (Claude Design mockup): shown inside editor.html / canvas.html — render as part of a precise document, not a web form.\nFEATURE (Func/Mockup 6.7): each control WRITES its bound variable into engine scope as a definition (drives live recompute): dropdown/combo, slider (min/max/step/invert + units), radio (default-selected), checkbox, button, textbox, listbox. Changing a control marks dependents dirty + recomputes (Auto) or stale (Manual); validate bindings by type/units; support copy/paste of multiple values into a combo-box.\nHonor CLAUDE.md."},
+{g:"Core region components", n:"Solve block", f:"in editor / canvas", r:"Mockup 6.5 · Func 6.5", p:
+"Implement the Solve block.\nDESIGN (Claude Design mockup): shown inside editor.html / canvas.html — a bordered block.\nFEATURE (Func/Mockup 6.5): guess values + constraints (equations/inequalities in math notation) + a solver call; build the residual/objective and run the chosen solver via SciPy (find/minimize/maximize/minerr/odesolve/pdesolve/numol) with an algorithm-choice menu + CTOL/scaling; bind the result vector to output names (feeding the graph); surface non-convergence as 'no solution found'. Unit-aware.\nHonor CLAUDE.md."},
+
+/* ───────── Modals ───────── */
+{g:"Modals & dialogs", n:"All dialogs (batch)", f:"per Mockup 7.x", r:"Mockup 7.x · Func §6", p:
+"Implement the dialogs (grouped), all matching the _ds Dialog style (single soft shadow, scrim, 8px radius).\nDESIGN (Claude Design mockup): per Mockup §7 (and the _ds Dialog component).\nFEATURE (Func §6): INSERT (function/unit/symbol/plot/table/image/control/solve -> build a Region payload to the §2 schema + insertRegion at the caret; function & unit pickers read the shipped reference); FORMATTING (result format, conditional formatting, text styles, page setup, headers & footers -> mutate region/worksheet props with live previews); SETTINGS (worksheet settings, custom unit systems, preferences, account); COLLABORATION (share/permissions, comments, version history); UTILITY (find & replace incl. subscript identifier, go-to-page, keyboard shortcuts, command palette / Cmd+K); CONFIRMATIONS; AI assistant (server proxy, region-JSON validated). Gate by role; Zod-validate.\nHonor CLAUDE.md."},
+
+/* ───────── Catalogues ───────── */
+{g:"Catalogues", n:"Empty states", f:"empty-states.html", r:"Mockup 4.12", p:
+"Implement the Empty states board.\nDESIGN (Claude Design mockup): empty-states.html — eight consistent empty-state cards (icon, headline, supporting line, one action). Port _ds tokens; match it.\nFEATURE (Mockup 4.12): each card = a one-line headline + supporting line in the app's voice + exactly one primary action wired to the relevant Server Action; the offline state reflects real connection status (navigator.onLine + Supabase channel). Thin-line spot icons, no mascots, no emoji.\nHonor CLAUDE.md."},
+{g:"Catalogues", n:"Keyboard shortcuts (Mathcad keymap)", f:"keyboard-shortcuts.html", r:"Mockup 7.25 · Func §7", p:
+"Implement the Keyboard shortcuts feature.\nDESIGN (Claude Design mockup): keyboard-shortcuts.html — Mathcad-style shortcuts reference, keymap preference, and a math input bar with key hints. Port _ds tokens; match it.\nFEATURE (Func §7 keymap): one /lib/keymap module drives BOTH the MathLive bindings AND the reference modal (no drift). Math entry: ':' -> ':=', '=' evaluate, '/' stacked fraction, '^' superscript, '_' subscript, the backslash key -> square root, '.' literal name subscript (F.t -> F_t), '[' index subscript, '|' absolute value, Space = expand selection up the expression (signature Mathcad key), Ctrl+G -> Greek. App: F9 recalculate, Shift+F9 recalc-to-here, Ctrl+Enter new region, Cmd/Ctrl + S/Z/Shift+Z/F/K/P, '/' opens the reference. Add a Keymap preference (Mathcad default / Default); platform-aware; accessible (no focus trap; every shortcut also reachable via ribbon/menu).\nHonor CLAUDE.md."},
+];
+
+const groupNotes={
+  "Foundations":"Build prerequisites — no page mockup (engine, data, design system).",
+  "Pages — full screens":"Top-level routes.",
+  "Editor zones":"Pieces of the editor shell.",
+  "Core region components":"The content units that carry the math logic.",
+  "Modals & dialogs":"Cross-cutting dialog patterns.",
+  "Catalogues":"Pattern boards & cross-cutting features.",
+};
+const groups=[...new Set(ITEMS.map(i=>i.g))];
+ITEMS.forEach((it,i)=>it.id='i'+i);
+
+/* persistence */
+const KEY='quanta_tracker'; let MEM={};
+async function load(){try{if(window.storage&&window.storage.get){const r=await window.storage.get(KEY);if(r&&r.value)return JSON.parse(r.value);}}catch(e){}return {};}
+async function save(s){MEM=s;try{if(window.storage&&window.storage.set){await window.storage.set(KEY,JSON.stringify(s));}}catch(e){}}
+
+let done={},q=""; const open={};
+const ck=id=>!!done[id];
+
+function copyText(txt,btn){
+  const ok=()=>{btn.classList.add('ok');const o=btn.textContent;btn.textContent='Copied';setTimeout(()=>{btn.classList.remove('ok');btn.textContent=o;},1100);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(ok).catch(()=>fb(txt,ok));}else fb(txt,ok);
+}
+function fb(txt,ok){const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(ta);}
+function matches(it){ if(!q)return true; const s=(it.n+' '+it.f+' '+it.g+' '+it.p).toLowerCase(); return s.includes(q); }
+
+const checkMark='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>';
+const chevMark='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+function renderProg(){
+  const total=ITEMS.length, d=ITEMS.filter(i=>ck(i.id)).length, pct=total?Math.round(d/total*100):0;
+  document.getElementById('pct').textContent=pct+'%';
+  document.getElementById('meta').textContent=d+' / '+total+' shipped';
+  const bar=document.getElementById('bar'); bar.querySelector('i').style.width=pct+'%'; bar.classList.toggle('done',pct===100);
+  const next=ITEMS.find(i=>!ck(i.id)); const cur=document.getElementById('cur');
+  if(next){cur.style.background='var(--accent-tint)';cur.style.color='var(--accent)';cur.textContent='Next: '+next.n;}
+  else{cur.style.background='var(--pass-tint)';cur.style.color='var(--pass)';cur.textContent='All shipped';}
+}
+
+function card(it){
+  const c=document.createElement('div'); c.className='card'+(ck(it.id)?' on':'')+(open[it.id]?' open':'');
+  const h=document.createElement('div'); h.className='card-h';
+  const chk=document.createElement('span'); chk.className='chk'+(ck(it.id)?' y':''); chk.setAttribute('role','checkbox'); chk.innerHTML=ck(it.id)?checkMark:'';
+  chk.onclick=e=>{e.stopPropagation();done[it.id]=!done[it.id];save(done);render();};
+  const nm=document.createElement('span'); nm.className='nm'; nm.textContent=it.n;
+  const file=document.createElement('span'); file.className='file'; file.textContent=it.f;
+  const refs=document.createElement('span'); refs.className='refs'; refs.textContent=it.r;
+  const sp=document.createElement('span'); sp.className='spacer';
+  const copy=document.createElement('button'); copy.className='copy'; copy.textContent='Copy'; copy.onclick=e=>{e.stopPropagation();copyText(it.p,copy);};
+  const chev=document.createElement('span'); chev.className='chev'; chev.innerHTML=chevMark;
+  h.append(chk,nm,file,refs,sp,copy,chev);
+  h.onclick=()=>{open[it.id]=!c.classList.contains('open');c.classList.toggle('open');};
+  const body=document.createElement('div'); body.className='body';
+  const pre=document.createElement('pre'); pre.className='prompt'; pre.textContent=it.p; body.appendChild(pre);
+  c.append(h,body); return c;
+}
+
+function render(){
+  const list=document.getElementById('list'); list.innerHTML='';
+  groups.forEach(g=>{
+    const items=ITEMS.filter(i=>i.g===g&&matches(i)); if(!items.length)return;
+    const all=ITEMS.filter(i=>i.g===g); const d=all.filter(i=>ck(i.id)).length;
+    const grp=document.createElement('div'); grp.className='grp';
+    const head=document.createElement('div'); head.className='grp-h';
+    const h2=document.createElement('h2'); h2.textContent=g;
+    const note=document.createElement('span'); note.className='note'; note.textContent=groupNotes[g]||'';
+    const ct=document.createElement('span'); ct.className='ct'; ct.textContent=d+'/'+all.length;
+    head.append(h2,note,ct); grp.appendChild(head);
+    items.forEach(it=>grp.appendChild(card(it)));
+    list.appendChild(grp);
+  });
+  renderProg();
+}
+
+document.getElementById('search').addEventListener('input',e=>{q=e.target.value.toLowerCase();render();});
+document.getElementById('expand').onclick=()=>{ITEMS.forEach(i=>open[i.id]=true);render();};
+document.getElementById('collapse').onclick=()=>{ITEMS.forEach(i=>open[i.id]=false);render();};
+document.getElementById('hideDone').addEventListener('change',e=>document.body.classList.toggle('hide-done',e.target.checked));
+document.getElementById('reset').onclick=()=>{if(confirm('Reset all progress?')){done={};save(done);render();}};
+
+(async function(){done=await load();render();})();
+</script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Screens index</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  a { text-decoration: none; color: inherit; }
+
+  .card { display: flex; flex-direction: column; background: var(--surface-paper); border: 1px solid var(--border-hairline); border-radius: var(--radius-md); overflow: hidden; transition: box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out); }
+  .card:hover { box-shadow: var(--shadow-sm); border-color: var(--accent); }
+  .card:hover .thumb-frame { background: var(--accent-tint); }
+  .card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+  .thumb-frame { height: var(--d-thumb-sm); border-bottom: 1px solid var(--border-hairline); background: #E7EAEF; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; transition: background var(--dur-base) var(--ease-out); }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 14px 14px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Badge) { return setTimeout(start, 40); }
+    const { Badge } = Q;
+
+    const svg = (c, s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const QMark = ({ size = 26 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+    const ArrowI = (s) => svg(<path d="M5 12h14M13 6l6 6-6 6"/>, s);
+    const ExtI = (s) => svg(<><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6"/></>, s);
+
+    /* ---- tiny thumbnail glyphs per screen (1.5px line) ---- */
+    const G = {
+      signin: () => svg(<><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 5 12 13 21 5"/></>, 30),
+      dashboard: () => svg(<><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></>, 30),
+      editor: () => svg(<><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 8h18M8 8v12"/><path d="M11 12h6M11 15h4"/></>, 30),
+      templates: () => svg(<><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></>, 30),
+      files: () => svg(<><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h3.8l2 2.5h7.2A1.5 1.5 0 0 1 19 10v1"/><path d="M3 11h18l-1.5 8.5A1 1 0 0 1 18.5 20H5.5a1 1 0 0 1-1-.8z"/></>, 30),
+      reference: () => svg(<><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2z"/><path d="M8 4v15M11 9h5M11 12h4"/></>, 30),
+      settings: () => svg(<><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1"/></>, 28),
+      shared: () => svg(<><circle cx="18" cy="6" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.1 10.8 15.9 7.2M8.1 13.2l7.8 3.6"/></>, 30),
+      history: () => svg(<><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5V9H8"/><path d="M12 8v4.2l3 1.8"/></>, 30),
+      exportd: () => svg(<><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M12 11v6m0 0 2.5-2.5M12 17l-2.5-2.5"/></>, 28),
+      admin: () => svg(<><circle cx="9" cy="9" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M16 19a4.4 4.4 0 0 1 5.5-3.7"/></>, 30),
+      appbar: () => svg(<><rect x="3" y="6" width="18" height="5" rx="1"/><path d="M6 8.5h3M14 8.5h4"/></>, 30),
+      ribbon: () => svg(<><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 9h18M7 13h2M11 13h2M15 13h2M7 16h2M11 16h2"/></>, 30),
+      leftpanel: () => svg(<><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16"/><path d="M5 8h2M5 11h2M5 14h2"/></>, 30),
+      canvas: () => svg(<><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 7h8M8 11h3M13 11h3M8 15h8"/></>, 30),
+      mathregion: () => svg(<><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M7 10h3M8.5 10v4M14 10l3 4M17 10l-3 4"/></>, 30),
+      keyboard: () => svg(<><rect x="3" y="6" width="18" height="12" rx="1.6"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></>, 30),
+      empty: () => svg(<><rect x="3" y="4" width="18" height="16" rx="1.5" strokeDasharray="3 3"/><path d="M12 9v6M9 12h6"/></>, 28),
+    };
+
+    const GROUPS = [
+      {
+        group: 'Pages — full screens',
+        note: 'Top-level routes in the app.',
+        items: [
+          { file: 'Sign in.html', label: 'Sign in / Sign up', g: G.signin, desc: 'Split auth — dark brand panel with live-math motif + tabbed sign-in / create-account form.' },
+          { file: 'Dashboard.html', label: 'Dashboard / Home', g: G.dashboard, desc: 'Signed-in home: nav rail, recents with rendered previews, templates, projects table, empty state.' },
+          { file: 'editor.html', label: 'Worksheet editor', g: G.editor, desc: 'The core screen — app bar, ribbon, 3-column workspace, status bar, floating keypad.', primary: true },
+          { file: 'templates.html', label: 'Template gallery', g: G.templates, desc: 'Filterable template grid with math thumbnails, Your-templates tab, and a Preview drawer.' },
+          { file: 'files.html', label: 'File browser', g: G.files, desc: 'Project tree + dense data table, multi-select action bar, grid view, empty folder.' },
+          { file: 'reference.html', label: 'Reference library', g: G.reference, desc: 'Functions / units / constants browser with worked examples and Insert action.' },
+          { file: 'settings.html', label: 'Settings', g: G.settings, desc: 'Calculation + Units & formatting sections with a live preview and save patterns.' },
+          { file: 'shared.html', label: 'Shared', g: G.shared, desc: 'Shared-with-me / by-me tables, activity feed, and the reusable Share dialog.' },
+          { file: 'history.html', label: 'Version history', g: G.history, desc: 'Timeline, single-version diff highlights, side-by-side compare with synced scroll.' },
+          { file: 'export.html', label: 'Print / export preview', g: G.exportd, desc: 'WYSIWYG paginated pages + live export options (format, margins, steps, watermark).' },
+          { file: 'admin.html', label: 'Workspace admin', g: G.admin, desc: 'Members table + invite modal, roles & permissions matrix, audit log.' },
+        ],
+      },
+      {
+        group: 'Editor component specimens',
+        note: 'Isolated chrome pieces, shown across states/frames.',
+        items: [
+          { file: 'app-bar.html', label: 'App bar', g: G.appbar, desc: 'The 40px bar — autosave states, calc controls, status chips, tooltips + zoomed detail.' },
+          { file: 'ribbon.html', label: 'Ribbon', g: G.ribbon, desc: 'All 11 tabs rendered as frames, plus collapsed state and quick-access strip.' },
+          { file: 'left-panel.html', label: 'Left panel', g: G.leftpanel, desc: 'Outline / Variables / Files as three live frames, 240px.' },
+          { file: 'math-region.html', label: 'Math region', g: G.mathregion, desc: 'Natural 2D formula editor — live notation build, unit tokens, show-steps, mode toggle.' },
+          { file: 'canvas.html', label: 'Canvas surface', g: G.canvas, desc: 'Hybrid-flow column grid: single/multi-column, spanning, indentation, controls.' },
+        ],
+      },
+      {
+        group: 'Component catalogues',
+        note: 'Cross-cutting pattern boards.',
+        items: [
+          { file: 'empty-states.html', label: 'Empty states', g: G.empty, desc: 'Eight consistent empty-state cards — icon, headline, supporting line, one action.' },
+          { file: 'keyboard-shortcuts.html', label: 'Keyboard shortcuts', g: G.keyboard, desc: 'Mathcad-style shortcuts reference, keymap preference, and math input bar with key hints.' },
+        ],
+      },
+    ];
+
+    function Card({ it }) {
+      return (
+        <a className="card" href={encodeURI(it.file)} target="_blank" rel="noopener">
+          <div className="thumb-frame">
+            <div className="q-grid" style={{ position: 'absolute', inset: 0, opacity: 0.5 }} />
+            <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 60, height: 60, borderRadius: 'var(--radius-md)', background: 'var(--surface-paper)', border: '1px solid var(--border-hairline)', color: 'var(--accent)', boxShadow: 'var(--shadow-sm)' }}>{it.g()}</span>
+            {it.primary && <span style={{ position: 'absolute', top: 10, right: 10 }}><Badge tone="accent">Core</Badge></span>}
+          </div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '13px 15px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3 style={{ margin: 0, font: '600 14px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{it.label}</h3>
+              <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{ArrowI(15)}</span>
+            </div>
+            <p style={{ margin: '6px 0 0', font: '12px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>{it.desc}</p>
+            <code style={{ marginTop: 11, font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderRadius: 4, padding: '4px 7px', alignSelf: 'flex-start' }}>{it.file}</code>
+          </div>
+        </a>
+      );
+    }
+
+    function Board() {
+      const total = GROUPS.reduce((n, g) => n + g.items.length, 0);
+      return (
+        <div style={{ maxWidth: 1240, margin: '0 auto', padding: '44px 40px 72px' }} data-screen-label="Screens index">
+          {/* header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+            <QMark size={30} />
+            <div>
+              <div style={{ font: '600 19px/1.1 var(--font-sans)', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Quanta</div>
+              <div style={{ font: '11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>Screens index · developer handoff</div>
+            </div>
+          </div>
+          <p style={{ margin: '0 0 8px', font: '14px/1.65 var(--font-sans)', color: 'var(--text-primary)', maxWidth: 720 }}>
+            {total} HTML deliverables for the Quanta engineering-calculation app, all built on the bound <strong>Quanta design system</strong> (loaded from <code style={{ font: '12.5px var(--font-mono)', color: 'var(--accent)' }}>_ds/</code>). Each links to its file; open any to view. Pages share one nav rail, icon set, math-rendering primitives, and table/dialog/toast patterns.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '14px 0 8px' }}>
+            {['Light theme · 1440px+ desktop', 'Comfortable / Compact density', 'React 18 + Babel (inline JSX)', 'STIX Two math · Geist Sans/Mono', 'Blueprint accent #1F5FBF'].map((t) => (
+              <span key={t} style={{ font: '11.5px/1 var(--font-sans)', color: 'var(--text-muted)', background: 'var(--surface-paper)', border: '1px solid var(--border-hairline)', borderRadius: 99, padding: '5px 11px' }}>{t}</span>
+            ))}
+          </div>
+
+          {GROUPS.map((grp) => (
+            <section key={grp.group} style={{ marginTop: 36 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, paddingBottom: 12, marginBottom: 20, borderBottom: '1px solid var(--border-hairline)' }}>
+                <h2 style={{ margin: 0, font: '600 15px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>{grp.group}</h2>
+                <span style={{ font: '12.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>{grp.note}</span>
+                <span style={{ marginLeft: 'auto', font: '11px/1 var(--font-mono)', color: 'var(--text-muted)' }}>{grp.items.length}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 18 }}>
+                {grp.items.map((it) => <Card key={it.file} it={it} />)}
+              </div>
+            </section>
+          ))}
+
+          {/* handoff note */}
+          <div style={{ marginTop: 44, padding: '18px 20px', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-paper)', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <span style={{ display: 'inline-flex', color: 'var(--accent)', flex: '0 0 auto', marginTop: 1 }}>{ExtI(20)}</span>
+            <div>
+              <div style={{ font: '600 13.5px/1.3 var(--font-sans)', color: 'var(--text-primary)', marginBottom: 4 }}>For Claude Code</div>
+              <p style={{ margin: 0, font: '12.5px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 760 }}>
+                All files sit at the project root; shared helpers are <code style={{ font: '12px var(--font-mono)', color: 'var(--text-primary)' }}>gallery-thumbs.jsx</code> (nav rail, icons, math thumbnails) and the per-screen <code style={{ font: '12px var(--font-mono)', color: 'var(--text-primary)' }}>*-app.jsx</code> files. The editor splits into <code style={{ font: '12px var(--font-mono)', color: 'var(--text-primary)' }}>editor-icons / editor-canvas / editor-app.jsx</code>. The design system bundle and tokens live under <code style={{ font: '12px var(--font-mono)', color: 'var(--text-primary)' }}>_ds/</code> — load order is React → Babel → bundle, then compose with <code style={{ font: '12px var(--font-mono)', color: 'var(--text-primary)' }}>window.QuantaDesignSystem_019e2c</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

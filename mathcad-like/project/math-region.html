@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Math region</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--surface-chrome); color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .field { background: #E7EAEF; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+
+  @keyframes caretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .caret { display: inline-block; width: 2px; align-self: stretch; min-height: 1.05em; background: var(--accent); animation: caretBlink 1.05s steps(1) infinite; margin: 0 1px; border-radius: 1px; }
+  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+  .ph { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; min-height: 18px; border: 1px dashed var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--accent-tint) 60%, transparent); }
+  .palette-key:hover { background: var(--surface-hover) !important; border-color: var(--border-strong) !important; }
+  .palette-key:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Sub) { return setTimeout(start, 40); }
+    const { Sub, Sup, Frac, Op, Sqrt } = Q;
+    const { useState } = React;
+
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ============ math notation atoms (STIX Two) ============ */
+    const MATH = { fontFamily: 'var(--font-math)', color: 'var(--text-math)' };
+    const V = ({ children }) => <span style={{ fontStyle: 'italic' }}>{children}</span>;          // variable
+    const U = ({ children }) => <span style={{ fontFamily: 'var(--font-sans)', fontStyle: 'normal', fontWeight: 500, color: 'var(--status-pass)', fontSize: '0.78em', letterSpacing: '0.01em' }}>{children}</span>; // unit token
+    const Row = ({ children, size = 20 }) => <span style={{ ...MATH, display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '0.16em', rowGap: 3, fontSize: size, lineHeight: 1.3 }}>{children}</span>;
+    const Assign = () => <span style={{ fontFamily: 'var(--font-math)', margin: '0 0.12em', color: 'var(--text-muted)' }}>:=</span>;
+    const Eq = () => <span style={{ fontFamily: 'var(--font-math)', margin: '0 0.14em' }}>=</span>;
+    const Result = ({ children, tone = 'accent' }) => (
+      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.22em', padding: '2px 9px', borderRadius: 4, marginLeft: '0.1em',
+        background: tone === 'pass' ? 'var(--status-pass-bg)' : tone === 'error' ? 'var(--status-error-bg)' : 'var(--accent-tint)',
+        color: tone === 'pass' ? 'var(--status-pass)' : tone === 'error' ? 'var(--status-error)' : 'var(--accent)', fontWeight: 600 }}>{children}</span>
+    );
+    const ResUnit = ({ children }) => <span style={{ fontSize: '0.74em', fontWeight: 600 }}>{children}</span>;
+    // 2D stacked fraction that can host a caret / placeholder in num or den
+    const Fraction = ({ num, den }) => (
+      <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', verticalAlign: 'middle', margin: '0 0.12em' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 0.3em 0.1em', lineHeight: 1.1 }}>{num}</span>
+        <span style={{ width: '100%', height: 1.5, background: 'currentColor' }} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0.1em 0.3em 0', lineHeight: 1.1 }}>{den}</span>
+      </span>
+    );
+    const Caret = () => <span className="caret" />;
+    const Ph = ({ w = 16 }) => <span className="ph" style={{ minWidth: w }} />;
+
+    /* ============ region chrome ============ */
+    const svg = (c, s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+
+    function ModeToggle({ mode, setMode }) {
+      // 'math' (natural 2D, default) | 'text' (plain mono)
+      return (
+        <div role="group" aria-label="Entry mode" style={{ display: 'inline-flex', border: '1px solid var(--border-strong)', borderRadius: 5, overflow: 'hidden', height: 24 }}>
+          <button onClick={() => setMode('math')} title="Natural math (2D)" aria-pressed={mode === 'math'}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, border: 'none', cursor: 'pointer', background: mode === 'math' ? 'var(--accent)' : 'var(--surface-raised)', color: mode === 'math' ? '#fff' : 'var(--text-muted)' }}>
+            <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic', fontSize: 13 }}>√x</span>
+          </button>
+          <button onClick={() => setMode('text')} title="Plain formula (text)" aria-pressed={mode === 'text'}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, border: 'none', borderLeft: '1px solid var(--border-hairline)', cursor: 'pointer', background: mode === 'text' ? 'var(--accent)' : 'var(--surface-raised)', color: mode === 'text' ? '#fff' : 'var(--text-muted)' }}>
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, fontWeight: 500 }}>Aa</span>
+          </button>
+        </div>
+      );
+    }
+
+    /* shell that draws the region box with its state */
+    function RegionBox({ state, children, foot, mode, setMode, showToggle = true }) {
+      // state: 'edit' | 'committed' | 'error'
+      const border = state === 'edit' ? 'var(--accent)' : state === 'error' ? 'var(--status-error)' : 'transparent';
+      const bg = state === 'edit' ? 'var(--surface-paper)' : state === 'error' ? 'color-mix(in srgb, var(--status-error-bg) 50%, var(--surface-paper))' : 'var(--surface-paper)';
+      return (
+        <div style={{ position: 'relative', border: '1px solid ' + border, borderRadius: 'var(--radius-sm)', background: bg, boxShadow: state === 'edit' ? '0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)' : 'none', padding: '14px 16px' }}>
+          {showToggle && state !== 'committed' && (
+            <div style={{ position: 'absolute', top: -13, right: 8, display: 'flex', gap: 6, alignItems: 'center', background: 'var(--surface-paper)', padding: '0 2px' }}>
+              {state === 'edit' && <span style={{ font: '9.5px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)' }}>editing</span>}
+              <ModeToggle mode={mode} setMode={setMode} />
+            </div>
+          )}
+          {children}
+          {foot}
+        </div>
+      );
+    }
+
+    /* ============ the math input bar / operator palette ============ */
+    const PAL = [
+      { g: 'a/b', label: 'Fraction', key: '/' },
+      { g: 'x²', label: 'Exponent', key: '^' },
+      { g: '√', label: 'Root', key: '\\sqrt' },
+      { g: 'xₙ', label: 'Subscript', key: '_' },
+      { g: 'xⁿ', label: 'Superscript', key: '^' },
+      { g: 'π', label: 'Greek', key: ':p' },
+      { g: 'Σ', label: 'Sum', key: '\\sum' },
+      { g: '∫', label: 'Integral', key: '\\int' },
+      { g: '∂', label: 'Partial', key: '\\pd' },
+      { g: '≤', label: 'Relational', key: '<=' },
+    ];
+    function Palette() {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-md)', background: 'var(--surface-chrome)', flexWrap: 'wrap' }}>
+          {PAL.map((p) => (
+            <button key={p.label} className="palette-key" title={p.label + '  (' + p.key + ')'} aria-label={p.label}
+              style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 34, padding: '4px 6px', border: '1px solid var(--border-hairline)', borderRadius: 5, background: 'var(--surface-raised)', cursor: 'pointer' }}>
+              <span style={{ fontFamily: 'var(--font-math)', fontSize: 15, color: 'var(--text-math)', lineHeight: 1 }}>{p.g}</span>
+              <span style={{ font: '8.5px/1 var(--font-mono)', color: 'var(--text-muted)' }}>{p.key}</span>
+            </button>
+          ))}
+          <span style={{ flex: 1 }} />
+          <span style={{ font: '11px/1.4 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 150, textAlign: 'right' }}>Type <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>/ ^ _ :</code> or <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>space</code> to build notation</span>
+        </div>
+      );
+    }
+
+    /* ============ frame wrapper ============ */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.45 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3, maxWidth: 440 }}>{sub}</div>}
+      </div>
+    );
+    function Frame({ children, pad = true }) {
+      return <div className="field" style={{ padding: 'var(--d-card-pad)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+        <div className="q-grid" style={{ background: 'var(--surface-paper)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-hairline)', padding: pad ? 18 : 0 }}>{children}</div>
+      </div>;
+    }
+
+    /* ============ FRAME A — natural 2D editor, mid-entry ============ */
+    function FrameLiveEntry() {
+      const [mode, setMode] = useState('math');
+      // M_Ed := w·L² / [ 8 ]  with caret building the denominator
+      return (
+        <div>
+          <RegionBox state="edit" mode={mode} setMode={setMode}>
+            {mode === 'math' ? (
+              <Row size={22}>
+                <V>M</V><Sub base="" sub="Ed" /><Assign />
+                <Fraction
+                  num={<span style={{ display: 'inline-flex', alignItems: 'center', columnGap: '0.12em' }}><V>w</V><Op>·</Op><Sup base={<V>L</V>} sup="2" /></span>}
+                  den={<span style={{ display: 'inline-flex', alignItems: 'center' }}>8<Caret /><Ph w={14} /></span>}
+                />
+              </Row>
+            ) : (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--text-primary)' }}>M_Ed := w*L^2 / (8<span className="caret" style={{ minHeight: '1em' }} />)</span>
+            )}
+          </RegionBox>
+          <div style={{ marginTop: 12 }}><Palette /></div>
+        </div>
+      );
+    }
+
+    /* ============ FRAME B — definition with unit token ============ */
+    function FrameDefinition() {
+      const [mode, setMode] = useState('math');
+      return (
+        <RegionBox state="committed" mode={mode} setMode={setMode}>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}><ModeToggle mode={mode} setMode={setMode} /></div>
+          {mode === 'math' ? (
+            <Row size={20}><Sub base={<V>F</V>} sub="t" /><Assign />12<U>kN</U></Row>
+          ) : (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--text-primary)' }}>F_t := 12 kN</span>
+          )}
+          <div style={{ marginTop: 9, font: '11.5px/1.4 var(--font-sans)', color: 'var(--text-muted)' }}>Variable <V style={{}}>F</V>ₜ defined · unit <span style={{ color: 'var(--status-pass)', fontWeight: 500 }}>kN</span> tracked</div>
+        </RegionBox>
+      );
+    }
+
+    /* ============ FRAME C — show steps (3 lines) ============ */
+    function FrameSteps() {
+      return (
+        <RegionBox state="committed" showToggle={false}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ font: '9px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Name := formula</div>
+              <Row size={19}><Sub base={<V>N</V>} sub="Rd" /><Assign /><V>φ</V><Op>·</Op><Sub base={<V>A</V>} sub="s" /><Op>·</Op><Sub base={<V>f</V>} sub="ub" /></Row>
+            </div>
+            <div style={{ borderTop: '1px dashed var(--border-hairline)', paddingTop: 9 }}>
+              <div style={{ font: '9px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Substituted</div>
+              <Row size={19}><span style={{ color: 'var(--text-muted)' }}>0.75</span><Op>·</Op><span style={{ color: 'var(--text-muted)' }}>157<U>mm²</U></span><Op>·</Op><span style={{ color: 'var(--text-muted)' }}>700<U>MPa</U></span></Row>
+            </div>
+            <div style={{ borderTop: '1px dashed var(--border-hairline)', paddingTop: 9 }}>
+              <div style={{ font: '9px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Result</div>
+              <Row size={20}><Eq /><Result tone="pass">82.4<ResUnit>kN</ResUnit></Result><span style={{ marginLeft: '0.4em', font: '600 11px/1 var(--font-sans)', textTransform: 'uppercase', color: 'var(--status-pass)' }}>OK</span></Row>
+            </div>
+          </div>
+        </RegionBox>
+      );
+    }
+
+    /* ============ FRAME D — unit mismatch error ============ */
+    function FrameError() {
+      const [mode, setMode] = useState('math');
+      return (
+        <RegionBox state="error" mode={mode} setMode={setMode}>
+          {mode === 'math' ? (
+            <Row size={20}>
+              <Sub base={<V>M</V>} sub="a" /><Assign />
+              <span style={{ textDecoration: 'underline wavy var(--status-error)', textDecorationThickness: '1.5px', textUnderlineOffset: '5px', paddingBottom: 2 }}>
+                <Sub base={<V>F</V>} sub="t" /><Op>+</Op><V>d</V>
+              </span>
+            </Row>
+          ) : (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--text-primary)' }}>M_a := F_t + d</span>
+          )}
+          <div style={{ marginTop: 11, display: 'flex', alignItems: 'flex-start', gap: 7, padding: '7px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--status-error-bg)', border: '1px solid color-mix(in srgb, var(--status-error) 28%, transparent)' }}>
+            <span style={{ color: 'var(--status-error)', flex: '0 0 auto', marginTop: 0.5 }}>{svg(<><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></>, 14)}</span>
+            <span style={{ font: '12px/1.45 var(--font-sans)', color: 'var(--status-error)' }}>Units do not match: left is <strong>kN</strong>, right is <strong>mm</strong>. Add a consistent term or convert <V>d</V> to a force.</span>
+          </div>
+        </RegionBox>
+      );
+    }
+
+    /* ============ FRAME E — committed result, hover/selected ============ */
+    function FrameResult() {
+      const [mode, setMode] = useState('math');
+      return (
+        <RegionBox state="committed" mode={mode} setMode={setMode}>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}><ModeToggle mode={mode} setMode={setMode} /></div>
+          {mode === 'math' ? (
+            <Row size={20}>
+              <span style={{ fontStyle: 'italic' }}>UR</span><Assign />
+              <Fraction num={<Sub base={<V>F</V>} sub="t" />} den={<Sub base={<V>N</V>} sub="Rd" />} />
+              <Eq /><Result tone="pass">0.15</Result>
+              <span style={{ marginLeft: '0.4em', font: '600 11px/1 var(--font-sans)', textTransform: 'uppercase', color: 'var(--status-pass)' }}>OK · &lt; 1.0</span>
+            </Row>
+          ) : (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--text-primary)' }}>UR := F_t / N_Rd = 0.15</span>
+          )}
+        </RegionBox>
+      );
+    }
+
+    /* ============ board ============ */
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Math region specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Signature element</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Math region — natural 2D entry</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 680 }}>
+            The default edit state is a <strong style={{ color: 'var(--text-primary)' }}>natural 2D math editor</strong> — type and notation builds live in STIX Two, with a caret inside the structure and a placeholder box for the next term. Units are first-class tokens. A region can switch to a secondary plain-text formula mode (<span style={{ fontFamily: 'var(--font-mono)' }}>Aa</span>), but 2D math is the default.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 22, marginTop: 30 }}>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <Label k="A" sub="Default edit state: the engineer types and notation forms live. Here a stacked fraction is mid-build — the caret sits in the denominator with a placeholder box for the next term. Below, the math input bar: click to insert structures, or use the key-shortcut shown.">Live 2D entry + math input bar</Label>
+              <Frame><FrameLiveEntry /></Frame>
+            </div>
+            <div>
+              <Label k="B" sub="A definition. The unit token (kN) is styled distinctly from the variable — sans, green, slightly smaller.">Definition with unit token</Label>
+              <Frame><FrameDefinition /></Frame>
+            </div>
+            <div>
+              <Label k="C" sub="Show-steps: name := symbolic formula, the formula with values substituted, then the result carrying its unit and highlighted.">Show steps — three lines</Label>
+              <Frame><FrameSteps /></Frame>
+            </div>
+            <div>
+              <Label k="D" sub="Unit-mismatch error: the offending expression gets a red wavy underline and a specific, fixable message.">Unit-mismatch error</Label>
+              <Frame><FrameError /></Frame>
+            </div>
+            <div>
+              <Label k="E" sub="Committed result, with the √x | Aa mode toggle. Same region, two entry modes — natural 2D is default; plain mono is secondary.">Committed result + mode toggle</Label>
+              <Frame><FrameResult /></Frame>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Sign in</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--surface-paper); }
+  #root { height: 100vh; }
+
+  .split {
+    display: grid;
+    grid-template-columns: 45% 55%;
+    height: 100vh;
+    min-height: 600px;
+  }
+
+  /* faint blueprint dot-grid on the dark brand panel */
+  .brand-grid {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+    background-position: -1px -1px;
+  }
+
+  /* Re-alias semantic tokens inside the nested dark scope. The DS dark block
+     overrides base palette tokens (--paper etc.) but the semantic aliases were
+     resolved at :root and inherited, so they need re-declaring here to recompute. */
+  .brand-panel[data-theme="dark"] {
+    --surface-paper: var(--paper);
+    --surface-chrome: var(--chrome);
+    --surface-raised: #1F242C;
+    --surface-selected: var(--blueprint-tint);
+    --surface-hover: #232831;
+    --border-hairline: var(--rule);
+    --border-strong: var(--rule-strong);
+    --border-focus: var(--blueprint);
+    --text-primary: var(--ink);
+    --text-muted: var(--muted);
+    --text-link: var(--blueprint);
+    --text-math: var(--ink);
+    --accent: var(--blueprint);
+    --accent-tint: var(--blueprint-tint);
+    --accent-press: #7DB0FF;
+    --status-pass: var(--pass);
+    --status-warning: var(--warning);
+    --status-error: var(--error);
+    --focus-ring: var(--blueprint);
+  }
+
+  .q-link {
+    color: var(--text-link);
+    text-decoration: none;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .q-link:hover { text-decoration: underline; }
+  .q-link:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  @keyframes caret-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .caret { animation: caret-blink 1.05s steps(1) infinite; }
+  .rise-in { animation: rise-in var(--dur-slow) var(--ease-out); }
+  .fade-in { animation: fade-in var(--dur-base) var(--ease-out); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caret, .rise-in, .fade-in { animation: none; }
+  }
+
+  @media (max-width: 880px) {
+    .split { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+    .brand-panel { min-height: 0 !important; padding: 32px 36px !important; }
+    .brand-motif { display: none !important; }
+    .brand-foot { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button || !Q.MathRegion) { return setTimeout(start, 40); }
+    const { Button, Input, Tabs, Checkbox, Sub, Frac, Sup, Op } = Q;
+    const { useState, useEffect, useRef } = React;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* ---------- icons (1.5px line, Lucide family) ---------- */
+    const svg = (children, size = 18) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+    );
+    const EyeIcon = () => svg(<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>, 17);
+    const EyeOffIcon = () => svg(<><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.4 5.2A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.4 3.3"/><path d="M6.2 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 3.1-.5"/></>, 17);
+    const AlertIcon = () => svg(<><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></>, 15);
+    const KeyIcon = () => svg(<><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16 7l3 3M18.5 4.5 21 7"/></>, 17);
+    const ArrowIcon = () => svg(<><path d="M5 12h14M13 6l6 6-6 6"/></>, 16);
+    // Google G — monochrome line treatment to match the system's icon weight
+    const GoogleIcon = () => (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12.2c0 5.05-3.6 8.6-9 8.6a8.8 8.8 0 1 1 5.9-15.3"/>
+        <path d="M21 11.5h-8.2v2.6h5.3"/>
+      </svg>
+    );
+
+    /* ---------- the signature live-math motif (looping) ---------- */
+    function MathMotif() {
+      const FULL = 'M_Ed := w*L^2/8';
+      const [typed, setTyped] = useState(reducedMotion ? FULL : '');
+      const [phase, setPhase] = useState(reducedMotion ? 'committed' : 'typing'); // typing | committed
+
+      useEffect(() => {
+        if (reducedMotion) return;
+        let alive = true;
+        const timers = [];
+        const wait = (ms) => new Promise((r) => timers.push(setTimeout(r, ms)));
+        (async function loop() {
+          while (alive) {
+            setPhase('typing'); setTyped('');
+            await wait(620);
+            for (let i = 1; i <= FULL.length && alive; i++) { setTyped(FULL.slice(0, i)); await wait(72); }
+            await wait(720);
+            if (!alive) break;
+            setPhase('committed');
+            await wait(3600);
+          }
+        })();
+        return () => { alive = false; timers.forEach(clearTimeout); };
+      }, []);
+
+      const cellStyle = {
+        position: 'relative',
+        background: 'rgba(255,255,255,0.018)',
+        border: '1px solid var(--border-hairline)',
+        borderRadius: 'var(--radius-md)',
+        padding: '22px 24px',
+        minHeight: 96,
+        display: 'flex', alignItems: 'center',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+      };
+
+      const It = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+
+      return (
+        <div className="brand-motif" style={{ width: '100%', maxWidth: 380 }}>
+          {/* tiny region chrome label */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{
+              font: '600 11px/1 var(--font-sans)', letterSpacing: 'var(--tracking-eyebrow)',
+              textTransform: 'uppercase', color: 'var(--text-muted)',
+            }}>Live math</span>
+            <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
+            <span style={{ font: '11px/1 var(--font-mono)', color: 'var(--text-muted)' }}>region 03</span>
+          </div>
+
+          <div style={cellStyle}>
+            {phase === 'typing' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{
+                  font: '600 10px/1 var(--font-sans)', letterSpacing: 'var(--tracking-eyebrow)',
+                  textTransform: 'uppercase', color: 'var(--accent)',
+                  border: '1px solid var(--accent)', borderRadius: 3, padding: '3px 5px',
+                }}>edit</span>
+                <span style={{ font: '16px/1.3 var(--font-mono)', color: 'var(--text-primary)', whiteSpace: 'pre' }}>
+                  {typed}
+                  <span className="caret" style={{
+                    display: 'inline-block', width: 2, height: '1.05em', marginLeft: 1,
+                    transform: 'translateY(0.18em)', background: 'var(--accent)',
+                  }} />
+                </span>
+              </div>
+            ) : (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '0.32em',
+                font: '22px/1.15 var(--font-math)', color: 'var(--text-math)',
+              }}>
+                <Sub base="M" sub="Ed" />
+                <Op>=</Op>
+                <Frac num={<span><It>w</It><Op>·</Op><Sup base="L" sup="2" /></span>} den="8" />
+                <Op>=</Op>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'baseline', gap: '0.2em',
+                  padding: '2px 9px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--accent-tint)', color: 'var(--accent)',
+                  fontFamily: 'var(--font-math)', fontWeight: 600,
+                }}>
+                  <span>27.6</span>
+                  <span style={{ fontSize: '0.78em' }}>kN·m</span>
+                </span>
+                <span style={{
+                  marginLeft: '0.3em', font: '600 11px/1 var(--font-sans)',
+                  letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--status-pass)',
+                }}>OK</span>
+              </div>
+            )}
+          </div>
+
+          <p style={{
+            margin: '14px 2px 0', font: '13px/1.5 var(--font-sans)', color: 'var(--text-muted)',
+          }}>
+            Type a spreadsheet formula. The moment you commit, it reads as
+            textbook math — units resolved, result live.
+          </p>
+        </div>
+      );
+    }
+
+    /* ---------- brand panel ---------- */
+    function BrandPanel() {
+      return (
+        <aside data-theme="dark" className="brand-panel brand-grid" style={{
+          position: 'relative',
+          background: 'var(--surface-paper)',
+          color: 'var(--text-primary)',
+          padding: '52px 56px',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          minHeight: '100vh',
+          overflow: 'hidden',
+        }}>
+          {/* wordmark */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, position: 'relative', zIndex: 1 }}>
+            <svg width="30" height="30" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="#5B9BFF" strokeWidth="1.5"></rect>
+              <line x1="8" y1="16" x2="24" y2="16" stroke="#5B9BFF" strokeWidth="1.5" strokeLinecap="round"></line>
+              <line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="#E8EAED" strokeWidth="1.5" strokeLinecap="round"></line>
+              <circle cx="16" cy="21.75" r="1.6" fill="#46B07C"></circle>
+            </svg>
+            <span style={{ font: '600 20px/1 var(--font-sans)', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Quanta</span>
+          </div>
+
+          {/* hero: value prop + motif */}
+          <div style={{ position: 'relative', zIndex: 1, maxWidth: 430, paddingBottom: 8 }}>
+            <h1 style={{
+              margin: '0 0 30px', font: '600 28px/1.32 var(--font-sans)',
+              letterSpacing: '-0.012em', color: 'var(--text-primary)', textWrap: 'balance',
+            }}>
+              Engineering calculations that read like a textbook and recalculate like a spreadsheet.
+            </h1>
+            <MathMotif />
+          </div>
+
+          {/* quiet credibility line */}
+          <div className="brand-foot" style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--status-pass)' }} />
+            <span style={{ font: '12px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>
+              Built for structural, civil, and mechanical engineers.
+            </span>
+          </div>
+        </aside>
+      );
+    }
+
+    /* ---------- form field ---------- */
+    function Field({ label, htmlFor, link, children, error }) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+            <label htmlFor={htmlFor} style={{ font: '500 13px/1 var(--font-sans)', color: 'var(--text-primary)' }}>{label}</label>
+            {link}
+          </div>
+          {children}
+          {error && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 1,
+              color: 'var(--status-error)', font: '12px/1.45 var(--font-sans)',
+            }}>
+              <span style={{ flex: '0 0 auto', marginTop: 0.5 }}><AlertIcon /></span>
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const fieldContainer = { height: 42, padding: '0 12px', borderRadius: 'var(--radius-sm)' };
+    const fieldInput = { fontSize: 14 };
+    const primaryBtn = { height: 44, fontSize: 14, borderRadius: 'var(--radius-sm)' };
+    const socialBtn = { height: 42, fontSize: 13.5, borderRadius: 'var(--radius-sm)' };
+
+    function PasswordField({ id, label, value, onChange, link, error, placeholder }) {
+      const [show, setShow] = useState(false);
+      return (
+        <Field label={label} htmlFor={id} link={link} error={error}>
+          <Input
+            id={id}
+            type={show ? 'text' : 'password'}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            invalid={!!error}
+            autoComplete="current-password"
+            containerStyle={fieldContainer}
+            style={fieldInput}
+            suffix={
+              <button type="button" onClick={() => setShow((s) => !s)}
+                aria-label={show ? 'Hide password' : 'Show password'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 26, height: 26, margin: '0 -4px 0 0', padding: 0,
+                  border: 'none', background: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', borderRadius: 3,
+                }}>
+                {show ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            }
+          />
+        </Field>
+      );
+    }
+
+    function Divider() {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 0' }}>
+          <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
+          <span style={{ font: '11px/1 var(--font-sans)', letterSpacing: '0.04em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>or</span>
+          <span style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
+        </div>
+      );
+    }
+
+    function SocialButtons() {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Button variant="secondary" fullWidth iconLeft={<GoogleIcon />} style={socialBtn}>Continue with Google</Button>
+          <Button variant="secondary" fullWidth iconLeft={<KeyIcon />} style={socialBtn}>Continue with SSO</Button>
+        </div>
+      );
+    }
+
+    /* ---------- sign in form ---------- */
+    function SignInForm() {
+      const [email, setEmail] = useState('nadia@brunelpartners.com');
+      const [password, setPassword] = useState('Spans4.2m');
+      // demonstrate the inline error state by default; clears on edit
+      const [showErr, setShowErr] = useState(true);
+
+      const submit = (e) => { e.preventDefault(); setShowErr(true); };
+
+      const errorMsg = showErr ? (
+        <span>That password doesn&rsquo;t match. Try again or{' '}
+          <span className="q-link" tabIndex="0" style={{ color: 'var(--status-error)', fontWeight: 500 }}
+            onClick={() => setShowErr(false)}>reset it</span>.
+        </span>
+      ) : null;
+
+      return (
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <Field label="Work email" htmlFor="si-email">
+            <Input id="si-email" type="email" value={email} placeholder="you@firm.com"
+              autoComplete="email" onChange={(e) => setEmail(e.target.value)}
+              containerStyle={fieldContainer} style={fieldInput} />
+          </Field>
+
+          <PasswordField
+            id="si-password"
+            label="Password"
+            value={password}
+            placeholder="Enter your password"
+            error={errorMsg}
+            onChange={(e) => { setPassword(e.target.value); if (showErr) setShowErr(false); }}
+            link={<span className="q-link" tabIndex="0" style={{ font: '12px/1 var(--font-sans)' }}>Forgot password</span>}
+          />
+
+          <Button type="submit" variant="primary" fullWidth style={primaryBtn}>Sign in</Button>
+
+          <div style={{ textAlign: 'center', marginTop: -4 }}>
+            <span className="q-link" tabIndex="0" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, font: '13px/1 var(--font-sans)',
+            }}>
+              Sign in with magic link <ArrowIcon />
+            </span>
+          </div>
+
+          <Divider />
+          <SocialButtons />
+        </form>
+      );
+    }
+
+    /* ---------- create account form ---------- */
+    function CreateForm() {
+      const [name, setName] = useState('');
+      const [email, setEmail] = useState('');
+      const [company, setCompany] = useState('');
+      const [password, setPassword] = useState('');
+      const [agree, setAgree] = useState(false);
+
+      return (
+        <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="Full name" htmlFor="ca-name">
+            <Input id="ca-name" value={name} placeholder="Nadia Brunel" autoComplete="name"
+              onChange={(e) => setName(e.target.value)} containerStyle={fieldContainer} style={fieldInput} />
+          </Field>
+
+          <Field label="Work email" htmlFor="ca-email">
+            <Input id="ca-email" type="email" value={email} placeholder="you@firm.com" autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)} containerStyle={fieldContainer} style={fieldInput} />
+          </Field>
+
+          <Field label="Company" htmlFor="ca-company">
+            <Input id="ca-company" value={company} placeholder="Brunel Partners" autoComplete="organization"
+              onChange={(e) => setCompany(e.target.value)} containerStyle={fieldContainer} style={fieldInput} />
+          </Field>
+
+          <PasswordField
+            id="ca-password"
+            label="Password"
+            value={password}
+            placeholder="At least 8 characters"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginTop: 2 }}>
+            <span style={{ marginTop: 1 }}>
+              <Checkbox checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            </span>
+            <span style={{ font: '12.5px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>
+              I agree to Quanta&rsquo;s <span className="q-link" tabIndex="0">Terms of Service</span> and{' '}
+              <span className="q-link" tabIndex="0">Privacy Policy</span>.
+            </span>
+          </label>
+
+          <Button type="submit" variant="primary" fullWidth disabled={!agree} style={primaryBtn}>Create account</Button>
+
+          <Divider />
+          <SocialButtons />
+        </form>
+      );
+    }
+
+    /* ---------- right panel ---------- */
+    function FormPanel() {
+      const [tab, setTab] = useState('signin');
+      return (
+        <main style={{
+          background: 'var(--surface-paper)',
+          display: 'flex', flexDirection: 'column',
+          padding: '40px 56px 28px',
+          overflowY: 'auto',
+        }}>
+          {/* top row — small contextual switch on the right */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', minHeight: 30 }}>
+            <span style={{ font: '12.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>
+              {tab === 'signin' ? (
+                <>New to Quanta?{' '}<span className="q-link" tabIndex="0" onClick={() => setTab('create')}>Create account</span></>
+              ) : (
+                <>Already have an account?{' '}<span className="q-link" tabIndex="0" onClick={() => setTab('signin')}>Sign in</span></>
+              )}
+            </span>
+          </div>
+
+          {/* centered form column */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 384, margin: '0 auto', padding: '24px 0' }}>
+              <h2 style={{ margin: '0 0 4px', font: '600 22px/1.2 var(--font-sans)', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
+                {tab === 'signin' ? 'Sign in to your workspace' : 'Create your account'}
+              </h2>
+              <p style={{ margin: '0 0 24px', font: '13.5px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>
+                {tab === 'signin'
+                  ? 'Pick up where your calculations left off.'
+                  : 'Start a worksheet in minutes — no credit card.'}
+              </p>
+
+              <div style={{ marginBottom: 24 }}>
+                <Tabs
+                  items={[{ value: 'signin', label: 'Sign in' }, { value: 'create', label: 'Create account' }]}
+                  value={tab}
+                  onChange={setTab}
+                />
+              </div>
+
+              {tab === 'signin' ? <SignInForm /> : <CreateForm />}
+            </div>
+          </div>
+
+          {/* footer */}
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, paddingTop: 16 }}>
+            <span className="q-link" tabIndex="0" style={{ font: '12px/1 var(--font-sans)', color: 'var(--text-muted)' }}>Terms</span>
+            <span style={{ color: 'var(--border-strong)' }}>·</span>
+            <span className="q-link" tabIndex="0" style={{ font: '12px/1 var(--font-sans)', color: 'var(--text-muted)' }}>Privacy</span>
+          </div>
+        </main>
+      );
+    }
+
+    function App() {
+      return (
+        <div className="split" data-screen-label="Sign in / Sign up">
+          <BrandPanel />
+          <FormPanel />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  };
+  start();
+}
+</script>
+</body>
+</html>
