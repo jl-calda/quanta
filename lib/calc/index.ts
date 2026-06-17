@@ -20,6 +20,7 @@ export {
 
 // Building blocks (exposed for tests, tooling, and the editor layer).
 export { parseRegion, splitDefinition, collectDeps, normalizeSource } from "./parse";
+export { latexToSource, sourceToLatex } from "./latex";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";
 export { applyConditional } from "./conditional";
