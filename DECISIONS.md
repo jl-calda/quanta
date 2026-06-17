@@ -2,6 +2,44 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Dashboard / Home (Func §4.2)
+
+- **The dashboard is a full app shell via a route group, not a bare page.** The
+  `Dashboard.html` mockup is a two-pane shell (232px nav rail + 72px top bar) with
+  no global chrome above it. `app/app/page.tsx` was `git mv`'d into a new
+  `app/(app)/` route group (path-transparent → URL stays `/app`); `app/(app)/layout.tsx`
+  owns the full-viewport `flex h-screen` shell + nav rail, and `/app` was added to
+  `ConditionalAppBar`'s hide list so the global AppBar doesn't stack on top.
+- **Theme + density toggles moved into the nav-rail user menu.** The dashboard top
+  bar has no place for them (it carries greeting/search/New-worksheet), so the
+  bottom user card opens a popover hosting `ThemeToggle`, `DensityToggle`, and
+  `signOut` — keeping the preference controls reachable on every shell page.
+- **`createWorksheet` returns `ok({id})` and the client navigates** (matches the
+  `create-workspace-form` pattern), rather than calling server `redirect()` (which
+  throws `NEXT_REDIRECT`). The split-button / template-card islands `router.push('/w/'+id)`.
+- **Create is role-gated in the UI** because RLS `worksheets_insert` requires
+  `member_role ∈ {owner,admin,engineer}`. The split-button is disabled with a
+  tooltip for lower roles, and the action maps Postgres `42501` to an app-voice
+  message — no silent failure.
+- **A stub `/w/[id]` editor route** (user choice) renders the new sheet's title +
+  "coming soon" so the create flow is verifiable now; it lives outside `(app)`
+  (no nav rail) since the editor will own its own chrome later.
+- **Search is a debounced client island → `searchWorksheets` server action →
+  results popover**, not `?q=` URL filtering, so it overlays browse mode and stays
+  interactive while reads remain server-side/RLS-scoped. Tags are matched via
+  explicit tag→link→sheet id lookups (fully typed, RLS-safe) rather than a deep
+  PostgREST embed; LIKE wildcards in the query are escaped.
+- **MiniPreview is a deterministic placeholder** keyed off the worksheet/template
+  id (`charSum % 4` over four ported sample calcs) using the server-safe DS math
+  primitives — faithful to the "live-math moment" without blocking on the editor /
+  calc engine. A guarded `content`-derived path is reserved for later.
+- **Seeded six public starter templates** (user choice) in `0006_seed_templates.sql`
+  (`workspace_id`/`author_id` null, `visibility = 'public'`, minimal valid content,
+  idempotent) so the templates row + empty-state suggestions aren't blank on a
+  fresh account. Template/owner queries narrow to active-workspace + public to
+  avoid cross-tenant leakage; shared workspace read helpers are wrapped in React
+  `cache()` so the layout and page share one fetch per request.
+
 ## Sign in / Sign up screen (Func §4.1)
 
 - **The screen is the deliverable; the auth backend already shipped in M1.**

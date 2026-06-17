@@ -426,3 +426,6 @@ export type Workspace = Database["public"]["Tables"]["workspaces"]["Row"];
 export type WorkspaceMember =
   Database["public"]["Tables"]["workspace_members"]["Row"];
 export type Worksheet = Database["public"]["Tables"]["worksheets"]["Row"];
+export type Project = Database["public"]["Tables"]["projects"]["Row"];
+export type Template = Database["public"]["Tables"]["templates"]["Row"];
+export type Tag = Database["public"]["Tables"]["tags"]["Row"];

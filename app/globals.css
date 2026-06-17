@@ -78,6 +78,57 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ---- Dashboard shell utilities (ported from Dashboard.html mockup) ---- */
+
+/* Fine 12px dot-grid for the worksheet mini-previews on recent/template cards. */
+.q-grid-mini {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 12px 12px;
+  background-position: -1px -1px;
+}
+
+/* Thin custom scrollbars for the horizontal template row / scrolling panes. */
+.scroll-x {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.scroll-x::-webkit-scrollbar {
+  height: 8px;
+}
+.scroll-x::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+.scroll-y {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Inline text link on non-anchor elements (section "see all" actions). */
+.q-link {
+  color: var(--text-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+.q-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Table row + card hover affordances. */
+.row-hover:hover {
+  background: var(--surface-hover);
+}
+.card-lift {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.card-lift:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the
