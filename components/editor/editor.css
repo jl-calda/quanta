@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Worksheet editor — chrome + canvas styles.
+   Ported from the design mockup (mathcad-like/project/editor.html <style>), on
+   the semantic _ds tokens so dark theme + density flow through. The global
+   tokens (.q-grid, .scroll-x/.scroll-y, shadows, motion, --tracking-eyebrow)
+   already live in app/globals.css + app/styles/tokens; only the editor-specific
+   rules live here, plus KaTeX sizing/colour overrides.
+   ========================================================================== */
+
+.editor-root {
+  --canvas-field: #e7eaef;
+}
+[data-theme="dark"] .editor-root {
+  --canvas-field: #0f1216;
+}
+
+/* ---- canvas page ---- */
+.ed-field {
+  background: var(--canvas-field);
+}
+.ed-page {
+  width: 816px;
+  margin: 0 auto;
+  background: var(--surface-paper);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.ed-page-body {
+  padding: 26px 52px 40px;
+  position: relative;
+}
+
+/* ---- region chrome ---- */
+.region {
+  position: relative;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.region:hover {
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+}
+.region.is-selected {
+  background: var(--surface-selected);
+  border-color: var(--accent);
+}
+.region.is-editing {
+  background: var(--surface-paper);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.region.is-error:hover {
+  background: color-mix(in srgb, var(--status-error-bg) 55%, transparent);
+}
+
+/* Hover-revealed affordances (grip, toolbar, insert-below). */
+.region .reorder,
+.region .region-tools,
+.region .insert-below {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.region:hover .reorder,
+.region:hover .region-tools,
+.region:hover .insert-below,
+.region.is-selected .reorder,
+.region.is-selected .region-tools {
+  opacity: 1;
+}
+
+.indent-guide {
+  position: absolute;
+  left: -15px;
+  top: 4px;
+  bottom: 4px;
+  border-left: 1px dashed var(--accent);
+  opacity: 0.5;
+}
+
+/* ---- ribbon / panel tabs ---- */
+.ed-tab {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ed-tab.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+
+/* ---- math keypad keys ---- */
+.kp-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-math);
+  font-size: 15px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.kp-key:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+/* ---- KaTeX: inherit the ink colour; the bundled math font carries the look ---- */
+.ed-katex .katex {
+  color: var(--text-math);
+  font-size: 1em;
+}
+
+/* The editor owns its own full-bleed scroll regions; keep the body from
+   double-scrolling behind it. */
+.editor-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

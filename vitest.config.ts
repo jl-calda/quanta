@@ -1,6 +1,13 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Mirror the tsconfig `@/*` → `./*` path alias so tests can import app modules
+  // (e.g. the editor reducer pulling in `@/lib/worksheet/*`) as values, not just
+  // type-only. The calc-engine tests use relative imports and are unaffected.
+  resolve: {
+    alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
+  },
   test: {
     // The calc engine is pure/deterministic and identical on client, worker,
     // and Node — so it is exercised in a plain Node environment. The dashboard's

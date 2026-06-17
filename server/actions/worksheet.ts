@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   createWorksheetSchema,
+  renameWorksheetSchema,
+  saveWorksheetSchema,
+  saveWorksheetVersionSchema,
   searchWorksheetsSchema,
+  setCalcModeSchema,
 } from "@/lib/schema/worksheet";
 import type { CalcStatus, Json } from "@/lib/supabase/types";
 import { ok, err, type ActionResult } from "@/server/result";
@@ -159,4 +163,144 @@ export async function searchWorksheets(
     .slice(0, limit);
 
   return ok(hits);
+}
+
+/** A read-only role tried to mutate — surfaced in the app's voice. */
+const READ_ONLY =
+  "This worksheet is read-only for your role. Ask an editor or owner for access.";
+
+/**
+ * Autosave the worksheet: persist the content tree plus the engine-derived
+ * calc status and error count. RLS (`worksheets_update`) restricts this to the
+ * owner/editor; a viewer's update matches no row, which we surface as a
+ * read-only message rather than a silent failure. Last-write-wins for now
+ * (a Yjs CRDT merge path is noted for later).
+ */
+export async function saveWorksheet(input: {
+  id: string;
+  content: unknown;
+  calcStatus: CalcStatus;
+  errorCount: number;
+}): Promise<ActionResult<{ updatedAt: string }>> {
+  const parsed = saveWorksheetSchema.safeParse(input);
+  if (!parsed.success) {
+    return err("We couldn't save your changes. Check the worksheet and try again.");
+  }
+  const { id, content, calcStatus, errorCount } = parsed.data;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("worksheets")
+    // `updated_at` is bumped by the `worksheets_set_updated_at` trigger.
+    .update({
+      content: content as Json,
+      calc_status: calcStatus,
+      error_count: errorCount,
+    })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select("updated_at")
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't save your changes. Check your connection and try again.");
+  }
+  // No row updated despite the sheet being loadable ⇒ the role can't edit it.
+  if (!data) return err(READ_ONLY);
+
+  return ok({ updatedAt: data.updated_at });
+}
+
+/** Rename a worksheet (app-bar title edit). Editor/owner only, via RLS. */
+export async function renameWorksheet(input: {
+  id: string;
+  title: string;
+}): Promise<ActionResult<{ title: string }>> {
+  const parsed = renameWorksheetSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(parsed.error.issues[0]?.message ?? "We couldn't rename the worksheet.");
+  }
+  const { id, title } = parsed.data;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("worksheets")
+    .update({ title })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select("title")
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't rename the worksheet. Try again.");
+  }
+  if (!data) return err(READ_ONLY);
+
+  revalidatePath("/app");
+  return ok({ title: data.title });
+}
+
+/** Persist the Auto/Manual calc mode toggle. Editor/owner only, via RLS. */
+export async function setCalcMode(input: {
+  id: string;
+  mode: "auto" | "manual";
+}): Promise<ActionResult<undefined>> {
+  const parsed = setCalcModeSchema.safeParse(input);
+  if (!parsed.success) return err("We couldn't change the calc mode.");
+  const { id, mode } = parsed.data;
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("worksheets")
+    .update({ calc_mode: mode })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't change the calc mode. Try again.");
+  }
+  return ok(undefined);
+}
+
+/**
+ * Snapshot the current content as a worksheet version (explicit "Save version"
+ * or a session-end save). RLS on `worksheet_versions` requires edit rights on
+ * the parent sheet.
+ */
+export async function saveWorksheetVersion(input: {
+  id: string;
+  content: unknown;
+  label?: string;
+}): Promise<ActionResult<{ versionId: string }>> {
+  const parsed = saveWorksheetVersionSchema.safeParse(input);
+  if (!parsed.success) return err("We couldn't save a version. Try again.");
+  const { id, content, label } = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("You're signed out. Sign in and try again.");
+
+  const { data, error } = await supabase
+    .from("worksheet_versions")
+    .insert({
+      worksheet_id: id,
+      content: content as Json,
+      label: label ?? null,
+      created_by: user.id,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't save a version. Try again.");
+  }
+  if (!data) return err(READ_ONLY);
+
+  return ok({ versionId: data.id });
 }
