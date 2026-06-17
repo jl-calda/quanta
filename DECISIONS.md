@@ -2,6 +2,42 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Workspace admin (§4.11 / Func §4.11)
+
+- **No new migration.** The existing schema already supports everything:
+  `workspace_members` carries `role`/`status`/`invited_email`/`invited_by`, the
+  `member_status` enum has `active|invited|suspended`, RLS gates member
+  INSERT/UPDATE/DELETE to owner/admin (`is_workspace_admin`), the
+  `protect_last_owner` trigger blocks orphaning a workspace, the sign-up trigger
+  (`handle_new_user`) already accepts pending invites on sign-in, and `audit_log`
+  + its RLS exist. The feature is pure UI + Server Actions + queries on top.
+- **Route gate + RLS.** `/admin` (in the `(app)` group) redirects non
+  owner/admin to `/app`; RLS remains the real gate (every mutation is owner/admin
+  only). Discoverability via a "Workspace admin" item in the user menu, shown only
+  when `canAdmin` (passed layout → NavRail → UserMenu).
+- **"Projects" column → "Worksheets owned".** The mockup shows a per-member
+  project count + "manage projects" and an invite-time "Assign to projects"
+  picker, but there is **no project↔member assignment** in the schema. We show the
+  count of non-deleted worksheets a member owns (`worksheets.owner_id`, real data
+  that also drives the ownership-transfer flow) and drop the project picker /
+  "manage projects". The matrix's "partial = assigned projects only" stays as a
+  documented capability state (display only).
+- **"Last active" is derived from `audit_log`.** The latest audit `created_at`
+  per actor (computed in JS over a bounded recent window, since PostgREST has no
+  easy group-by), falling back to "Joined {date}" / "Invited {date}".
+- **Owner role is editable in the table** (the mockup locks it) to support the
+  required "downgrade owner who owns worksheets → transfer ownership" prompt. The
+  last-owner safety net is the `protect_last_owner` trigger, whose
+  `check_violation` (SQLSTATE 23514) we translate into a fixable message.
+- **Ownership transfer is a prompt, not a hard block.** Demoting an owner who
+  owns worksheets opens a dialog offering "Transfer & downgrade" (reassigns those
+  worksheets' `owner_id` to a chosen owner/admin first) or "Downgrade anyway".
+- **Seats are advisory.** Usage = active members vs `workspaces.seats`; inviting
+  past the count warns but doesn't block (seats are consumed on acceptance).
+- **Roles & permissions matrix is read-only** over `lib/workspace/capabilities`
+  (the role→capability map). "Add custom role" is a disabled affordance. Members,
+  Roles, and Audit log are built fully; the rest render the mockup's placeholder.
+
 ## Print / export preview (§4.10 / Func §4.10)
 
 - **One renderer, two consumers.** `lib/export/document.tsx` (`ExportDocument`)

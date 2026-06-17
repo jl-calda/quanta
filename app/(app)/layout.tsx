@@ -34,6 +34,7 @@ export default async function AppLayout({
     <div className="flex h-screen overflow-hidden">
       <NavRail
         user={{ name: displayName, email: user?.email ?? null }}
+        canAdmin={active.role === "owner" || active.role === "admin"}
         activeWorkspace={{
           id: active.workspace.id,
           name: active.workspace.name,

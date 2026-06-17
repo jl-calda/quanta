@@ -28,11 +28,13 @@ const DOT_COLORS = [
  */
 export function NavRail({
   user,
+  canAdmin = false,
   activeWorkspace,
   workspaces,
   projects,
 }: {
   user: { name: string; email: string | null };
+  canAdmin?: boolean;
   activeWorkspace: { id: string; name: string; plan: string; seats: number };
   workspaces: WorkspaceOption[];
   projects: ProjectSummary[];
@@ -119,7 +121,7 @@ export function NavRail({
           workspaces={workspaces}
           subtitle={subtitle}
         />
-        <UserMenu name={user.name} email={user.email} />
+        <UserMenu name={user.name} email={user.email} canAdmin={canAdmin} />
       </div>
     </nav>
   );
