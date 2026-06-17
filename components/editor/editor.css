@@ -7,6 +7,22 @@
    rules live here, plus KaTeX sizing/colour overrides.
    ========================================================================== */
 
+/* ---- app-bar spinner (autosave "Saving…") ---- */
+@keyframes q-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.q-spin {
+  animation: q-spin 0.9s linear infinite;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .q-spin {
+    animation: none;
+  }
+}
+
 .editor-root {
   --canvas-field: #e7eaef;
 }
