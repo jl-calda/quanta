@@ -122,6 +122,33 @@
   font-size: 1em;
 }
 
+/* ---- MathLive 2D entry field (primary math entry) ---- */
+.ed-mathfield-host {
+  display: inline-flex;
+}
+.ed-mathfield {
+  min-width: 220px;
+  font-size: 18px;
+  padding: 2px 8px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: var(--radius-sm);
+  --selection-background-color: var(--accent-tint);
+  --caret-color: var(--accent);
+}
+.ed-mathfield:focus,
+.ed-mathfield:focus-within {
+  outline: none;
+}
+/* Manual virtual-keyboard policy — hide the built-in toggles (Quanta has its
+   own keypad). */
+.ed-mathfield::part(virtual-keyboard-toggle),
+.ed-mathfield::part(menu-toggle) {
+  display: none;
+}
+
 /* The editor owns its own full-bleed scroll regions; keep the body from
    double-scrolling behind it. */
 .editor-root {

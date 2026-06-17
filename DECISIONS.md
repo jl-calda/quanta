@@ -2,6 +2,50 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## MathLive natural 2D entry (Func §2 / Matrix G2)
+
+- **MathLive is the primary math-entry surface; the mono field stays as a
+  secondary toggle.** `components/editor/math-field.tsx` wraps MathLive's
+  `<math-field>` web component; `MathEditor` (`regions/math-region.tsx`) now
+  renders it by default with the entry-mode chip (`√x` active, `Aa` plain text)
+  switching to the existing Geist-Mono input. Committed math is unchanged —
+  still KaTeX from the engine's `tex`.
+- **Canonical `region.source` stays engine plain-text; no `latex` field is
+  added to the content tree.** MathLive is *seeded from* plain text and
+  *commits back to* plain text, so the content schema, the round-trip save, the
+  plain-text secondary mode, and the committed KaTeX render are all untouched.
+  The alternative (storing LaTeX as the source) would have been lossy and forced
+  every consumer to convert.
+- **The LaTeX↔text converters live in `/lib/calc` (`latex.ts`), the engine's
+  single source of truth.** `latexToSource` turns MathLive/mathjs LaTeX into the
+  mathjs grammar (`\frac`→`(a)/(b)`, `\sqrt`/`\sqrt[n]`→`sqrt`/`nthRoot`,
+  `\cdot`/`\times`→`*`, `\mathrm{kN}`→`kN`, `\_`/`_{}`→`_`, Greek, `\left/\right`
+  stripped) and is defensive (never throws). `sourceToLatex` seeds the field via
+  mathjs `toTex` + a rebuilt `name := …`. `normalizeSource` now routes input
+  carrying a backslash/brace/`~` through `latexToSource` — the documented seam,
+  also a safety net if LaTeX reaches the engine directly. The editor's commit
+  path normalizes up front, so stored sources are always plain text. Exotic
+  LaTeX (matrices, integrals, `cases`, feet-inches `5 ft 6 in`) is deferred.
+- **MathLive config is derived from `lib/keymap`** (`mathlive.ts`,
+  `mathfieldOptionsFromKeymap`) so both keymaps drive entry from one source:
+  MathLive's native `/`,`^`,`_`,`\`,Space cover most moves; we add the `:`→`:=`
+  (Mathcad) / `:=` (Default) assign, explicit fraction/root/Greek chords for the
+  Default profile, and curated multi-letter unit inline shortcuts (`kN`,`MPa`,…)
+  so unit tokens stay upright. The keymap layer takes no dependency on the
+  `mathlive` package (stays portable); the editor casts onto MathLive's types.
+  Keymap selection in Preferences is still a later item — MathLive uses
+  `DEFAULT_KEYMAP_ID` today but is built to accept either keymap.
+- **MathLive is loaded client-only via a dynamic `import()` inside an effect**
+  (never a top-level import) because it touches `window` and registers a custom
+  element at import — a static import would break `next build`/SSR. The build
+  confirms it code-splits into its own async chunk (loaded only when editing),
+  so the editor's first-load bundle is unchanged.
+- **MathLive fonts are served locally from `/public/mathlive/fonts`** (copied
+  from the package; `fontsDirectory` set, `soundsDirectory` null) rather than a
+  runtime CDN — self-contained, ~300 KB, and only the edit field uses them
+  (committed math is KaTeX). Toggling entry modes uses `onMouseDown`
+  `preventDefault` on the chip so the active field never blurs/commits mid-toggle.
+
 ## Worksheet editor (Func §4.3 / §5.x)
 
 - **The content tree is formalized here, not in `/lib/calc`** (closing the M2

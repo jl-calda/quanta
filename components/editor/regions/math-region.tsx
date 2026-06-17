@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { applyColonAssign, DEFAULT_KEYMAP_ID } from "@/lib/keymap";
+import { applyColonAssign, DEFAULT_KEYMAP_ID, getKeymap } from "@/lib/keymap";
+import { latexToSource } from "@/lib/calc";
 import { DEFAULT_DISPLAY, type MathRegion as MathRegionData } from "@/lib/worksheet/content";
 import { KatexMath } from "../katex-math";
+import { MathField } from "../math-field";
 import { Icon } from "../icons";
 import type { RegionRenderProps } from "./types";
 
+type EntryMode = "math" | "text";
+
 /**
- * MathRegion — Quanta's signature live-calculation cell. Toggles between a raw
- * Mathcad-style formula (Geist Mono) while editing and crisp textbook notation
- * (KaTeX from the engine's TeX) when committed, with a highlighted result + unit
- * and an OK/Fail tag from conditional formatting. Unit-mismatch and parse errors
- * surface inline in the app's voice with a wavy underline.
+ * MathRegion — Quanta's signature live-calculation cell. While editing it
+ * offers natural Mathcad-style 2D entry (MathLive, the primary input) with a
+ * plain-text mono field as a secondary toggle; when committed it shows crisp
+ * textbook notation (KaTeX from the engine's TeX) with a highlighted result +
+ * unit and an OK/Fail tag from conditional formatting. Unit-mismatch and parse
+ * errors surface inline in the app's voice with a wavy underline.
  */
 export function MathRegionView({
   region,
@@ -128,46 +133,24 @@ function MathCommitted({
 }
 
 /* ------------------------------------------------------------------ *
- * Editing — raw mono formula with the Mathcad ':' → ':=' entry move
+ * Editing — MathLive 2D entry (primary) with a plain-text mono fallback
  * ------------------------------------------------------------------ */
 
 function MathEditor({
   region,
   dispatch,
 }: Pick<RegionRenderProps<MathRegionData>, "region" | "dispatch">) {
+  // `draft` is the canonical engine-plain-text source for both entry modes;
+  // MathLive is seeded from it and commits back to it. Natural 2D entry is the
+  // primary mode (CLAUDE.md / Func §2); the mono field is the secondary toggle.
   const [draft, setDraft] = useState(region.source);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<EntryMode>("math");
+  const liveLatex = useRef("");
+  const keymap = getKeymap(DEFAULT_KEYMAP_ID);
 
-  useEffect(() => {
-    const el = inputRef.current;
-    if (el) {
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-    }
-  }, []);
-
-  const commit = () => {
-    if (draft !== region.source) dispatch({ type: "EDIT_SOURCE", id: region.id, source: draft });
+  const commit = (source: string) => {
+    if (source !== region.source) dispatch({ type: "EDIT_SOURCE", id: region.id, source });
     dispatch({ type: "END_EDIT" });
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setDraft(region.source);
-      dispatch({ type: "END_EDIT" });
-    } else if (e.key === ":" && DEFAULT_KEYMAP_ID === "mathcad") {
-      const el = e.currentTarget;
-      const edit = applyColonAssign(el.value, el.selectionStart ?? el.value.length);
-      if (edit) {
-        e.preventDefault();
-        setDraft(edit.value);
-        requestAnimationFrame(() => el.setSelectionRange(edit.caret, edit.caret));
-      }
-    }
   };
 
   return (
@@ -182,46 +165,164 @@ function MathEditor({
       >
         edit
       </span>
-      <input
-        ref={inputRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={commit}
-        onClick={(e) => e.stopPropagation()}
-        spellCheck={false}
-        placeholder="e.g. N_Rd := 0.75 · A_s · f_ub"
-        style={{
-          font: "var(--text-14)/1.3 var(--font-mono)",
-          color: "var(--text-primary)",
-          background: "var(--surface-raised)",
-          border: "1px solid var(--border-focus)",
-          boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)",
-          borderRadius: "var(--radius-sm)",
-          padding: "4px 8px",
-          minWidth: Math.max(220, (draft.length + 6) * 8.4),
-          outline: "none",
+
+      {mode === "math" ? (
+        <MathField
+          value={draft}
+          keymap={keymap}
+          onLatexChange={(latex) => (liveLatex.current = latex)}
+          onCommit={commit}
+          onCancel={() => dispatch({ type: "END_EDIT" })}
+        />
+      ) : (
+        <PlainTextEntry
+          source={draft}
+          onChangeDraft={setDraft}
+          onCommit={commit}
+          onCancel={() => dispatch({ type: "END_EDIT" })}
+        />
+      )}
+
+      <EntryModeToggle
+        mode={mode}
+        toMath={() => setMode("math")}
+        toText={() => {
+          // Carry the in-progress 2D formula across to the mono field.
+          if (liveLatex.current) setDraft(latexToSource(liveLatex.current));
+          setMode("text");
         }}
       />
-      <span
-        title="Entry mode"
-        style={{ display: "inline-flex", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)", overflow: "hidden", height: 20 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span
-          title="Natural math (2D) — coming soon"
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, color: "var(--text-muted)", fontFamily: "var(--font-math)", fontStyle: "italic", fontSize: 11, opacity: 0.55 }}
-        >
-          √x
-        </span>
-        <span
-          title="Plain formula (text)"
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, background: "var(--accent)", color: "#fff", fontSize: 10, fontWeight: 600 }}
-        >
-          Aa
-        </span>
-      </span>
     </div>
+  );
+}
+
+/** Secondary entry: the raw Mathcad-style mono field with the `:` → `:=` move. */
+function PlainTextEntry({
+  source,
+  onChangeDraft,
+  onCommit,
+  onCancel,
+}: {
+  source: string;
+  onChangeDraft: (value: string) => void;
+  onCommit: (source: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(source);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, []);
+
+  const update = (value: string) => {
+    setDraft(value);
+    onChangeDraft(value);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onCommit(draft);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel();
+    } else if (e.key === ":" && DEFAULT_KEYMAP_ID === "mathcad") {
+      const el = e.currentTarget;
+      const edit = applyColonAssign(el.value, el.selectionStart ?? el.value.length);
+      if (edit) {
+        e.preventDefault();
+        update(edit.value);
+        requestAnimationFrame(() => el.setSelectionRange(edit.caret, edit.caret));
+      }
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => update(e.target.value)}
+      onKeyDown={onKeyDown}
+      onBlur={() => onCommit(draft)}
+      onClick={(e) => e.stopPropagation()}
+      spellCheck={false}
+      placeholder="e.g. N_Rd := 0.75 · A_s · f_ub"
+      style={{
+        font: "var(--text-14)/1.3 var(--font-mono)",
+        color: "var(--text-primary)",
+        background: "var(--surface-raised)",
+        border: "1px solid var(--border-focus)",
+        boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)",
+        borderRadius: "var(--radius-sm)",
+        padding: "4px 8px",
+        minWidth: Math.max(220, (draft.length + 6) * 8.4),
+        outline: "none",
+      }}
+    />
+  );
+}
+
+/** Switch between natural 2D (√x) and plain text (Aa); preserves the edit. */
+function EntryModeToggle({
+  mode,
+  toMath,
+  toText,
+}: {
+  mode: EntryMode;
+  toMath: () => void;
+  toText: () => void;
+}) {
+  const seg = (active: boolean): React.CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 24,
+    height: 20,
+    border: "none",
+    cursor: "pointer",
+    background: active ? "var(--accent)" : "transparent",
+    color: active ? "#fff" : "var(--text-muted)",
+  });
+
+  return (
+    <span
+      role="group"
+      aria-label="Entry mode"
+      style={{
+        display: "inline-flex",
+        border: "1px solid var(--accent)",
+        borderRadius: "var(--radius-sm)",
+        overflow: "hidden",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        title="Natural math (2D)"
+        aria-pressed={mode === "math"}
+        // Don't steal focus from the active field — keeps the edit alive.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={toMath}
+        style={{ ...seg(mode === "math"), fontFamily: "var(--font-math)", fontStyle: "italic", fontSize: 11 }}
+      >
+        √x
+      </button>
+      <button
+        type="button"
+        title="Plain formula (text)"
+        aria-pressed={mode === "text"}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={toText}
+        style={{ ...seg(mode === "text"), fontSize: 10, fontWeight: 600 }}
+      >
+        Aa
+      </button>
+    </span>
   );
 }
 

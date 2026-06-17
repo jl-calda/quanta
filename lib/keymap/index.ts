@@ -4,6 +4,11 @@
  */
 export { keymaps, getKeymap, DEFAULT_KEYMAP_ID } from "./keymaps";
 export { applyColonAssign, type EntryEdit } from "./transform";
+export {
+  mathfieldOptionsFromKeymap,
+  type MathfieldKeymapConfig,
+  type MathfieldKeybinding,
+} from "./mathlive";
 export type {
   Keymap,
   KeymapId,

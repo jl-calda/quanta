@@ -10,6 +10,7 @@
 import { math } from "./math";
 import type { MathNode } from "./math";
 import { classifyThrow } from "./errors";
+import { latexToSource } from "./latex";
 import type { CalcError } from "./types";
 
 export interface ParsedRegion {
@@ -31,14 +32,21 @@ const ASSIGN_WALRUS = new RegExp(`^\\s*(${NAME})\\s*:=\\s*([\\s\\S]*)$`);
 // Secondary plain-text form: a single `:` after a bare name (ranges use `..`).
 const ASSIGN_COLON = new RegExp(`^\\s*(${NAME})\\s*:(?!=)\\s*([\\s\\S]+)$`);
 
+/** Constructs that only appear in LaTeX, never in the engine's plain text. */
+const LATEX_SIGNAL = /[\\{}~]/;
+
 /**
  * Normalize incoming source to the engine's plain-text expression form.
  *
  * The primary editor (MathLive) emits LaTeX; a plain-text field is the
- * secondary path. For this milestone the engine consumes plain text directly;
- * `\\`-prefixed LaTeX is a seam to be filled when MathLive is wired in (M3+).
+ * secondary path. The plain-text grammar never contains a backslash, brace, or
+ * `~`, so those are an unambiguous LaTeX signal: convert that input to plain
+ * text ({@link latexToSource}); otherwise just trim. The editor's MathLive
+ * commit path normalizes up front, so this is also a defensive seam — the
+ * engine stays correct if LaTeX ever reaches it directly.
  */
 export function normalizeSource(source: string): string {
+  if (LATEX_SIGNAL.test(source)) return latexToSource(source);
   return source.trim();
 }
 
