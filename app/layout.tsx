@@ -5,7 +5,7 @@ import { STIX_Two_Text } from "next/font/google";
 import "./globals.css";
 import { readPreferences } from "@/lib/preferences/server";
 import { PreferencesProvider } from "@/lib/preferences/provider";
-import { AppBar } from "@/components/app-bar";
+import { ConditionalAppBar } from "@/components/conditional-app-bar";
 
 // Rendered math notation — the product's voice (true textbook math glyphs).
 const stixTwoText = STIX_Two_Text({
@@ -38,7 +38,7 @@ export default async function RootLayout({
       <body>
         <PreferencesProvider initialDensity={density} initialTheme={theme}>
           <div className="flex min-h-screen flex-col">
-            <AppBar />
+            <ConditionalAppBar />
             {children}
           </div>
         </PreferencesProvider>

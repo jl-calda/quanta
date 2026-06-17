@@ -1,72 +1,151 @@
 "use client";
 
-import { useActionState } from "react";
-import { signUpWithPassword, signInWithOAuth } from "@/server/actions/auth";
+import { useActionState, useEffect, useState } from "react";
+import Link from "next/link";
+import { Button, Checkbox } from "@/components/ds";
+import { signUpWithPassword } from "@/server/actions/auth";
 import type { ActionResult } from "@/server/result";
-import { TextField, SubmitButton, FormError } from "./controls";
-import { GoogleMark } from "./google-mark";
+import {
+  Divider,
+  FormErrorInline,
+  PasswordField,
+  SuccessNote,
+  TextField,
+  primaryBtn,
+} from "./fields";
+import { SocialButtons } from "./social-buttons";
 
 type State = ActionResult<{ needsConfirmation: boolean }> | null;
 
 export function SignUpForm({ next }: { next: string }) {
-  const [state, action] = useActionState(
-    async (_prev: State, formData: FormData) => signUpWithPassword(formData),
-    null as State,
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [password, setPassword] = useState("");
+  const [agree, setAgree] = useState(false);
+
+  const [state, action, pending] = useActionState<State, FormData>(
+    async (_prev, formData) => signUpWithPassword(formData),
+    null,
   );
+
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    setDismissed(false);
+  }, [state]);
 
   if (state?.ok && state.data.needsConfirmation) {
     return (
-      <p className="rounded-sm border border-hairline bg-pass-bg px-3 py-3 text-13 text-pass">
-        Almost there — we sent a confirmation link to your email. Open it to
-        finish creating your account.
-      </p>
+      <SuccessNote>
+        Almost there — we sent a confirmation link to {email || "your email"}. Open
+        it to finish creating your account.
+      </SuccessNote>
     );
   }
 
+  const errs = !dismissed && state && !state.ok ? state : null;
+  const fieldErrors = errs?.fieldErrors;
+  const generalError =
+    errs && !fieldErrors?.fullName && !fieldErrors?.email && !fieldErrors?.password
+      ? errs.error
+      : undefined;
+
+  const edit = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setDismissed(true);
+  };
+
   return (
-    <div className="flex flex-col gap-4">
-      <form action={signInWithOAuth}>
-        <input type="hidden" name="provider" value="google" />
-        <input type="hidden" name="next" value={next} />
-        <SubmitButton variant="secondary">
-          <GoogleMark /> Continue with Google
-        </SubmitButton>
-      </form>
+    <form action={action} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <input type="hidden" name="next" value={next} />
 
-      <div className="flex items-center gap-3 text-11 text-muted">
-        <span className="h-px flex-1 bg-hairline" />
-        or
-        <span className="h-px flex-1 bg-hairline" />
-      </div>
+      {generalError ? <FormErrorInline>{generalError}</FormErrorInline> : null}
 
-      <form action={action} className="flex flex-col gap-3">
-        <input type="hidden" name="next" value={next} />
-        {!state?.ok && state?.error ? <FormError message={state.error} /> : null}
-        <TextField
-          label="Name"
-          name="fullName"
-          autoComplete="name"
-          error={!state?.ok ? state?.fieldErrors?.fullName : undefined}
-        />
-        <TextField
-          label="Email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          error={!state?.ok ? state?.fieldErrors?.email : undefined}
-        />
-        <TextField
-          label="Password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          required
-          placeholder="At least 8 characters"
-          error={!state?.ok ? state?.fieldErrors?.password : undefined}
-        />
-        <SubmitButton>Create account</SubmitButton>
-      </form>
-    </div>
+      <TextField
+        id="ca-name"
+        name="fullName"
+        label="Full name"
+        value={name}
+        onChange={edit(setName)}
+        placeholder="Nadia Brunel"
+        autoComplete="name"
+        required
+        error={fieldErrors?.fullName}
+      />
+
+      <TextField
+        id="ca-email"
+        name="email"
+        label="Work email"
+        type="email"
+        value={email}
+        onChange={edit(setEmail)}
+        placeholder="you@firm.com"
+        autoComplete="email"
+        required
+        error={fieldErrors?.email}
+      />
+
+      <TextField
+        id="ca-company"
+        name="company"
+        label="Company"
+        value={company}
+        onChange={edit(setCompany)}
+        placeholder="Brunel Partners"
+        autoComplete="organization"
+        error={fieldErrors?.company}
+      />
+
+      <PasswordField
+        id="ca-password"
+        name="password"
+        label="Password"
+        value={password}
+        onChange={edit(setPassword)}
+        placeholder="At least 8 characters"
+        autoComplete="new-password"
+        required
+        error={fieldErrors?.password}
+      />
+
+      <label
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+          cursor: "pointer",
+          marginTop: 2,
+        }}
+      >
+        <span style={{ marginTop: 1 }}>
+          <Checkbox checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+        </span>
+        <span style={{ font: "12.5px/1.5 var(--font-sans)", color: "var(--text-muted)" }}>
+          I agree to Quanta&rsquo;s{" "}
+          <Link href="/terms" className="auth-link">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="auth-link">
+            Privacy Policy
+          </Link>
+          .
+        </span>
+      </label>
+
+      <Button
+        type="submit"
+        variant="primary"
+        fullWidth
+        disabled={!agree || pending}
+        style={primaryBtn}
+      >
+        {pending ? "Creating account…" : "Create account"}
+      </Button>
+
+      <Divider />
+      <SocialButtons next={next} />
+    </form>
   );
 }
