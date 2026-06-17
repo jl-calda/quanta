@@ -2,6 +2,48 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## M2 — Calc engine (core pipeline)
+
+- **Scope: the deterministic main-thread pipeline only.** Parse → dependency
+  graph → topo sort → dirty-track → recalc (Auto/Manual/recalc-to-here), plus
+  result formatting, show-steps, conditional formatting, and the typed error
+  model. Tables, solve blocks, and SymPy/NumPy (Pyodide) stay on their existing
+  worker stubs — deferred to later milestones.
+- **The engine consumes a flat, reading-order region list, not the JSONB tree.**
+  `evaluateSheet(RegionInput[])` / `CalcEngine` take regions already flattened
+  into reading order (`{ id, source, unit?, format?, conditional?, … }`). The
+  `worksheets.content` Zod schema + the rows→cells→regions flattener come with
+  the editor milestone; this keeps `/lib/calc` decoupled and pure.
+- **One unified typed error model (`CalcError.kind`).** The seed's 4-code
+  `CalcErrorCode` was replaced by the §2 `kind` union
+  (`unit-mismatch|undefined|defined-later|cycle|parse|domain|singular|no-solution`)
+  with `message`/`fixHint`/`span`. `evaluate()` now returns `kind` too — one
+  model, not two parallel ones. A `CalcEngineError` lets inner layers (e.g. the
+  formatter) raise a precise typed error the orchestrator surfaces verbatim.
+- **Defined names shadow units (the single-letter problem).** Many engineering
+  variables (`b`, `h`, `t`, `g`, `d`, `s`, `m`…) are also mathjs unit names, so
+  `collectDeps` keeps *all* non-callee symbols; `filterUnitLiterals(deps,
+  definedNames)` then drops only references that no region defines AND that
+  mathjs recognizes as units. mathjs scope already shadows units at eval time, so
+  a defined `b` resolves to its value, not "bit". This is what makes
+  cross-region dependencies on short-named variables work at all.
+- **Cycle detection vs. reading order.** Reading-order visibility ("defined above
+  or to the left") yields `defined-later`/`undefined`; a separate Tarjan SCC over
+  the resolved edges catches true cycles (`a → b → a`) and self-reference. Topo
+  sort (Kahn) breaks ties by reading-order index, so evaluation order — and every
+  result — is deterministic across client, worker, and Node.
+- **Display-unit mapping is a preferred-unit list, tried in order.** SI defaults
+  (`kN, MPa, kN·m, mm²…`) are matched by `equalBase`; the first dimensional match
+  wins, else mathjs's own choice stands. A per-region target `unit` overrides.
+  Note: mathjs cannot distinguish moment from energy dimensionally (both
+  force·length), so moments rely on the region's target unit — documented as a
+  known seam, not a bug.
+- **`CalcEngine` is incremental but the pure core does the work.** It caches
+  parsed ASTs by `id`+`source`, marks an edited region + transitive dependents
+  dirty, and supports Auto (recompute now) / Manual (leave visibly stale) /
+  recalc-to-here (commit only the prefix). Debouncing lives in the UI; the engine
+  stays synchronous and pure so Node/worker/client results are identical.
+
 ## M1 — Data layer (Supabase schema + RLS + Auth)
 
 - **Schema/RLS/triggers live as SQL migrations in `supabase/migrations/`,
