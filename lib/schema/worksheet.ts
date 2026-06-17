@@ -43,9 +43,26 @@ export const saveWorksheetVersionSchema = z.object({
   label: z.string().trim().max(120).optional(),
 });
 
+/**
+ * Restore a prior version: writes its content back to the worksheet. The action
+ * snapshots the current draft first, so nothing is lost (Func §4.9).
+ */
+export const restoreWorksheetVersionSchema = z.object({
+  id: z.string().uuid(),
+  versionId: z.string().uuid(),
+});
+
+/** Name (label) a version. An empty string clears the label. */
+export const nameWorksheetVersionSchema = z.object({
+  versionId: z.string().uuid(),
+  label: z.string().trim().max(120),
+});
+
 export type CreateWorksheetInput = z.infer<typeof createWorksheetSchema>;
 export type SearchWorksheetsInput = z.infer<typeof searchWorksheetsSchema>;
 export type SaveWorksheetInput = z.infer<typeof saveWorksheetSchema>;
 export type RenameWorksheetInput = z.infer<typeof renameWorksheetSchema>;
 export type SetCalcModeInput = z.infer<typeof setCalcModeSchema>;
 export type SaveWorksheetVersionInput = z.infer<typeof saveWorksheetVersionSchema>;
+export type RestoreWorksheetVersionInput = z.infer<typeof restoreWorksheetVersionSchema>;
+export type NameWorksheetVersionInput = z.infer<typeof nameWorksheetVersionSchema>;

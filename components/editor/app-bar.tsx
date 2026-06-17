@@ -48,7 +48,7 @@ export function EditorAppBar({
     >
       {/* left */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto", minWidth: 0 }}>
-        <AppMenu canEdit={canEdit} onSaveVersion={saveVersion} />
+        <AppMenu canEdit={canEdit} worksheetId={worksheetId} onSaveVersion={saveVersion} />
         <span style={{ width: 1, height: 20, background: "var(--border-hairline)" }} />
         <QuantaMark size={20} className="text-accent" />
         <input
@@ -178,7 +178,15 @@ export function EditorAppBar({
   );
 }
 
-function AppMenu({ canEdit, onSaveVersion }: { canEdit: boolean; onSaveVersion: (label?: string) => Promise<void> }) {
+function AppMenu({
+  canEdit,
+  worksheetId,
+  onSaveVersion,
+}: {
+  canEdit: boolean;
+  worksheetId: string;
+  onSaveVersion: (label?: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -230,6 +238,14 @@ function AppMenu({ canEdit, onSaveVersion }: { canEdit: boolean; onSaveVersion: 
       {open && (
         <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 180, background: "var(--surface-raised)", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)", padding: 4, zIndex: 60 }}>
           {item(saving ? "Saving version…" : "Save version", saveVersion, !canEdit || saving)}
+          <Link
+            href={`/w/${worksheetId}/history`}
+            style={{ display: "block", padding: "7px 12px", font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)", textDecoration: "none" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            Version history
+          </Link>
           <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
           <Link href="/app" style={{ display: "block", padding: "7px 12px", font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)", textDecoration: "none" }}>
             Back to dashboard

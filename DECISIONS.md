@@ -2,6 +2,38 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Version history (§4.9 / Func §4.9)
+
+- **A dedicated route, not a modal.** The mockup is a full-page three-panel
+  screen (its own app bar with a "Back to worksheet" link), so it lives at
+  `/w/[id]/history` — the global AppBar is already suppressed for `/w/*`
+  (`conditional-app-bar.tsx`). Entry point is a "Version history" link in the
+  editor app menu. A modal would not match the export.
+- **Snapshots render through the real engine.** Each version's `content` is run
+  through the pure, synchronous `evaluateSheet` (SI display) — the same core the
+  editor uses — so historical textbook notation + results are faithful, not a
+  separate renderer. Read-only region views (`history-region.tsx`) are a
+  presentational copy of the editor's committed math/text views; table/plot/
+  image/control reuse the existing render-only views.
+- **Diff is a pure, tested util** (`lib/worksheet/diff.ts`): region-level by id +
+  a stable content hash. An `area`'s hash excludes its nested `regions` so a
+  child edit doesn't also mark the container changed (children are diffed
+  independently via `walkRegions`).
+- **All versions load with content up front.** The history page is a Server
+  Component that loads every version's content, so selection / compare / synced
+  scroll are pure client interactions with no round-trips. The live worksheet is
+  prepended as a synthetic "Current draft" entry (sentinel id `current`); Name
+  and Restore are disabled for it. Lazy per-selection content fetch is a future
+  optimization (fine under last-write-wins, modest version counts).
+- **Restore snapshots the current draft first** (`restoreWorksheetVersion`),
+  then overwrites `worksheets.content`; both the snapshot insert and the update
+  require owner/editor via RLS. `calc_status` is left as-is — the editor
+  recomputes on next load (auto) or marks stale (manual), reconciling it.
+- **Naming a version needed a new RLS UPDATE policy.** `worksheet_versions` had
+  only SELECT + INSERT, so any UPDATE was denied. `0008_worksheet_version_update`
+  adds an UPDATE policy gated to owner/editor (same as inserts). Timestamps are
+  formatted server-side and passed as strings to avoid hydration drift.
+
 ## Shared (Func §3.8 / §4.8)
 
 - **Worksheets only, active-workspace scoped.** `worksheet_collaborators` grants
