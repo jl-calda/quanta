@@ -16,9 +16,11 @@ import { SettingsIcon } from "./icons";
 export function UserMenu({
   name,
   email,
+  canAdmin = false,
 }: {
   name: string;
   email: string | null;
+  canAdmin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -84,6 +86,17 @@ export function UserMenu({
           </div>
 
           <div className="my-2 h-px bg-hairline" />
+
+          {canAdmin && (
+            <Link
+              href="/admin"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block w-full rounded-sm px-2 py-1.5 text-left text-13 text-ink transition-colors duration-[var(--dur-fast)] hover:bg-hover"
+            >
+              Workspace admin
+            </Link>
+          )}
 
           <Link
             href="/settings"
