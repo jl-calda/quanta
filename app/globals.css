@@ -180,6 +180,58 @@
   }
 }
 
+/* ---- File browser (ported from files.html mockup) ---- */
+
+/* Row hover wash + reveal of the checkbox and kebab on hover or when a
+   selection is active. */
+.fb-row {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.fb-row:hover {
+  background: var(--surface-hover);
+}
+.fb-row .row-check,
+.fb-row .row-kebab {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.fb-row:hover .row-check,
+.fb-row:hover .row-kebab,
+.fb-row.any-sel .row-check,
+.fb-row:focus-within .row-check,
+.fb-row:focus-within .row-kebab {
+  opacity: 1;
+}
+
+/* Popover / menu entrance and the floating action bar entrance. */
+.pop-in {
+  animation: pop-in var(--dur-base) var(--ease-out);
+  transform-origin: top right;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.bar-in {
+  animation: bar-in var(--dur-base) var(--ease-out);
+}
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the

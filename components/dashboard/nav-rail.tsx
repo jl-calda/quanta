@@ -60,7 +60,6 @@ export function NavRail({
           href="/worksheets"
           label="Worksheets"
           icon={<SheetIcon size={19} />}
-          disabled
         />
         <NavItem
           href="/templates"
