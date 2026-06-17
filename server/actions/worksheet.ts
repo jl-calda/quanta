@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   createWorksheetSchema,
+  nameWorksheetVersionSchema,
   renameWorksheetSchema,
+  restoreWorksheetVersionSchema,
   saveWorksheetSchema,
   saveWorksheetVersionSchema,
   searchWorksheetsSchema,
@@ -307,4 +309,105 @@ export async function saveWorksheetVersion(input: {
   if (!data) return err(READ_ONLY);
 
   return ok({ versionId: data.id });
+}
+
+/**
+ * Restore a prior version (Version history → "Restore this version"). We first
+ * snapshot the present draft as a new version — so nothing is lost (Func §4.9) —
+ * then write the chosen version's content back as the current worksheet. Both
+ * the snapshot insert and the content update require owner/editor via RLS.
+ */
+export async function restoreWorksheetVersion(input: {
+  id: string;
+  versionId: string;
+}): Promise<ActionResult<{ restoredAt: string }>> {
+  const parsed = restoreWorksheetVersionSchema.safeParse(input);
+  if (!parsed.success) return err("We couldn't restore that version. Try again.");
+  const { id, versionId } = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return err("You're signed out. Sign in and try again.");
+
+  // The version to restore (RLS: any role with read access to the sheet).
+  const { data: version } = await supabase
+    .from("worksheet_versions")
+    .select("content")
+    .eq("id", versionId)
+    .eq("worksheet_id", id)
+    .maybeSingle();
+  if (!version) return err("We couldn't find that version. It may have been removed.");
+
+  // The present draft, captured before we overwrite it.
+  const { data: current } = await supabase
+    .from("worksheets")
+    .select("content")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!current) return err("We couldn't open this worksheet. Try again.");
+
+  // Snapshot the current draft first so the restore is reversible.
+  const { error: snapshotError } = await supabase.from("worksheet_versions").insert({
+    worksheet_id: id,
+    content: current.content,
+    label: "Snapshot before restore",
+    created_by: user.id,
+  });
+  if (snapshotError) {
+    if (snapshotError.code === "42501") return err(READ_ONLY);
+    return err("We couldn't restore that version. Try again.");
+  }
+
+  // Write the chosen content back. The editor recomputes on next load.
+  const { data, error } = await supabase
+    .from("worksheets")
+    .update({ content: version.content })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select("updated_at")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't restore that version. Try again.");
+  }
+  if (!data) return err(READ_ONLY);
+
+  revalidatePath(`/w/${id}`);
+  revalidatePath(`/w/${id}/history`);
+  return ok({ restoredAt: data.updated_at });
+}
+
+/**
+ * Name (or rename) a version (Version history → "Name this version"). An empty
+ * label clears the name. Owner/editor only, via the `worksheet_versions_update`
+ * RLS policy.
+ */
+export async function nameWorksheetVersion(input: {
+  versionId: string;
+  label: string;
+}): Promise<ActionResult<{ label: string | null }>> {
+  const parsed = nameWorksheetVersionSchema.safeParse(input);
+  if (!parsed.success) return err("Keep the version name under 120 characters.");
+  const { versionId, label } = parsed.data;
+  const value = label.length > 0 ? label : null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("worksheet_versions")
+    .update({ label: value })
+    .eq("id", versionId)
+    .select("label, worksheet_id")
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42501") return err(READ_ONLY);
+    return err("We couldn't rename this version. Try again.");
+  }
+  if (!data) return err(READ_ONLY);
+
+  revalidatePath(`/w/${data.worksheet_id}/history`);
+  return ok({ label: data.label });
 }
