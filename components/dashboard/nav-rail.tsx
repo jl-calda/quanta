@@ -76,7 +76,6 @@ export function NavRail({
           href="/shared"
           label="Shared with me"
           icon={<ShareIcon size={19} />}
-          disabled
         />
         <NavItem
           href="/trash"

@@ -33,10 +33,12 @@ export interface EditorWorksheet {
 export function EditorApp({
   worksheet,
   canEdit,
+  canManage,
   me,
 }: {
   worksheet: EditorWorksheet;
   canEdit: boolean;
+  canManage: boolean;
   me: PresenceUser;
 }) {
   return (
@@ -49,7 +51,7 @@ export function EditorApp({
     >
       <div className="editor-root">
         <EditorKeyboard />
-        <EditorAppBar initialTitle={worksheet.title} me={me} />
+        <EditorAppBar initialTitle={worksheet.title} canManage={canManage} me={me} />
         <Ribbon />
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
           <LeftPanel worksheetTitle={worksheet.title} />

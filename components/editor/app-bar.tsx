@@ -7,6 +7,7 @@ import { QuantaMark } from "@/components/quanta-mark";
 import { useEditor } from "./state/editor-provider";
 import { usePresence, type PresenceUser } from "./use-presence";
 import { Icon } from "./icons";
+import { ShareDialog } from "@/components/shared/share-dialog";
 
 /**
  * Editor app bar (44px): menu · logo · editable title · autosave status |
@@ -16,19 +17,23 @@ import { Icon } from "./icons";
  */
 export function EditorAppBar({
   initialTitle,
+  canManage,
   me,
 }: {
   initialTitle: string;
+  canManage: boolean;
   me: PresenceUser;
 }) {
   const { state, canEdit, worksheetId, setMode, recalculate, rename, saveVersion } = useEditor();
   const [title, setTitle] = useState(initialTitle);
+  const [shareOpen, setShareOpen] = useState(false);
   const peers = usePresence(worksheetId, me);
 
   const save = saveStatus(state.saveState);
   const status = calcStatusBadge(state.calcStatus, state.errorCount);
 
   return (
+    <>
     <header
       style={{
         display: "flex",
@@ -136,7 +141,14 @@ export function EditorAppBar({
             {p.initials}
           </span>
         ))}
-        <Button variant="secondary" size="sm" iconLeft={<Icon name="share" size={15} />} disabled title="Sharing — coming soon" style={{ height: 30 }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft={<Icon name="share" size={15} />}
+          onClick={() => setShareOpen(true)}
+          title="Share worksheet"
+          style={{ height: 30 }}
+        >
           Share
         </Button>
         <GhostIcon icon="comment" label="Comments — coming soon" />
@@ -155,6 +167,14 @@ export function EditorAppBar({
         </span>
       </div>
     </header>
+    <ShareDialog
+      open={shareOpen}
+      onClose={() => setShareOpen(false)}
+      worksheetId={worksheetId}
+      name={title || initialTitle}
+      canManage={canManage}
+    />
+    </>
   );
 }
 
