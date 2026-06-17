@@ -26,7 +26,7 @@ export default async function WorksheetEditorPage({
 
   const { data: worksheet } = await supabase
     .from("worksheets")
-    .select("id, title, content, calc_mode, units_system")
+    .select("id, title, content, calc_mode, units_system, workspace_id")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -37,6 +37,16 @@ export default async function WorksheetEditorPage({
   // enforces the same on every mutation).
   const { data: role } = await supabase.rpc("worksheet_effective_role", { sheet: id });
   const canEdit = role === "owner" || role === "editor";
+
+  // Managing sharing (the Share dialog) is reserved for the sheet owner or a
+  // workspace admin — mirrors `worksheet_collaborators_write`.
+  let canManage = role === "owner";
+  if (!canManage) {
+    const { data: admin } = await supabase.rpc("is_workspace_admin", {
+      ws: worksheet.workspace_id,
+    });
+    canManage = admin === true;
+  }
 
   const meta = user.user_metadata as { full_name?: string } | null;
   const name = meta?.full_name || user.email || "You";
@@ -57,6 +67,7 @@ export default async function WorksheetEditorPage({
         unitsSystem: worksheet.units_system,
       }}
       canEdit={canEdit}
+      canManage={canManage}
       me={me}
     />
   );

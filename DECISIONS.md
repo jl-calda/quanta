@@ -2,6 +2,42 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Shared (Func §3.8 / §4.8)
+
+- **Worksheets only, active-workspace scoped.** `worksheet_collaborators` grants
+  worksheets, not folders — there's no `project_collaborators` table — so the
+  Shared tables list shared **worksheets** (the mockup's folder rows were
+  illustrative). Like every other page it's scoped to the active workspace.
+  *Shared with me* = my collaborator grants on sheets I don't own; *Shared by me*
+  = sheets I own that carry ≥1 grant (no `granted_by` column, so ownership is the
+  honest proxy for "I shared this").
+- **Effective role in code, not per-row RPC.** "Your role" is the stronger of the
+  explicit grant and the workspace-role baseline, computed by
+  `lib/worksheet/roles.ts` (mirrors `worksheet_effective_role` in `0002_rls.sql`)
+  to avoid an N+1 of RPC calls. RLS still enforces the real gate.
+- **Last activity = `worksheets.updated_at`** (indexed, trigger-bumped) — the
+  cheap, always-present signal — for the table column and the default sort.
+- **The activity feed is real**, not mock: `getSharedActivity` unions recent
+  `comments`, `worksheet_versions`, and `audit_log` share/role events for the
+  visible sheets and folds them via the pure `lib/worksheet/activity.ts` mapper.
+  Share mutations write `audit_log` (the table already has an INSERT policy), so
+  sharing shows up in the feed; audit writes are best-effort so a logging hiccup
+  never fails the mutation.
+- **One reusable `ShareDialog`, self-contained.** Opened from the Shared page's
+  *Manage access* and the editor app-bar's Share button (same props: worksheet
+  id + name + `canManage`). It owns its own inline feedback (no toast-host
+  dependency) so it drops into any surface; invite/role/revoke/link controls
+  render only when `canManage` (sheet owner or workspace admin, per
+  `worksheet_collaborators_write`). The editor computes `canManage` server-side
+  (`role === 'owner' || is_workspace_admin`).
+- **Data-layer MVP for invites & links (no external delivery).** Inviting a
+  non-member inserts a *pending* grant (`invited_email`, null `user_id`);
+  `0004_worksheet_invites.sql` extends `handle_new_user()` to claim those on
+  sign-up, reusing M1's dedupe-then-attach pattern. *Copy link* ensures a
+  `share_scope='link'` + `link_token` grant and copies the worksheet URL. **Out
+  of scope (typed follow-ups):** real email delivery (SMTP/Resend) and a public
+  unauthenticated `/shared/link/[token]` route to open link-shared sheets.
+
 ## Settings (Func §4.7)
 
 - **Two stores, split by ownership.** Calculation + Units & formatting are
