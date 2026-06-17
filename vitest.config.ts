@@ -8,6 +8,9 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
   },
+  // Use React's automatic JSX runtime (matching Next) so `.tsx` modules under
+  // test render without a manual `import React`. Pure `.ts` tests are unaffected.
+  esbuild: { jsx: "automatic" },
   test: {
     // The calc engine is pure/deterministic and identical on client, worker,
     // and Node — so it is exercised in a plain Node environment. The dashboard's

@@ -2,6 +2,53 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Print / export preview (§4.10 / Func §4.10)
+
+- **One renderer, two consumers.** `lib/export/document.tsx` (`ExportDocument`)
+  is a pure, no-`"use client"` React component rendered both in the live preview
+  overlay and on the server via `renderToStaticMarkup`. That shared path is what
+  makes the PDF/HTML match the screen — math goes through `katex.renderToString`,
+  which runs identically in Node and the browser.
+- **Deterministic re-evaluation, never trust client results.** The server
+  re-runs the pure engine (`evaluateForExport` = `evaluateSheet` over the flat
+  region list with `SI_SYSTEM`, exactly as the editor does) from the worksheet's
+  stored content. The on-screen preview reuses the editor's live `state.results`
+  for zero-lag WYSIWYG; both come from the same pure pipeline, so they agree.
+- **PDF via Puppeteer on the same HTML; Word/Excel are structured/linear.**
+  `puppeteer-core` + `@sparticuz/chromium` renders the self-contained print HTML
+  (true notation, native `@page` pagination, header/footer/page-numbers via
+  templates). `docx`/`xlsx` (SheetJS) are value-faithful structured exports —
+  math is linearized (`name := formula = result`), not 2D — which is the
+  pragmatic standard and keeps numbers exact.
+- **Self-contained HTML with inlined fonts.** `lib/export/html.ts` (node-only)
+  rewrites KaTeX's `url(fonts/…woff2)` to base64 data URIs and inlines Geist
+  Sans/Mono, so the artifact and Puppeteer's `setContent` need no base URL. STIX
+  Two Text is fetched by `next/font` (not vendored), so the few inline operators
+  using `--font-math` fall back to serif; the *math glyphs* are KaTeX's own
+  embedded fonts, so notation is unaffected.
+- **`react-dom/server` is dynamically imported.** Next rejects a static import of
+  it in the server graph, so `buildExportHtml` is async and `await import()`s it
+  (also keeps it out of any client bundle). PDF generation likewise dynamically
+  imports chromium behind a node-only module, with `serverExternalPackages` set
+  so it is never bundled.
+- **Action for docx/xlsx/html, route handler for PDF.** Lightweight formats use
+  the established Server Action pattern (`server/actions/export.ts`); PDF needs
+  the Node runtime + a longer `maxDuration`, so it gets its own route
+  (`app/api/worksheets/[id]/export/route.ts`). Both share `runExport`, which
+  enforces the gate server-side on every request.
+- **Preview pagination is a scroll-window clip, exact breaks come from the PDF.**
+  The overlay measures the flowed body once and renders N page frames each
+  showing a `translateY` window of the same content — paginated-looking without
+  brittle client-side measurement of every region. UI copy says breaks are
+  approximate; Puppeteer paginates the PDF precisely.
+- **Export gate = view+ with a workspace opt-in for viewers.** New
+  `WorkspaceSettings.allowViewerExport` (default off, on the existing Sharing
+  section). Owners/editors always export; viewers/commenters only when enabled.
+  Enforced in `page.tsx` (UI gate) and again in `runExport`/`isExportAllowed`
+  (the hard gate). Artifacts land in the pre-existing private `exports` bucket
+  under `${workspace_id}/…` (its RLS keys on the first path segment) and download
+  via a 300s signed URL.
+
 ## Version history (§4.9 / Func §4.9)
 
 - **A dedicated route, not a modal.** The mockup is a full-page three-panel

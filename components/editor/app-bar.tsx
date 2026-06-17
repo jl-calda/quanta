@@ -18,13 +18,15 @@ import { ShareDialog } from "@/components/shared/share-dialog";
 export function EditorAppBar({
   initialTitle,
   canManage,
+  canExport,
   me,
 }: {
   initialTitle: string;
   canManage: boolean;
+  canExport: boolean;
   me: PresenceUser;
 }) {
-  const { state, canEdit, worksheetId, setMode, recalculate, rename, saveVersion } = useEditor();
+  const { state, dispatch, canEdit, worksheetId, setMode, recalculate, rename, saveVersion } = useEditor();
   const [title, setTitle] = useState(initialTitle);
   const [shareOpen, setShareOpen] = useState(false);
   const peers = usePresence(worksheetId, me);
@@ -48,7 +50,13 @@ export function EditorAppBar({
     >
       {/* left */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto", minWidth: 0 }}>
-        <AppMenu canEdit={canEdit} worksheetId={worksheetId} onSaveVersion={saveVersion} />
+        <AppMenu
+          canEdit={canEdit}
+          canExport={canExport}
+          worksheetId={worksheetId}
+          onSaveVersion={saveVersion}
+          onExport={() => dispatch({ type: "OPEN_EXPORT" })}
+        />
         <span style={{ width: 1, height: 20, background: "var(--border-hairline)" }} />
         <QuantaMark size={20} className="text-accent" />
         <input
@@ -180,12 +188,16 @@ export function EditorAppBar({
 
 function AppMenu({
   canEdit,
+  canExport,
   worksheetId,
   onSaveVersion,
+  onExport,
 }: {
   canEdit: boolean;
+  canExport: boolean;
   worksheetId: string;
   onSaveVersion: (label?: string) => Promise<void>;
+  onExport: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -246,6 +258,15 @@ function AppMenu({
           >
             Version history
           </Link>
+          {canExport && (
+            <>
+              <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
+              {item("Print / export…", () => {
+                setOpen(false);
+                onExport();
+              })}
+            </>
+          )}
           <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
           <Link href="/app" style={{ display: "block", padding: "7px 12px", font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)", textDecoration: "none" }}>
             Back to dashboard

@@ -57,6 +57,9 @@ export interface WorkspaceSettings {
   // Units & formatting
   unitSystem: UnitSystemPref;
   format: FormatSettings;
+  // Sharing & export
+  /** Allow workspace viewers/commenters to export & print worksheets (Func §4.10). */
+  allowViewerExport: boolean;
 }
 
 /** Mirrors the mockup's initial state (settings-app.jsx:195–196). */
@@ -81,6 +84,7 @@ export const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
     complex: "rect",
     zeroSnap: true,
   },
+  allowViewerExport: false,
 };
 
 /* ------------------------------------------------------------------ *

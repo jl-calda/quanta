@@ -15,6 +15,7 @@ import { Inspector } from "./inspector";
 import { StatusBar } from "./status-bar";
 import { Keypad } from "./keypad";
 import { ReferenceOverlay } from "./reference-overlay";
+import { ExportOverlay } from "./export-overlay";
 
 export interface EditorWorksheet {
   id: string;
@@ -34,11 +35,13 @@ export function EditorApp({
   worksheet,
   canEdit,
   canManage,
+  canExport,
   me,
 }: {
   worksheet: EditorWorksheet;
   canEdit: boolean;
   canManage: boolean;
+  canExport: boolean;
   me: PresenceUser;
 }) {
   return (
@@ -51,7 +54,7 @@ export function EditorApp({
     >
       <div className="editor-root">
         <EditorKeyboard />
-        <EditorAppBar initialTitle={worksheet.title} canManage={canManage} me={me} />
+        <EditorAppBar initialTitle={worksheet.title} canManage={canManage} canExport={canExport} me={me} />
         <Ribbon />
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
           <LeftPanel worksheetTitle={worksheet.title} />
@@ -61,6 +64,7 @@ export function EditorApp({
         <StatusBar />
         <Keypad />
         <ReferenceOverlay />
+        <ExportOverlay canExport={canExport} worksheetTitle={worksheet.title} />
       </div>
     </EditorProvider>
   );

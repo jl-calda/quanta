@@ -39,6 +39,8 @@ export interface EditorUiState {
   referenceOpen: boolean;
   /** Which group the Reference library opened to (Functions / Units / …). */
   referenceKind: RefGroup;
+  /** Whether the Print / export preview overlay is open. */
+  exportOpen: boolean;
 }
 
 export interface EditorState {
@@ -110,7 +112,9 @@ export type EditorAction =
   | { type: "SET_RIBBON_TAB"; tab: string }
   | { type: "TOGGLE_RIBBON" }
   | { type: "OPEN_REFERENCE"; kind: RefGroup }
-  | { type: "CLOSE_REFERENCE" };
+  | { type: "CLOSE_REFERENCE" }
+  | { type: "OPEN_EXPORT" }
+  | { type: "CLOSE_EXPORT" };
 
 /* ------------------------------------------------------------------ *
  * Tree locators (operate on a structuredClone, mutating in place)
@@ -458,6 +462,10 @@ export function editorReducer(
       };
     case "CLOSE_REFERENCE":
       return { ...state, ui: { ...state.ui, referenceOpen: false } };
+    case "OPEN_EXPORT":
+      return { ...state, ui: { ...state.ui, exportOpen: true } };
+    case "CLOSE_EXPORT":
+      return { ...state, ui: { ...state.ui, exportOpen: false } };
 
     default:
       return state;
@@ -492,6 +500,7 @@ export function initEditorState(args: {
       ribbonCollapsed: false,
       referenceOpen: false,
       referenceKind: "FUNCTIONS",
+      exportOpen: false,
     },
   };
 }
