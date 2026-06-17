@@ -312,6 +312,7 @@ export type Database = {
           description: string | null;
           discipline: string | null;
           standard: string | null;
+          template_type: string | null;
           content: Json;
           thumbnail_url: string | null;
           visibility: string;
@@ -326,6 +327,7 @@ export type Database = {
           description?: string | null;
           discipline?: string | null;
           standard?: string | null;
+          template_type?: string | null;
           content: Json;
           thumbnail_url?: string | null;
           visibility?: string;
@@ -338,6 +340,7 @@ export type Database = {
           description?: string | null;
           discipline?: string | null;
           standard?: string | null;
+          template_type?: string | null;
           content?: Json;
           thumbnail_url?: string | null;
           visibility?: string;
@@ -406,6 +409,7 @@ export type Database = {
         Args: { sheet: string };
         Returns: WorksheetRole;
       };
+      increment_template_usage: { Args: { tpl: string }; Returns: undefined };
     };
     Enums: {
       workspace_role: WorkspaceRole;

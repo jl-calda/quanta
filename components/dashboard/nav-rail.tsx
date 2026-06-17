@@ -66,7 +66,6 @@ export function NavRail({
           href="/templates"
           label="Templates"
           icon={<TemplateIcon size={19} />}
-          disabled
         />
         <NavItem
           href="/shared"

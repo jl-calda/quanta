@@ -2,6 +2,53 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Template gallery (Func §4.4)
+
+- **"Your templates" = templates you authored, not a saved/bookmarked set.** The
+  mockup's `SAVED_IDS` is placeholder; the tab maps to Func's "author" scope
+  (`author_id = auth.uid()`), so no new table is needed. A favourites/bookmark
+  collection is a separate future feature.
+- **Filters are URL searchParams, server-rendered.** `/templates` is a Server
+  Component that parses `tab/q/discipline/standard/type` via
+  `templateFiltersSchema`; the client gallery only translates interactions into
+  URL pushes. Filters are therefore shareable and RLS-scoped at the source. The
+  filter chip values are **data-driven** (`getTemplateFacets` returns the
+  distinct discipline/standard/type actually present), not a hardcoded list.
+- **A `template_type` column was added (migration 0007).** The schema had
+  discipline + standard but no type; the gallery's third facet needed one. The
+  six public seeds are backfilled with a sensible type.
+- **`usage_count` is bumped via a `SECURITY DEFINER` RPC
+  (`increment_template_usage`), not a direct UPDATE.** `templates_update` RLS
+  only lets the author / a workspace admin write a row, so a member using a
+  *public* template they don't own would match no row. The function scopes its
+  write to templates the caller may *read* (same predicate as
+  `templates_select`), so it can only ever bump a count the user could already
+  see. `createWorksheet` calls it best-effort after a template-seeded insert.
+- **"Save as template" visibility maps the scope enum to the stored value.** The
+  dialog offers `author | workspace | public`; `author` is stored as the
+  existing `visibility = 'private'` (visible only to the author). This avoids a
+  data/enum rename when RLS only special-cases `'public'`. `workspace_id` is set
+  only for the `workspace` scope.
+- **The Preview drawer reuses the editor's read-only renderer, not a new path.**
+  It mounts `EditorProvider` + `Canvas` with `canEdit={false}` (Canvas already
+  gates its edit chrome on `canEdit`; autosave is disabled), scaled into the
+  drawer. That chunk (mathjs/KaTeX) is **lazy-loaded** via `next/dynamic` so it
+  only ships when a template with real content is previewed — `/templates` First
+  Load stays ~131 kB. When a template's content is empty (the current seeds), the
+  body falls back to the seeded math-thumbnail "pages" matching the export.
+- **Thumbnails are generated, not stored.** `TemplateThumb` renders one of 8
+  textbook-math variants chosen deterministically from the template id (ported
+  from `gallery-thumbs.jsx`). "Save as template" leaves `thumbnail_url` null —
+  the deterministic renderer is the thumbnail; a stored image is a future path.
+- **`featured` = Quanta-official (curated) templates** (`author_id is null`),
+  since there's no `featured` column and the flag is decorative.
+- **Drawer footer is trimmed to functional controls.** The export shows
+  bookmark / copy-link / duplicate / use-template; bookmarking needs the
+  out-of-scope favourites store and "duplicate" overlaps "use template", so the
+  footer ships **Copy link** (a `?preview=<id>` deep link, honoured on load) +
+  **Use template**. The card class is namespaced `tpl-gallery-card` so its hover
+  rules don't bleed into the dashboard's `tpl-card`.
+
 ## MathLive natural 2D entry (Func §2 / Matrix G2)
 
 - **MathLive is the primary math-entry surface; the mono field stays as a

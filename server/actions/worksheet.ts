@@ -51,6 +51,10 @@ export async function createWorksheet(input: {
     if (template) {
       title = template.title;
       content = template.content;
+      // Bump the template's usage_count. A SECURITY DEFINER RPC handles this
+      // because `templates_update` RLS would block a member from updating a
+      // public template they don't own. Best-effort — never fail the create.
+      await supabase.rpc("increment_template_usage", { tpl: templateId });
     }
   }
 

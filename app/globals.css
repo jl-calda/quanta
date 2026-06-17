@@ -129,6 +129,57 @@
   border-color: var(--border-strong);
 }
 
+/* ---- Template gallery (ported from templates.html mockup) ---- */
+
+/* Card lift + hover-reveal action bar over the thumbnail. `:focus-within`
+   reveals the actions for keyboard users too. */
+.tpl-gallery-card {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.tpl-gallery-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+.tpl-gallery-card .hover-actions {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.tpl-gallery-card:hover .hover-actions,
+.tpl-gallery-card:focus-within .hover-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Preview drawer slide-in + scrim fade. (Both are neutralized by the
+   reduced-motion guard below.) */
+.drawer {
+  animation: drawer-in var(--dur-base) var(--ease-out);
+}
+.overlay {
+  animation: overlay-in var(--dur-base) var(--ease-out);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the
