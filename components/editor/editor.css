@@ -157,3 +157,27 @@
   flex-direction: column;
   overflow: hidden;
 }
+
+/* ------------------------------------------------------------------ *
+ * Print / export
+ * ------------------------------------------------------------------ */
+
+/* The print-only document is portaled to <body> and hidden on screen; the
+   browser print path reveals just it and hides everything else — see
+   ExportOverlay. */
+#export-print-root {
+  display: none;
+}
+
+@media print {
+  body > *:not(#export-print-root) {
+    display: none !important;
+  }
+  #export-print-root {
+    display: block !important;
+    width: 100%;
+  }
+  #export-print-root .ex-doc {
+    box-shadow: none;
+  }
+}

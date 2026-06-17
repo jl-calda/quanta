@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseContent } from "@/lib/worksheet/content";
+import { parseWorkspaceSettings } from "@/lib/schema/settings";
 import { EditorApp } from "@/components/editor/editor-app";
 import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/use-presence";
 
@@ -48,6 +49,18 @@ export default async function WorksheetEditorPage({
     canManage = admin === true;
   }
 
+  // Export/print is gated to view+ access (Func §4.10). Editors/owners always
+  // may; plain viewers/commenters only when the workspace enables it.
+  let canExport = canEdit;
+  if (!canExport && (role === "viewer" || role === "commenter")) {
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("settings")
+      .eq("id", worksheet.workspace_id)
+      .maybeSingle();
+    canExport = parseWorkspaceSettings(ws?.settings).allowViewerExport;
+  }
+
   const meta = user.user_metadata as { full_name?: string } | null;
   const name = meta?.full_name || user.email || "You";
   const me: PresenceUser = {
@@ -68,6 +81,7 @@ export default async function WorksheetEditorPage({
       }}
       canEdit={canEdit}
       canManage={canManage}
+      canExport={canExport}
       me={me}
     />
   );

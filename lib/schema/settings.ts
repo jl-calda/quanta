@@ -38,6 +38,7 @@ export const workspaceSettingsSchema = z.object({
   maxIter: z.string().trim().min(1).max(12),
   unitSystem: z.enum(["si", "uscs", "cgs", "custom"]),
   format: formatSettingsSchema,
+  allowViewerExport: z.boolean().default(false),
 });
 
 export const userPreferencesSchema = z.object({

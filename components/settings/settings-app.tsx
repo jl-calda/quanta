@@ -8,6 +8,7 @@ import { CalculationSection } from "@/components/settings/sections/calculation";
 import { UnitsSection } from "@/components/settings/sections/units-formatting";
 import { AppearanceSection } from "@/components/settings/sections/appearance";
 import { EditorSection } from "@/components/settings/sections/editor";
+import { SharingSection } from "@/components/settings/sections/sharing";
 import {
   updateUserPreferences,
   updateWorkspaceSettings,
@@ -219,6 +220,8 @@ export function SettingsApp({
         return <CalculationSection {...workspaceProps} />;
       case "units":
         return <UnitsSection {...workspaceProps} />;
+      case "sharing":
+        return <SharingSection {...workspaceProps} />;
       case "appearance":
         return (
           <AppearanceSection
