@@ -642,3 +642,32 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   `(app)` group, inheriting the real nav rail) hosts it with a copy-to-clipboard
   action. A custom overlay is used rather than the DS `Dialog` because the dense
   edge-to-edge 3-pane needs full height and no body padding.
+
+## Editor app bar (M5 · Func §5.1)
+
+- **Ported `app-bar.html` faithfully** (`components/editor/app-bar.tsx`): the 40px
+  bar — menu · wordmark · editable title · lock · live autosave on the left;
+  Auto/Manual · Recalculate · calc-status chip in the center; Present · Share ·
+  comments · AI · presence avatars on the right.
+- **Share button is `primary`** (blue), per the mockup — precedence "visual look →
+  the export" (CLAUDE.md), overriding the earlier secondary styling.
+- **Lock icon shows when `!canEdit`** (viewer/commenter), tooltip "Shared ·
+  read-only for viewers"; the title input is also disabled in that state.
+- **Title rename is debounced (~600ms)** while typing and committed immediately on
+  blur / Enter (Func §5.1 "debounced rename"), through the provider's `rename`
+  → `renameWorksheet` server action.
+- **Autosave indicator** reads `state.saveState`: animated spinner (saving), bold
+  mono `*` (unsaved), check (saved), plus a fourth `error` case ("Couldn't save —
+  retry") not in the specimen but needed by the real save queue. The spinner uses
+  a new `spinner` glyph + `.q-spin` keyframe in `editor.css`, disabled under
+  `prefers-reduced-motion`.
+- **Calc-chip wording aligned to the mockup**: "All current" / "Needs recalculate"
+  / "N error(s)" (keeping the live error count from the engine).
+- **Tooltips use the DS `Tooltip` with `side="bottom"`** so they sit below the
+  40px bar (matching the mockup); `IconButton`'s built-in tooltip is top-anchored
+  and would clip above the bar.
+- **Present / Comments / AI are rendered design-faithfully but stubbed.** The
+  reducer's `ui` state has no panels for them yet (they belong to later
+  milestones), so the buttons are non-destructive no-ops for now; the comments
+  count badge is omitted until a real count source exists. Share is fully wired
+  (opens the existing `ShareDialog`).

@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
  */
 
 export type IconName =
-  | "menu" | "check" | "refresh" | "play" | "share" | "comment" | "sparkle"
+  | "menu" | "check" | "refresh" | "spinner" | "play" | "share" | "comment" | "sparkle"
   | "chevD" | "chevR" | "chevL" | "chevU" | "chevDD"
   | "cut" | "copy" | "paste" | "table" | "image" | "area" | "control" | "plot"
   | "solve" | "func" | "unit" | "decimals" | "steps" | "fmt" | "plus" | "plusSm"
@@ -20,6 +20,7 @@ const GLYPHS: Record<IconName, ReactNode> = {
   menu: (<><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></>),
   check: <path d="M5 12l4.5 4.5L19 7" />,
   refresh: (<><path d="M20.5 11A8.5 8.5 0 1 0 18 17.5" /><path d="M20.5 5.5V11H15" /></>),
+  spinner: <path d="M12 3a9 9 0 1 0 9 9" opacity={0.9} />,
   play: <path d="M8 5.5l10 6.5-10 6.5z" />,
   share: (<><circle cx="18" cy="5.5" r="2.4" /><circle cx="6" cy="12" r="2.4" /><circle cx="18" cy="18.5" r="2.4" /><path d="M8.1 10.8 15.9 6.7" /><path d="M8.1 13.2l7.8 4.1" /></>),
   comment: <path d="M5 5h14a1.2 1.2 0 0 1 1.2 1.2v8.4A1.2 1.2 0 0 1 19 15.8H9.5L5.5 19.5V6.2A1.2 1.2 0 0 1 6.7 5z" />,
