@@ -30,10 +30,23 @@ export const signUpSchema = z.object({
   email: emailSchema,
   password: newPasswordSchema,
   fullName: z.string().trim().min(1, "Enter your name.").max(120).optional(),
+  // Optional — when given, it seeds the name of the first workspace the sign-up
+  // trigger bootstraps (handle_new_user).
+  company: z.string().trim().min(1).max(120).optional(),
 });
 
 export const magicLinkSchema = z.object({
   email: emailSchema,
+});
+
+// Forgot-password: request a reset email.
+export const resetRequestSchema = z.object({
+  email: emailSchema,
+});
+
+// Set a new password after following a recovery link.
+export const updatePasswordSchema = z.object({
+  password: newPasswordSchema,
 });
 
 export const oauthProviderSchema = z.enum(["google"]);
@@ -51,3 +64,5 @@ export type SignInInput = z.infer<typeof signInSchema>;
 export type SignUpInput = z.infer<typeof signUpSchema>;
 export type MagicLinkInput = z.infer<typeof magicLinkSchema>;
 export type OAuthProvider = z.infer<typeof oauthProviderSchema>;
+export type ResetRequestInput = z.infer<typeof resetRequestSchema>;
+export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;

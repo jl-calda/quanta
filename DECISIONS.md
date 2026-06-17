@@ -2,6 +2,55 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Sign in / Sign up screen (Func §4.1)
+
+- **The screen is the deliverable; the auth backend already shipped in M1.**
+  Server actions (`server/actions/auth.ts`), Zod schemas (`lib/schema/auth.ts`),
+  the PKCE/OTP route handlers, middleware gating, and the `handle_new_user`
+  trigger were all in place. This task rebuilds the UI to match
+  `mathcad-like/project/Sign in.html` 1:1 and wires in the two methods that had
+  no front end yet (SAML SSO, password reset).
+- **Ported the mockup as inline-style typed React over the DS components**, same
+  approach M3 used for `_ds_bundle.js`: the split layout, dark brand panel, and
+  forms reuse `@/components/ds` (`Button`, `Input`, `Tabs`, `Checkbox`, math
+  primitives) with the mockup's inline styles on semantic tokens. The mockup's
+  `<style>` block is ported to `app/(auth)/auth.css` (scoped to the route group).
+- **The dark brand panel re-aliases the semantic tokens.** The global
+  `[data-theme="dark"]` only overrides the *base* palette (`--paper`, `--ink`…)
+  plus four semantic aliases; the rest were resolved at `:root` and merely
+  inherited, so `.auth-brand-panel[data-theme="dark"]` re-declares them against
+  the now-dark base (verbatim from the mockup's own comment). This keeps the
+  brand panel dark while the form panel follows the page theme.
+- **One tabbed screen across both routes.** `/sign-in` and `/sign-up` both render
+  `<AuthScreen>` with `initialTab`; the `Tabs` + the contextual top-right link
+  switch in place (local state, no navigation), matching the mockup. Both routes
+  stay registered so middleware gating and deep links keep working.
+- **The global AppBar is suppressed on auth routes** via a small client
+  `ConditionalAppBar` (`usePathname`) rather than restructuring layouts — the
+  mockup is a standalone 100vh experience. Hidden on `/sign-in`, `/sign-up`,
+  `/reset-password`.
+- **Magic link, Forgot password, and SSO are inline, not separate screens.**
+  Magic link and reset are dispatched with the current email via extra
+  `useActionState` hooks (FormData built in the click handler); SSO expands an
+  inline domain field and hands the browser to the IdP URL. Credential errors
+  surface under the password field with a "Reset it" link (mockup behavior);
+  other auth errors use a form-level inline banner. Errors clear on edit.
+- **Password reset is implemented end to end** (user choice): a non-enumerating
+  `requestPasswordReset` (always reports success) emails a recovery link →
+  `/auth/confirm` (verifies the recovery OTP) → `/reset-password` →
+  `updatePassword`. The new password page is a calm centered card, not the split.
+- **Company seeds the first workspace name** (user choice). Sign-up passes
+  `company` in user metadata; migration `0005_signup_company.sql` does a
+  `create or replace` of `handle_new_user` so the bootstrapped workspace name +
+  slug prefer the company when present, else the existing `{name}'s workspace`.
+  The invite-acceptance path is unchanged.
+- **`next` is threaded through every email/redirect target** (magic link, sign-up
+  confirmation, OAuth, SSO) so post-auth landing honors the originally requested
+  path the middleware round-tripped via `?next=`.
+- **Minimal `/terms` + `/privacy` placeholder pages** (user choice) so the
+  footer/consent links resolve instead of 404ing; the Google "G" follows the
+  mockup's monochrome line treatment (replacing the old multicolor `GoogleMark`).
+
 ## M3 — Design-system components (Foundation) + `/design` index
 
 - **Ported the `_ds_bundle.js` components 1:1 as inline-style typed React, not a
