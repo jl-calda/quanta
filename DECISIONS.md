@@ -2,6 +2,46 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## M3 — Design-system components (Foundation) + `/design` index
+
+- **Ported the `_ds_bundle.js` components 1:1 as inline-style typed React, not a
+  Tailwind rewrite.** The bound design system renders every component with inline
+  `style={{…}}` on the semantic CSS variables (`var(--accent)`, `color-mix(in
+  srgb, … 22%/28% …)`, etc.) and drives hover/active/focus through React state.
+  Recreating that verbatim guarantees pixel-identical output to the design source
+  (CLAUDE.md's binding "match the visual output"), needs zero token work (every
+  `--var` already lives in `app/styles/tokens/`), and is the only clean way to
+  express the em-based math primitives. Dark theme + density still flow through
+  because the components read the same variables. The 21 components live under
+  `components/ds/{core,forms,navigation,feedback,math}` (kebab-case files, the
+  repo convention) and are re-exported from the `@/components/ds` barrel.
+- **`"use client"` only where there are hooks/handlers.** Button, IconButton,
+  Input, Select, Checkbox, Switch, Tabs, Dialog, Tooltip, MathRegion are client
+  components; Badge, Card, Toast and the math primitives stay directive-free so
+  they remain usable from Server Components.
+- **`MathRegion` is kept in its own module, away from the `Math` primitive.** The
+  exported `Math` notation wrapper shadows the global `Math`; `MathRegion` calls
+  `Math.max(180, …)` for its edit-input min-width and must see the global, so it
+  never imports the primitive (the two live in `math/math-region.tsx` and
+  `math/math-parts.tsx`). The remaining bundle exports — the editor ui-kit
+  (AppBar, Ribbon, Worksheet, Inspector/Outline panels, EditorApp) — are out of
+  M3 scope and land with the editor-shell milestone.
+- **Native-attribute prop collisions are `Omit`-ed, not renamed.** `Card.title`,
+  `Input.size`/`Input.prefix`, `Select.size`, `IconButton.type`, and
+  `Checkbox`/`Switch` `style` clash with DOM attributes, so each Props interface
+  `Omit`s the conflicting native key and re-declares it with the DS meaning,
+  preserving `...rest` passthrough typing.
+- **The screens-index is the public root route `/design`, and it is both catalog
+  and showcase** (per product decision). A faithful port of
+  `mathcad-like/project/index.html` (three groups, line-glyph + dot-grid
+  thumbnails, the `Core` badge) is preceded by a live **Foundation** section that
+  exercises every M3 component (and uses `Card` for its own layout). Catalog
+  cards link to a real route where one exists (`/sign-in`, `/app`) and carry a
+  `Planned` badge otherwise. Thumbnails reuse the `--d-thumb-sm` density token and
+  the global `.q-grid` utility; the page sits outside the auth-gated paths so it
+  works as a developer handoff surface. It inherits the global AppBar's
+  theme/density toggles for quick visual verification.
+
 ## M2 — Calc engine (core pipeline)
 
 - **Scope: the deterministic main-thread pipeline only.** Parse → dependency
