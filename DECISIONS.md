@@ -2,6 +2,63 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Worksheet editor (Func §4.3 / §5.x)
+
+- **The content tree is formalized here, not in `/lib/calc`** (closing the M2
+  seam). `lib/worksheet/content.ts` holds the Zod schema + types (`rows →
+  columns/cells → regions`); `lib/worksheet/flatten.ts` is a pure tree↔engine
+  bridge (`flattenToRegionInputs` walks reading order — rows top→bottom, cells
+  left→right, descending into areas — emitting one `RegionInput` per **math**
+  region; `mapResults` indexes results by id). `/lib/calc` stays decoupled and
+  consumes only the flat list.
+- **Non-lossy round-trip.** Render-only region payloads (table/plot/image/
+  control/area/include/solve) are `.passthrough()` in the schema so a load→save
+  never strips fields the editor doesn't yet deeply edit. `parseContent` never
+  throws into the UI (falls back to an empty doc) and repairs the
+  `cells.length === columns` invariant by widening columns / padding cells —
+  never dropping a region.
+- **Span has one canonical model: a spanning region is the sole region of a
+  `columns:1` row.** No separate `span` flag — `TOGGLE_SPAN` extracts the region
+  into its own single-column row. Keeps reading order and recalc deterministic.
+- **State = `useReducer` + Context; the `CalcEngine` lives in a ref behind a
+  side-effect bridge.** Structural ops mutate the tree via `structuredClone`
+  (infrequent, click-driven — correctness over hand-threaded immutability) and
+  are exhaustively unit-tested (`editor-reducer.test.ts`). The provider effect
+  reconciles the engine from `content`: **Auto** recomputes and publishes
+  results; **Manual** marks the edit stale and waits for Recalculate /
+  recalc-to-here. Recalc is **commit-driven** (Enter/blur), not per-keystroke —
+  the engine's debounce hook is reserved for a future live-typing mode.
+- **KaTeX renders the engine's TeX** (`RegionResult.tex` / `substitutedTex`) so
+  any user formula renders faithfully; `throwOnError:false` + a guard degrade a
+  bad string to raw text rather than blanking a region. The hand-composed STIX
+  primitives stay for static/mockup content. **MathLive** 2D entry is a deferred
+  seam (editing is a Geist-Mono field with the Mathcad `:`→`:=` transform from
+  `lib/keymap`); it slots in by replacing the mono input + filling
+  `normalizeSource` in `lib/calc/parse.ts`. Added `katex` + `@types/katex`.
+- **Autosave** debounces ~1.2s on `saveState:'unsaved'`, sets Saving/Saved/
+  Unsaved/Error, and **flushes the pending save on unmount** (navigation never
+  drops the last edit). Reads content/status from a ref so it never persists a
+  stale closure. `saveWorksheet` writes `content + calc_status + error_count`
+  (the `worksheets_set_updated_at` trigger bumps `updated_at`); a 0-row update
+  for a loaded sheet ⇒ the role can't edit ⇒ app-voice read-only message.
+  Last-write-wins (Yjs path later). Version snapshots via an explicit
+  "Save version" (app-bar menu) → `saveWorksheetVersion`.
+- **Presence** joins a `ws:<id>` Realtime channel via the browser client and
+  degrades to no-op when the Supabase env is absent (never crashes the editor).
+- **Read-only** for viewers/commenters is gated in the UI (chrome hidden/
+  disabled, no editing, autosave off) **and** by RLS on every mutation. The
+  global AppBar is suppressed on `/w` (editor owns its chrome), like `/app`.
+- **Scope (core-first):** math + text/heading fully editable + all structural
+  ops (add/move/delete/indent/columns 1–3/span/duplicate, drag-reorder incl.
+  across cells); table/plot/image/control/area render faithfully (area
+  collapsible) with payload editing deferred; single growing page (pagination
+  later); ⌘K palette, Share/Comments/AI deferred (present but disabled). `forall-
+  people` is not in scope; units stay mathjs (main thread, SI wired; USCS/CGS are
+  display selections).
+- **vitest `@/` alias added** (`vitest.config.ts`) so tests can value-import app
+  modules (the reducer pulls in `@/lib/worksheet/*`); calc tests use relative
+  imports and are unaffected.
+
 ## Dashboard / Home (Func §4.2)
 
 - **The dashboard is a full app shell via a route group, not a bare page.** The

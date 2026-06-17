@@ -1,15 +1,16 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { QuantaMark } from "@/components/quanta-mark";
+import { parseContent } from "@/lib/worksheet/content";
+import { EditorApp } from "@/components/editor/editor-app";
+import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/use-presence";
 
 export const metadata = { title: "Worksheet · Quanta" };
 
 /**
- * Placeholder worksheet editor. The full editor (math regions, calc engine,
- * ribbon) is a later milestone; for now this confirms that `createWorksheet`
- * navigates to a real, RLS-scoped worksheet so the dashboard create flow is
- * verifiable end to end.
+ * Worksheet editor (/w/[id]). A Server Component loads the sheet (RLS-checked)
+ * and the caller's effective worksheet role, then hydrates the client editor
+ * with the content tree + an edit/read-only flag. The editor owns its own
+ * chrome, so the global AppBar is suppressed on `/w` (see ConditionalAppBar).
  */
 export default async function WorksheetEditorPage({
   params,
@@ -17,38 +18,46 @@ export default async function WorksheetEditorPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { data: worksheet } = await supabase
     .from("worksheets")
-    .select("id, title")
+    .select("id, title, content, calc_mode, units_system")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (!worksheet) notFound();
+  if (!worksheet || !user) notFound();
+
+  // Effective worksheet role decides read-only vs. full editing (UI gate; RLS
+  // enforces the same on every mutation).
+  const { data: role } = await supabase.rpc("worksheet_effective_role", { sheet: id });
+  const canEdit = role === "owner" || role === "editor";
+
+  const meta = user.user_metadata as { full_name?: string } | null;
+  const name = meta?.full_name || user.email || "You";
+  const me: PresenceUser = {
+    userId: user.id,
+    name,
+    initials: initialsOf(name),
+    color: avatarColor(user.id),
+  };
 
   return (
-    <main className="q-grid flex flex-1 items-center justify-center bg-paper px-6 py-16">
-      <div className="flex max-w-md flex-col items-center gap-4 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-hairline bg-chrome">
-          <QuantaMark size={28} className="text-accent" />
-        </div>
-        <span className="q-eyebrow">Worksheet</span>
-        <h1 className="text-20 font-semibold tracking-[-0.01em] text-ink">
-          {worksheet.title}
-        </h1>
-        <p className="max-w-sm text-13 text-muted">
-          The worksheet editor is coming soon. Your new sheet is saved — live
-          math regions, units, and recalculation land in the next milestone.
-        </p>
-        <Link
-          href="/app"
-          className="mt-2 inline-flex h-9 items-center rounded-sm border border-strong bg-raised px-3 text-13 font-medium text-ink transition-colors hover:bg-hover"
-        >
-          Back to dashboard
-        </Link>
-      </div>
-    </main>
+    <EditorApp
+      worksheet={{
+        id: worksheet.id,
+        title: worksheet.title,
+        content: parseContent(worksheet.content),
+        calcMode: worksheet.calc_mode,
+        unitsSystem: worksheet.units_system,
+      }}
+      canEdit={canEdit}
+      me={me}
+    />
   );
 }
