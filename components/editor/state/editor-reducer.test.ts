@@ -56,6 +56,49 @@ describe("INSERT_REGION", () => {
   });
 });
 
+describe("INSERT_REGION_WITH_SOURCE", () => {
+  it("creates a math region prefilled with the source in an empty doc", () => {
+    const s = editorReducer(freshState(), {
+      type: "INSERT_REGION_WITH_SOURCE",
+      source: "9.80665 m/s^2",
+      anchorId: null,
+      where: "below",
+    });
+    expect(s.content.rows).toHaveLength(1);
+    const region = s.content.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("math");
+    expect(region.type === "math" && region.source).toBe("9.80665 m/s^2");
+    expect(s.selectedId).toBe(region.id);
+    expect(s.editingId).toBe(region.id);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("inserts below the anchor and preserves the cells===columns invariant", () => {
+    const s = editorReducer(freshState(twoColDoc), {
+      type: "INSERT_REGION_WITH_SOURCE",
+      source: "interp(vx, vy, x)",
+      anchorId: "A",
+      where: "below",
+    });
+    const cell = s.content.rows[0].cells[0];
+    expect(cell.regions.map((r) => r.id)[0]).toBe("A");
+    expect(cell.regions).toHaveLength(2);
+    const inserted = cell.regions[1];
+    expect(inserted.type === "math" && inserted.source).toBe("interp(vx, vy, x)");
+    expect(s.content.rows[0].cells).toHaveLength(s.content.rows[0].columns);
+  });
+});
+
+describe("OPEN_REFERENCE / CLOSE_REFERENCE", () => {
+  it("opens to a group and closes again", () => {
+    const opened = editorReducer(freshState(), { type: "OPEN_REFERENCE", kind: "UNITS" });
+    expect(opened.ui.referenceOpen).toBe(true);
+    expect(opened.ui.referenceKind).toBe("UNITS");
+    const closed = editorReducer(opened, { type: "CLOSE_REFERENCE" });
+    expect(closed.ui.referenceOpen).toBe(false);
+  });
+});
+
 describe("DELETE_REGION", () => {
   it("removes the region and prunes a now-empty row", () => {
     const doc: WorksheetContent = {

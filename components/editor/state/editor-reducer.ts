@@ -6,6 +6,7 @@
  * never drops a region. Kept pure and exhaustively tested.
  */
 import type { RegionResult, SheetResult } from "@/lib/calc";
+import type { RefGroup } from "@/lib/calc/reference";
 import {
   emptyCell,
   newId,
@@ -34,6 +35,10 @@ export interface EditorUiState {
   rightOpen: boolean;
   ribbonTab: string;
   ribbonCollapsed: boolean;
+  /** Whether the Reference library overlay is open. */
+  referenceOpen: boolean;
+  /** Which group the Reference library opened to (Functions / Units / …). */
+  referenceKind: RefGroup;
 }
 
 export interface EditorState {
@@ -79,6 +84,12 @@ export type EditorAction =
       where: "above" | "below";
     }
   | { type: "INSERT_INTO_CELL"; rowId: string; cellIndex: number; regionType: RegionType }
+  | {
+      type: "INSERT_REGION_WITH_SOURCE";
+      source: string;
+      anchorId: string | null;
+      where: "above" | "below";
+    }
   | { type: "DELETE_REGION"; id: string }
   | { type: "DUPLICATE_REGION"; id: string }
   | { type: "MOVE_REGION"; id: string; dir: "up" | "down" }
@@ -97,7 +108,9 @@ export type EditorAction =
   | { type: "SET_LEFT_TAB"; tab: LeftTab }
   | { type: "TOGGLE_RIGHT" }
   | { type: "SET_RIBBON_TAB"; tab: string }
-  | { type: "TOGGLE_RIBBON" };
+  | { type: "TOGGLE_RIBBON" }
+  | { type: "OPEN_REFERENCE"; kind: RefGroup }
+  | { type: "CLOSE_REFERENCE" };
 
 /* ------------------------------------------------------------------ *
  * Tree locators (operate on a structuredClone, mutating in place)
@@ -270,6 +283,31 @@ export function editorReducer(
         editingId: editable ? region.id : null,
       });
     }
+    case "INSERT_REGION_WITH_SOURCE": {
+      // Like INSERT_REGION (math) but the source is set in the same mutation, so
+      // the new region's id is returned synchronously in `selectedId` — no need
+      // to chain an EDIT_SOURCE on an id we don't yet have. Used by the
+      // Reference library's "Insert into worksheet".
+      const region = newRegion("math");
+      if (region.type === "math") region.source = action.source;
+      const content = mutate(state.content, (next) => {
+        if (!action.anchorId) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const loc = locate(next, action.anchorId);
+        if (!loc) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const at = loc.index + (action.where === "below" ? 1 : 0);
+        loc.container.splice(at, 0, region);
+      });
+      return touched(state, content, {
+        selectedId: region.id,
+        editingId: region.id,
+      });
+    }
     case "INSERT_INTO_CELL": {
       const region = newRegion(action.regionType);
       const content = mutate(state.content, (next) => {
@@ -413,6 +451,13 @@ export function editorReducer(
         ...state,
         ui: { ...state.ui, ribbonCollapsed: !state.ui.ribbonCollapsed },
       };
+    case "OPEN_REFERENCE":
+      return {
+        ...state,
+        ui: { ...state.ui, referenceOpen: true, referenceKind: action.kind },
+      };
+    case "CLOSE_REFERENCE":
+      return { ...state, ui: { ...state.ui, referenceOpen: false } };
 
     default:
       return state;
@@ -445,6 +490,8 @@ export function initEditorState(args: {
       rightOpen: true,
       ribbonTab: "Home",
       ribbonCollapsed: false,
+      referenceOpen: false,
+      referenceKind: "FUNCTIONS",
     },
   };
 }

@@ -14,6 +14,7 @@ import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { StatusBar } from "./status-bar";
 import { Keypad } from "./keypad";
+import { ReferenceOverlay } from "./reference-overlay";
 
 export interface EditorWorksheet {
   id: string;
@@ -57,6 +58,7 @@ export function EditorApp({
         </div>
         <StatusBar />
         <Keypad />
+        <ReferenceOverlay />
       </div>
     </EditorProvider>
   );

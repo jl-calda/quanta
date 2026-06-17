@@ -6,6 +6,7 @@ import {
   TemplateIcon,
   ShareIcon,
   TrashIcon,
+  BookIcon,
 } from "./icons";
 import { NavItem } from "./nav-item";
 import { WorkspaceSwitcher, type WorkspaceOption } from "./workspace-switcher";
@@ -65,6 +66,11 @@ export function NavRail({
           href="/templates"
           label="Templates"
           icon={<TemplateIcon size={19} />}
+        />
+        <NavItem
+          href="/reference"
+          label="Reference"
+          icon={<BookIcon size={19} />}
         />
         <NavItem
           href="/shared"

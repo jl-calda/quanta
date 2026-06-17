@@ -414,3 +414,39 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   `@media (prefers-reduced-motion: reduce)` guard neutralizes animation/
   transition durations everywhere, so the binding CLAUDE.md motion rule holds
   regardless of how a component expresses its duration.
+
+## Reference library (§4.6 / Func §3.6)
+
+- **The catalog ships as in-code data, not a DB table.** Functions live in
+  `/lib/calc/reference/functions.ts`, units in `/lib/units/catalog.ts`,
+  constants in `/lib/constants/catalog.ts`; `/lib/calc/reference/tree.ts`
+  assembles the category tree + flat `ALL` + lookup indices. Pure data, imported
+  directly — no query, no RLS, no network.
+- **Worked examples are run through the engine, never hard-coded.**
+  `runExample()` (`/lib/calc/reference/examples.ts`) feeds a `WorkedExample`'s
+  region sources through `evaluateSheet`, so the rendered value is the engine's
+  output and can't drift. The integrity test asserts every example evaluates
+  cleanly and pins a few known results (`sqrt → 12.53 mm`, `mean → 12.85 kN`,
+  `interp → 0.90 kPa`, `g0 → 735.5 N`).
+- **Examples use engine-native math where the engine lacks the function.** The
+  engine is stock mathjs, which has `mean/max/sqrt/std/…` and full unit
+  arithmetic but not Mathcad's `interp/Vlookup/root/Odesolve`. Those entries
+  still teach the real function (signature, params, prose) while the example
+  demonstrates the *operation* with engine-native expressions (e.g. `interp` via
+  explicit linear-interpolation arithmetic), keeping the rendered result honest.
+- **Only engine-known units are catalogued.** Every unit's `insert` is a
+  mathjs-valid literal (`"1 mm"`, `"1 degC"`), so dropping it at the caret
+  evaluates immediately. USCS units mathjs doesn't register (kip, ksi) are
+  deferred until the engine registers them, rather than inserting tokens that
+  would parse-error.
+- **A dedicated `INSERT_REGION_WITH_SOURCE` reducer action** sets the new math
+  region's source in the same mutation and returns its id synchronously in
+  `selectedId` — avoiding the async hazard of dispatching `INSERT_REGION` then
+  trying to `EDIT_SOURCE` an id we don't yet hold.
+- **One browser, two hosts.** `components/reference/reference-library.tsx` is a
+  reusable 3-pane component; the editor hosts it in a near-full-screen overlay
+  (`components/editor/reference-overlay.tsx`, launched from the ribbon Insert
+  buttons) with an "Insert into worksheet" action, and `/reference` (inside the
+  `(app)` group, inheriting the real nav rail) hosts it with a copy-to-clipboard
+  action. A custom overlay is used rather than the DS `Dialog` because the dense
+  edge-to-edge 3-pane needs full height and no body padding.

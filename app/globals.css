@@ -232,6 +232,36 @@
   }
 }
 
+/* ---- Reference library (ported from reference-app.jsx) ---- */
+
+/* Category + result rows wash to the hover surface; the selected row sets an
+   inline blueprint-tint background, which always wins over this rule. */
+.ref-cat:hover,
+.ref-row:hover {
+  background: var(--surface-hover);
+}
+
+/* Related chips: border + text turn blueprint on hover when navigable. */
+.ref-related:not(:disabled):hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* Detail-pane enter: a gentle opacity + lift, honoring reduced-motion below. */
+.ref-fade-rise {
+  animation: ref-fade-rise var(--dur-base) var(--ease-out);
+}
+@keyframes ref-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the
