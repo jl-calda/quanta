@@ -2,6 +2,47 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Settings (Func §4.7)
+
+- **Two stores, split by ownership.** Calculation + Units & formatting are
+  **workspace defaults** that seed NEW worksheets — persisted to
+  `workspaces.settings` (jsonb) and editable by **owner/admin only** (RLS
+  `workspaces_update` is the hard gate; `updateWorkspaceSettings` also checks the
+  role to return the app-voice message). Appearance (theme/density) + Editor
+  (keymap) are **per-user**, persisted to `profiles.preferences` (jsonb) and
+  editable by the user. No migration needed — both jsonb columns already exist.
+- **Theme/density stay cookie-backed *and* are mirrored to the profile.** The
+  live, no-flash mechanism remains the existing `PreferencesProvider`
+  (`useTheme`/`useDensity`, cookie-seeded in the root layout); the Settings
+  controls call those setters for instant application **and** write the value to
+  `profiles.preferences` for cross-device persistence. The provider stays the
+  source of truth for the currently-applied value, so the Appearance controls
+  read live provider state (not the possibly-stale profile).
+- **Live preview runs the real engine formatter.** The Units & formatting preview
+  converts a 52 800 N sample to the chosen system's display unit
+  (`toDisplayUnit`/`SI_SYSTEM`, or `Unit.to()` for USCS/CGS with a try/catch
+  fallback) and formats it with `formatValue(value, toResultFormat(format))` —
+  not the mockup's hand-rolled `formatResult`. The settings→`ResultFormat` map
+  (`lib/settings/types.ts`) treats `decimals`/`sigfigs` as mutually exclusive
+  (Auto sig-figs lets decimals drive) and derives the engine's single symmetric
+  `expThreshold` from "use exponential above". Both exp thresholds and USCS/CGS
+  are still stored for fidelity even though the engine currently models one
+  threshold and only `SI_SYSTEM`.
+- **Save patterns mirror the mockup.** Toggles/radios/selects/steppers save on
+  change (optimistic, with rollback + error toast on failure); the free-form
+  tolerance fields (`ctol`/`tol`/`maxIter`, `expHigh`/`expLow`) buffer into a
+  draft, raise the sticky "unsaved changes" bar, and commit on **Save changes**.
+  Instant saves strip uncommitted tolerance drafts from their payload
+  (`withSavedTolerances`) so **Discard** stays meaningful against one jsonb blob.
+- **The save-confirmation toast is the mockup's compact dark pill**, ported from
+  the design export (settings.html), rather than the generic raised DS `Toast` —
+  the pill *is* part of the official settings screen, so porting it is faithful
+  to "match the mockup".
+- **Reached from the user menu.** A "Settings" link sits in the existing
+  bottom-of-rail user-menu popover (which already carries the gear icon); the
+  page renders inside the `(app)` shell, so the outer `NavRail` is the layout's,
+  and the island only owns the 244px settings sub-nav + content.
+
 ## Template gallery (Func §4.4)
 
 - **"Your templates" = templates you authored, not a saved/bookmarked set.** The
