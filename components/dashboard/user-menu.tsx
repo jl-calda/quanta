@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/server/actions/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -83,6 +84,15 @@ export function UserMenu({
           </div>
 
           <div className="my-2 h-px bg-hairline" />
+
+          <Link
+            href="/settings"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block w-full rounded-sm px-2 py-1.5 text-left text-13 text-ink transition-colors duration-[var(--dur-fast)] hover:bg-hover"
+          >
+            Settings
+          </Link>
 
           <form action={signOut}>
             <button

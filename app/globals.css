@@ -262,6 +262,47 @@
   }
 }
 
+/* ---- Settings (ported from settings.html mockup) ---- */
+
+/* The save-on-change toast fades up, then fades out, and the sticky
+   "unsaved changes" bar rises from the bottom edge. */
+.toast-in {
+  animation: toast-in var(--dur-base) var(--ease-out);
+}
+.toast-out {
+  animation: toast-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+.bar-rise {
+  animation: bar-rise var(--dur-base) var(--ease-out);
+}
+@keyframes bar-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the
