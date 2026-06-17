@@ -158,3 +158,12 @@ export function ArrowRightIcon({ size }: { size?: number }) {
     </Line>
   );
 }
+
+export function BookIcon({ size }: { size?: number }) {
+  return (
+    <Line size={size}>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2z" />
+      <path d="M8 4v15" />
+    </Line>
+  );
+}

@@ -185,7 +185,7 @@ const GROUPS: ScreenGroup[] = [
       { file: "editor", label: "Worksheet editor", glyph: G.editor, primary: true, desc: "The core screen — app bar, ribbon, 3-column workspace, status bar, floating keypad." },
       { file: "templates", label: "Template gallery", glyph: G.templates, desc: "Filterable template grid with math thumbnails, Your-templates tab, and a Preview drawer." },
       { file: "files", label: "File browser", glyph: G.files, desc: "Project tree + dense data table, multi-select action bar, grid view, empty folder." },
-      { file: "reference", label: "Reference library", glyph: G.reference, desc: "Functions / units / constants browser with worked examples and Insert action." },
+      { file: "reference", label: "Reference library", glyph: G.reference, href: "/reference", desc: "Functions / units / constants browser with worked examples and Insert action." },
       { file: "settings", label: "Settings", glyph: G.settings, desc: "Calculation + Units & formatting sections with a live preview and save patterns." },
       { file: "shared", label: "Shared", glyph: G.shared, desc: "Shared-with-me / by-me tables, activity feed, and the reusable Share dialog." },
       { file: "history", label: "Version history", glyph: G.history, desc: "Timeline, single-version diff highlights, side-by-side compare with synced scroll." },

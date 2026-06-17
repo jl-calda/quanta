@@ -92,9 +92,9 @@ export function Ribbon() {
               </Group>
 
               <Group label="Insert">
-                <BigBtn glyph={<span style={{ fontFamily: "var(--font-math)", fontStyle: "italic" }}>ƒ</span>} label="Function" disabled />
+                <BigBtn glyph={<span style={{ fontFamily: "var(--font-math)", fontStyle: "italic" }}>ƒ</span>} label="Function" onClick={() => dispatch({ type: "OPEN_REFERENCE", kind: "FUNCTIONS" })} />
                 <Stack>
-                  <SmBtn icon="unit" label="Unit" disabled />
+                  <SmBtn icon="unit" label="Unit" onClick={() => dispatch({ type: "OPEN_REFERENCE", kind: "UNITS" })} />
                   <SmBtn glyph="Σ" label="Symbol" disabled />
                   <SmBtn icon="plot" label="Plot" onClick={() => insert("plot")} disabled={!canEdit} />
                 </Stack>
