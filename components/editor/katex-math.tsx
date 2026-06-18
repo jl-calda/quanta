@@ -16,9 +16,11 @@ export interface KatexMathProps {
   display?: boolean;
   /** Font size in px for the rendered math (respects the math floor). */
   size?: number;
+  /** Render in the muted ink (e.g. the show-steps "substituted" line). */
+  muted?: boolean;
 }
 
-export function KatexMath({ tex, display = false, size }: KatexMathProps) {
+export function KatexMath({ tex, display = false, size, muted = false }: KatexMathProps) {
   const html = useMemo(() => {
     try {
       return katex.renderToString(tex, {
@@ -34,7 +36,7 @@ export function KatexMath({ tex, display = false, size }: KatexMathProps) {
 
   if (html == null) {
     return (
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: size ?? 14 }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: size ?? 14, color: muted ? "var(--text-muted)" : undefined }}>
         {tex}
       </span>
     );
@@ -42,7 +44,7 @@ export function KatexMath({ tex, display = false, size }: KatexMathProps) {
 
   return (
     <span
-      className="ed-katex"
+      className={muted ? "ed-katex is-muted" : "ed-katex"}
       style={size ? { fontSize: size } : undefined}
       dangerouslySetInnerHTML={{ __html: html }}
     />

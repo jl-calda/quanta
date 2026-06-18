@@ -140,10 +140,25 @@
   border-color: var(--border-strong);
 }
 
+/* ---- inline math-input palette (region edit state, Mockup 6.1 Frame A) ---- */
+.palette-key:hover {
+  background: var(--surface-hover) !important;
+  border-color: var(--border-strong) !important;
+}
+.palette-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ---- KaTeX: inherit the ink colour; the bundled math font carries the look ---- */
 .ed-katex .katex {
   color: var(--text-math);
   font-size: 1em;
+}
+/* Show-steps "substituted" line renders muted (the rule above pins the colour,
+   so a muted variant must override at the same specificity). */
+.ed-katex.is-muted .katex {
+  color: var(--text-muted);
 }
 
 /* ---- MathLive 2D entry field (primary math entry) ---- */

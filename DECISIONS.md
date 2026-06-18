@@ -384,6 +384,35 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   (committed math is KaTeX). Toggling entry modes uses `onMouseDown`
   `preventDefault` on the chip so the active field never blurs/commits mid-toggle.
 
+## Math region — mockup-fidelity polish (Mockup 6.1)
+
+- **Inline operator palette while editing (Frame A).** `MathEditor` now stacks a
+  `MathPalette` (the 10-key bar + typing hint) beneath the field. Keys insert
+  through the existing `insertIntoActiveField` bridge (the same one the floating
+  `Keypad` and the ribbon use) on `onMouseDown` + `preventDefault`, so they land
+  at the caret of whichever surface is focused (MathLive *or* the mono field) and
+  never blur/commit. The palette and the global keypad **coexist** — the keypad
+  stays the always-available, draggable surface; the inline bar is the per-edit
+  affordance from the mockup. Palette data + the result split live in the pure,
+  node-testable `regions/math-display.ts` (no JSX/React/katex), so vitest covers
+  them without a DOM (`environment: "node"`; no jsdom/RTL in the repo).
+- **Show-steps is the stacked three-line breakdown (Frame C),** not an inline
+  run: `name := formula` / `Substituted` (muted) / `Result`, each section after
+  the first separated by a dashed hairline, with eyebrow headers. Gated on
+  `display.substituted && result.substitutedTex`; otherwise the compact one-line
+  form (Frames B/E) renders. Added a `muted` prop to `KatexMath` (`.ed-katex.is-muted`)
+  because `.ed-katex .katex` pins the colour and an ancestor style can't override it.
+- **The result unit is its own token (Frame C `ResUnit`).** `splitResultUnit`
+  separates magnitude from unit (only when `isUnit(value)`; mathjs formats units
+  as `"<n> <unit>"`, so a first-space split is lossless) and renders the unit as a
+  smaller upright **sans** sub-span inheriting the pill tone.
+- **Units are NOT recoloured inside the committed KaTeX *formula*.** mathjs `toTex`
+  emits units as `\mathrm{…}` — indistinguishable from `\mathrm{…}` function names —
+  so editor-side tinting would mis-colour functions. Honouring "no engine changes",
+  the unit-token treatment is applied where the value/unit split is reliable (the
+  result pill). Tagging units in `toTex` (e.g. `\class{q-unit}{…}`) is a deferred
+  engine follow-up that would let the formula itself carry the green unit token.
+
 ## Worksheet editor (Func §4.3 / §5.x)
 
 - **The content tree is formalized here, not in `/lib/calc`** (closing the M2
