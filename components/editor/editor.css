@@ -95,6 +95,62 @@
   opacity: 0.5;
 }
 
+/* ---- multi-column gutter + drag-to-resize split handle ---- */
+.ed-gutter {
+  width: 1px;
+  align-self: stretch;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--border-strong) 0 3px,
+    transparent 3px 7px
+  );
+}
+.ed-split-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+  background: var(--border-strong);
+  cursor: col-resize;
+  opacity: 0;
+  touch-action: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.ed-row:hover .ed-split-handle,
+.ed-split-handle[data-drag] {
+  opacity: 1;
+}
+.ed-split-handle:hover,
+.ed-split-handle[data-drag] {
+  background: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.ed-split-handle:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ---- long-document virtualization ----
+   content-visibility lets the browser skip layout/paint of off-screen rows while
+   keeping them in the DOM (so drag, selection, and scroll-to-region still work).
+   Off-screen rows get paint containment — which would clip the hover chrome that
+   overflows a row — so any "live" row (hovered, selected, or being edited) opts
+   back out to `visible`. */
+.ed-virtualize .ed-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+.ed-virtualize .ed-row:hover,
+.ed-virtualize .ed-row.is-live {
+  content-visibility: visible;
+}
+
 /* ---- left-panel rows (Outline / Variables / Files) ---- */
 .lp-row {
   transition: background var(--dur-fast) var(--ease-out);

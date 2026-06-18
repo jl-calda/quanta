@@ -2,6 +2,60 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Canvas — structural editing (Func §5.4 + Claude Design `canvas.html`)
+
+- **`selectedId` stays the single primary selection; `selectedIds` is a parallel
+  multi-set.** Adding multi-select could have replaced `selectedId` with a set, but
+  every existing consumer (`inspector.tsx`, `ribbon/commands.ts`,
+  `comments-panel.tsx`, `left-panel.tsx`) reads the lone primary. So the reducer
+  keeps `selectedId` as the active/primary id (always a member of `selectedIds`, or
+  both empty/null) and adds `selectedIds: string[]` that only the group ops act on.
+  After a structural delete, `reconcileSelection` intersects `selectedIds` with the
+  surviving `readingOrderIds` — so deleting an **area** also drops its nested
+  children from the selection and repairs the primary, with no per-action bookkeeping.
+- **Modifier-clicks are resolved by one shared helper, called from three places.**
+  `regions/region-select.ts#applyModifierSelect` maps Cmd/Ctrl→`TOGGLE_SELECT`,
+  Shift→`SELECT_TO` (a slice of `readingOrderIds`), and a plain click *while a group
+  is selected*→`SELECT` (collapse, not begin-edit). It's called first in the three
+  click interceptors that `stopPropagation` — `region-item`, committed `math-region`,
+  and `text-region` — because each stops the bubble so a single wrapper handler can't
+  see the click. Render-only views have no own `onClick` and flow through
+  `region-item`. `RegionRenderProps.selected` now means "is primary"; the `is-selected`
+  highlight comes from `selectedIds.includes(id)`, and the per-region toolbar shows
+  only for a lone primary (the group bar covers multi).
+- **Drag split-ratio = a gutter track + `SET_SPLIT`, resolved from the pointer's
+  absolute fraction.** Multi-column rows interleave `fr` cell tracks with a fixed
+  gutter track holding a dashed rule and an 8×26 drag handle (`canvas.tsx#SplitHandle`).
+  The drag reads `(clientX − rect.left) / rect.width` of the grid container — the same
+  *scaled* rect for both, so it's zoom-invariant — and redistributes only the dragged
+  boundary's adjacent pair. The fixed gutter px introduces a sub-2% nonlinearity that's
+  imperceptible for a direct-manipulation handle. `clampSplit` (reducer) keeps every
+  column ≥ ~0.14 and normalizes to exactly `columns` ratios; `SET_COLUMNS` clears any
+  prior split.
+- **Drag-into-cell targets *empty* cells only.** Dropping onto a populated cell is
+  already handled by region-relative `MOVE_TO` (before/after a sibling), so only empty
+  cells are `MOVE_TO_CELL` drop targets — this sidesteps the double-fire (region drop
+  *and* cell drop) and the area-child ambiguity entirely. `region-item.onDrop` also
+  `stopPropagation`s defensively. `MOVE_TO_CELL` checks its preconditions on the
+  original tree (so a same-cell / out-of-range drop is a true no-op that never dirties
+  the doc), then reuses `MOVE_TO`'s splice→relocate→`pruneEmptyRows` body.
+- **Long-doc virtualization via CSS `content-visibility`, not JS windowing.** A page
+  body over `VIRTUALIZE_ROWS` (60) gets `.ed-virtualize`, which sets
+  `content-visibility:auto; contain-intrinsic-size:auto 64px` on each `.ed-row`. This
+  keeps every row in the DOM — so drag, selection, and `scrollToRegion`
+  (`scrollIntoView` force-renders skipped subtrees) all keep working — unlike JS
+  windowing, which would unmount off-screen rows and break those. Off-screen rows get
+  paint containment that would clip the overflowing hover chrome (grip/toolbar/insert),
+  so any **live** row opts back out to `content-visibility:visible`: `:hover` (atomic
+  with the pointer, via CSS) plus a React `.is-live` class for the selected/editing row.
+- **Group ops over the selection are reducer actions, not N dispatches.**
+  `DELETE_SELECTED` / `INDENT_SELECTED` / `DUPLICATE_SELECTED` each run one `mutate()`
+  looping the existing single-region logic (`locate`+`splice`; `INDENT` clamp;
+  `reidRegion`+`structuredClone`, which already recurses areas). The ribbon's Indent
+  routes to `INDENT_SELECTED` when 2+ are selected so it never silently acts on only the
+  primary; border/span stay primary-target. A sticky group bar (mounted outside the
+  zoom-scaled page) and Delete/Escape/⌘A on the canvas drive them.
+
 ## Editor left panel (Func §5.3 + Claude Design `left-panel.html`)
 
 - **Outline right-column shows the auto section number, not a page number.** The

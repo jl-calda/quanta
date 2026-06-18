@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { TextRegion as TextRegionData } from "@/lib/worksheet/content";
+import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -19,6 +20,7 @@ export function TextRegionView({
   region,
   editing,
   canEdit,
+  multiActive,
   dispatch,
 }: RegionRenderProps<TextRegionData>) {
   const [draft, setDraft] = useState(region.text);
@@ -78,6 +80,7 @@ export function TextRegionView({
 
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (applyModifierSelect(e, region.id, dispatch, multiActive)) return;
     dispatch(canEdit ? { type: "BEGIN_EDIT", id: region.id } : { type: "SELECT", id: region.id });
   };
 
