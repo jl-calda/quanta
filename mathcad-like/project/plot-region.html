@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Plot region</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  input.rng { width: 46px; height: 22px; padding: 0 5px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-raised); font: 11px/1 var(--font-mono); color: var(--text-primary); outline: none; text-align: right; }
+  input.rng:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button) { return setTimeout(start, 40); }
+    const { IconButton, Badge } = Q;
+    const { useState, useRef } = React;
+
+    const svg = (c, s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      grip: (s) => svg(<><circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/></>, s),
+      kebab: (s) => svg(<><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></>, s),
+      gear: (s) => svg(<><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1"/></>, s),
+      plot: (s) => svg(<><path d="M4 4v16h16"/><path d="M7 15.5l3.2-4.2 3 2.2 4.3-6"/></>, s),
+      edit: (s) => svg(<path d="M4 20h4L18.5 9.5a1.4 1.4 0 0 0 0-2l-1-1a1.4 1.4 0 0 0-2 0L5 17z"/>, s),
+    };
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    // axis math label (STIX)
+    const Ax = ({ children }) => <tspan style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</tspan>;
+
+    /* ====================== main XY plot ====================== */
+    const C_BLUE = '#1F5FBF', C_GREEN = '#1E8E5A';
+    function XYPlot() {
+      const W = 460, H = 300, mL = 50, mR = 16, mT = 16, mB = 42;
+      const x0 = mL, x1 = W - mR, y0 = H - mB, y1 = mT;
+      const xmax = 6, ymax = 60;
+      const sx = (v) => x0 + (v / xmax) * (x1 - x0);
+      const sy = (v) => y0 - (v / ymax) * (y0 - y1);
+      // two series: deflection curve (blue) + capacity line (green, toggleable)
+      const f1 = (x) => 2.0 * x * x;                       // y = 2 x^2  (demand)
+      const series1 = [];
+      for (let i = 0; i <= 48; i++) { const x = (i / 48) * xmax; series1.push([x, f1(x)]); }
+      const d1 = series1.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ' ' + sy(Math.min(p[1], ymax)).toFixed(1)).join(' ');
+      // sample scatter points on series1
+      const pts = [1, 2, 3, 4, 5].map((x) => [x, f1(x)]);
+
+      const [showCap, setShowCap] = useState(true);
+      const [hoverI, setHoverI] = useState(2);            // hovered nearest point (x=3)
+      const gx = [0, 1, 2, 3, 4, 5, 6], gy = [0, 20, 40, 60];
+
+      const hp = pts[hoverI];
+      const hpx = sx(hp[0]), hpy = sy(hp[1]);
+
+      return (
+        <svg width="100%" viewBox={'0 0 ' + W + ' ' + H} style={{ display: 'block', cursor: 'crosshair' }}>
+          {/* gridlines */}
+          {gy.map((v, i) => <line key={'gy' + i} x1={x0} y1={sy(v)} x2={x1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />)}
+          {gx.map((v, i) => <line key={'gx' + i} x1={sx(v)} y1={y0} x2={sx(v)} y2={y1} stroke="var(--border-hairline)" strokeWidth="1" />)}
+          {/* axes */}
+          <line x1={x0} y1={y0} x2={x1} y2={y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+          <line x1={x0} y1={y0} x2={x0} y2={y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+          {/* ticks */}
+          {gx.map((v, i) => <text key={'tx' + i} x={sx(v)} y={y0 + 15} textAnchor="middle" style={{ font: '10px var(--font-mono)', fill: 'var(--text-muted)' }}>{v}</text>)}
+          {gy.map((v, i) => <text key={'ty' + i} x={x0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: '10px var(--font-mono)', fill: 'var(--text-muted)' }}>{v}</text>)}
+          {/* axis labels with units + STIX symbol */}
+          <text x={(x0 + x1) / 2} y={H - 6} textAnchor="middle" style={{ font: '11px var(--font-sans)', fill: 'var(--text-primary)' }}><Ax>x</Ax> [m]</text>
+          <text x={14} y={(y0 + y1) / 2} textAnchor="middle" transform={'rotate(-90 14 ' + ((y0 + y1) / 2) + ')'} style={{ font: '11px var(--font-sans)', fill: 'var(--text-primary)' }}><Ax>M</Ax> [kN]</text>
+
+          {/* capacity line (series 2) */}
+          {showCap && <line x1={x0} y1={sy(45)} x2={x1} y2={sy(45)} stroke={C_GREEN} strokeWidth="1.75" strokeDasharray="5 3" />}
+          {showCap && <text x={x1 - 4} y={sy(45) - 5} textAnchor="end" style={{ font: '9.5px var(--font-mono)', fill: C_GREEN }}>capacity 45</text>}
+
+          {/* demand trace (series 1) */}
+          <path d={d1} fill="none" stroke={C_BLUE} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {/* scatter markers */}
+          {pts.map((p, i) => <circle key={i} cx={sx(p[0])} cy={sy(p[1])} r={i === hoverI ? 4.5 : 3} fill={i === hoverI ? C_BLUE : 'var(--surface-paper)'} stroke={C_BLUE} strokeWidth="1.6" onMouseEnter={() => setHoverI(i)} style={{ cursor: 'pointer' }} />)}
+
+          {/* hover crosshair + read-out */}
+          <line x1={hpx} y1={hpy} x2={hpx} y2={y0} stroke={C_BLUE} strokeWidth="1" strokeDasharray="2 2" opacity="0.5" />
+          <line x1={hpx} y1={hpy} x2={x0} y2={hpy} stroke={C_BLUE} strokeWidth="1" strokeDasharray="2 2" opacity="0.5" />
+          <g transform={'translate(' + (hpx + 10) + ',' + (hpy - 34) + ')'}>
+            <rect x="0" y="0" width="104" height="30" rx="4" fill="var(--ink)" />
+            <text x="9" y="13" style={{ font: '10px var(--font-mono)', fill: '#fff' }}><tspan style={{ fill: '#9FB6D8' }}>x </tspan>{hp[0].toFixed(2)} m</text>
+            <text x="9" y="24" style={{ font: '10px var(--font-mono)', fill: '#fff' }}><tspan style={{ fill: '#9FB6D8' }}>M </tspan>{hp[1].toFixed(1)} kN</text>
+          </g>
+        </svg>
+      );
+    }
+
+    function LegendChip({ color, label, on, dash, onClick }) {
+      return (
+        <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 24, padding: '0 9px', border: '1px solid var(--border-hairline)', borderRadius: 99, background: on ? 'var(--surface-raised)' : 'var(--surface-chrome)', cursor: 'pointer', opacity: on ? 1 : 0.5 }}>
+          <span style={{ width: 14, height: 0, borderTop: '2px ' + (dash ? 'dashed' : 'solid') + ' ' + color }} />
+          <span style={{ font: '11px/1 var(--font-sans)', color: 'var(--text-primary)' }}>{label}</span>
+        </button>
+      );
+    }
+
+    function PlotRegion() {
+      const [title, setTitle] = useState('Mid-span moment vs. position');
+      const [cap, setCap] = useState(true);
+      const [demand, setDemand] = useState(true);
+      return (
+        <div className="region" style={{ position: 'relative', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+          <span style={{ position: 'absolute', left: -19, top: 12, color: 'var(--text-muted)' }}>{I.grip(15)}</span>
+          {/* title row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1px solid transparent', borderRadius: 4, background: 'transparent', font: '600 13px/1.3 var(--font-sans)', color: 'var(--text-primary)', padding: '3px 6px', outline: 'none' }} onFocus={(e) => { e.target.style.background = 'var(--surface-paper)'; e.target.style.borderColor = 'var(--border-strong)'; }} onBlur={(e) => { e.target.style.background = 'transparent'; e.target.style.borderColor = 'transparent'; }} />
+            <span style={{ display: 'inline-flex', color: 'var(--text-muted)', flex: '0 0 auto' }}>{I.edit(13)}</span>
+            <IconButton label="Plot settings" size="sm">{I.gear(16)}</IconButton>
+            <IconButton label="More" size="sm">{I.kebab(16)}</IconButton>
+          </div>
+
+          {/* axis range controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6, padding: '0 2px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '10.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>x range <input className="rng" defaultValue="0" /> <span>–</span> <input className="rng" defaultValue="6" /> m</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: '10.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>y range <input className="rng" defaultValue="0" /> <span>–</span> <input className="rng" defaultValue="60" /> kN</span>
+          </div>
+
+          {/* plot */}
+          <div style={{ border: '1px solid var(--border-hairline)', borderRadius: 4, padding: '8px 8px 2px', background: 'var(--surface-paper)' }}>
+            <XYPlot />
+          </div>
+
+          {/* legend */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
+            <span style={{ font: '10px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Series</span>
+            <LegendChip color={C_BLUE} label="Demand  M(x)" on={demand} onClick={() => setDemand((v) => !v)} />
+            <LegendChip color={C_GREEN} label="Capacity" dash on={cap} onClick={() => setCap((v) => !v)} />
+            <span style={{ marginLeft: 'auto', font: '10.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>bound to <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>M(x) := 2·x²</span></span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====================== type thumbnails ====================== */
+    function ThumbBar() {
+      return (
+        <svg width="100%" viewBox="0 0 120 80" style={{ display: 'block' }}>
+          <line x1="16" y1="64" x2="112" y2="64" stroke="var(--border-strong)" strokeWidth="1" /><line x1="16" y1="12" x2="16" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+          {[28, 44, 22, 52, 36].map((h, i) => <rect key={i} x={24 + i * 17} y={64 - h} width="11" height={h} fill="var(--accent-tint)" stroke="#1F5FBF" strokeWidth="1.2" />)}
+        </svg>
+      );
+    }
+    function ThumbPolar() {
+      const cx = 60, cy = 40, r = 28;
+      const pts = [];
+      for (let a = 0; a <= 360; a += 12) { const rr = r * (0.55 + 0.45 * Math.cos(2 * a * Math.PI / 180) ** 2); const x = cx + rr * Math.cos(a * Math.PI / 180); const y = cy + rr * Math.sin(a * Math.PI / 180); pts.push((a ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1)); }
+      return (
+        <svg width="100%" viewBox="0 0 120 80" style={{ display: 'block' }}>
+          {[10, 19, 28].map((rr, i) => <circle key={i} cx={cx} cy={cy} r={rr} fill="none" stroke="var(--border-hairline)" strokeWidth="1" />)}
+          <line x1={cx - 30} y1={cy} x2={cx + 30} y2={cy} stroke="var(--border-hairline)" strokeWidth="1" /><line x1={cx} y1={cy - 30} x2={cx} y2={cy + 30} stroke="var(--border-hairline)" strokeWidth="1" />
+          <path d={pts.join(' ') + ' Z'} fill="none" stroke="#1F5FBF" strokeWidth="1.5" />
+        </svg>
+      );
+    }
+    function ThumbContour() {
+      return (
+        <svg width="100%" viewBox="0 0 120 80" style={{ display: 'block' }}>
+          <rect x="16" y="12" width="96" height="52" fill="none" stroke="var(--border-strong)" strokeWidth="1" />
+          {[['#E8F0FC', 30], ['#C7DCF6', 22], ['#9FC0EE', 14], ['#1F5FBF', 7]].map(([c, r], i) => <ellipse key={i} cx="64" cy="38" rx={r + 14} ry={r + 4} fill="none" stroke={c} strokeWidth="1.6" />)}
+        </svg>
+      );
+    }
+    function Thumb3D() {
+      return (
+        <svg width="100%" viewBox="0 0 120 80" style={{ display: 'block' }}>
+          {[0, 1, 2, 3, 4].map((r) => (
+            <path key={r} d={[0, 1, 2, 3, 4, 5].map((c, i) => { const x = 24 + c * 14 + r * 6; const y = 56 - r * 7 - Math.sin((c + r) * 0.7) * 7; return (i ? 'L' : 'M') + x + ' ' + y.toFixed(1); }).join(' ')} fill="none" stroke={r === 2 ? '#1F5FBF' : 'var(--border-strong)'} strokeWidth="1.2" />
+          ))}
+          {[0, 1, 2, 3, 4, 5].map((c) => (
+            <path key={'v' + c} d={[0, 1, 2, 3, 4].map((r, i) => { const x = 24 + c * 14 + r * 6; const y = 56 - r * 7 - Math.sin((c + r) * 0.7) * 7; return (i ? 'L' : 'M') + x + ' ' + y.toFixed(1); }).join(' ')} fill="none" stroke="var(--border-hairline)" strokeWidth="1" />
+          ))}
+        </svg>
+      );
+    }
+    function TypeThumb({ label, children, active }) {
+      return (
+        <button style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border-hairline)'), borderRadius: 'var(--radius-sm)', background: active ? 'var(--accent-tint)' : 'var(--surface-raised)', cursor: 'pointer', overflow: 'hidden', padding: 0 }}>
+          <div style={{ padding: '6px 8px 2px', background: 'var(--surface-paper)' }}>{children}</div>
+          <div style={{ font: '10.5px/1 var(--font-sans)', color: active ? 'var(--accent)' : 'var(--text-muted)', fontWeight: active ? 600 : 500, padding: '6px 8px', borderTop: '1px solid var(--border-hairline)', textAlign: 'left' }}>{label}</div>
+        </button>
+      );
+    }
+
+    /* ====================== empty state ====================== */
+    function EmptyPlot() {
+      return (
+        <div className="region" style={{ position: 'relative', background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', padding: 12 }}>
+          <span style={{ position: 'absolute', left: -19, top: 12, color: 'var(--text-muted)' }}>{I.grip(15)}</span>
+          <div className="q-grid" style={{ border: '1px dashed var(--border-strong)', borderRadius: 4, background: 'var(--surface-paper)', minHeight: 220, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 46, height: 46, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)', background: 'var(--surface-raised)', color: 'var(--accent)', marginBottom: 13 }}>{I.plot(24)}</span>
+            <div style={{ font: '600 13.5px/1.3 var(--font-sans)', color: 'var(--text-primary)', marginBottom: 5 }}>Pick variables to plot</div>
+            <div style={{ font: '12px/1.5 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 280, marginBottom: 14 }}>Choose an x and a y from the names defined above this region, or type an expression.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '12px/1 var(--font-sans)', color: 'var(--text-muted)' }}>x <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>—</span></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '12px/1 var(--font-sans)', color: 'var(--text-muted)' }}>y <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>—</span></span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====================== board ====================== */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    );
+    const Paper = ({ children, w = 540 }) => (
+      <div className="q-grid" style={{ background: 'var(--surface-paper)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-sm)', borderRadius: 2, padding: '24px 28px', width: w, maxWidth: '100%' }}>{children}</div>
+    );
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Plot region specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Region type</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Plot region</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 680 }}>A plot bound to an expression, embedded in the worksheet. Cool and technical — unit-labelled axes, hairline gridlines, a blueprint trace, and a hover read-out — not consumer-chart styling.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 28, marginTop: 32, alignItems: 'start' }}>
+            {/* main XY */}
+            <div>
+              <Label k="(a)" sub="XY plot bound to M(x). Unit-labelled axes (STIX symbol + [unit]), editable ranges, toggleable series in the legend, an inline-editable title, and a hover read-out of the nearest point.">XY plot — bound to an expression</Label>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 22px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                <Paper><PlotRegion /></Paper>
+              </div>
+            </div>
+
+            {/* right column: types + empty */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div>
+                <Label k="(b)" sub="Other plot types the region can switch to.">Plot types</Label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '18px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                  <TypeThumb label="XY line / scatter" active><svg width="100%" viewBox="0 0 120 80" style={{ display: 'block' }}><line x1="16" y1="64" x2="112" y2="64" stroke="var(--border-strong)" strokeWidth="1"/><line x1="16" y1="12" x2="16" y2="64" stroke="var(--border-strong)" strokeWidth="1"/><path d="M16 60 L40 48 L64 34 L88 22 L112 14" fill="none" stroke="#1F5FBF" strokeWidth="1.75"/>{[[40,48],[64,34],[88,22]].map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r="2.4" fill="var(--surface-paper)" stroke="#1F5FBF" strokeWidth="1.3"/>)}</svg></TypeThumb>
+                  <TypeThumb label="Bar / column"><ThumbBar /></TypeThumb>
+                  <TypeThumb label="Polar"><ThumbPolar /></TypeThumb>
+                  <TypeThumb label="Contour"><ThumbContour /></TypeThumb>
+                  <TypeThumb label="3D surface"><Thumb3D /></TypeThumb>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* empty state full width-ish */}
+          <div style={{ marginTop: 32, maxWidth: 560 }}>
+            <Label k="(c)" sub="Region added, no x / y chosen yet — a one-line prompt to pick variables.">Empty state</Label>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '24px 22px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+              <Paper><EmptyPlot /></Paper>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

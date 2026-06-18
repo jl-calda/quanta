@@ -2319,3 +2319,289 @@ _[tool: done]_
 
 The index is updated and loads cleanly — now showing **18 deliverables** with the two new specimens added (**Math region** under Editor specimens, **Keyboard shortcuts** under Component catalogues) and a **Comfortable / Compact density** chip in the metadata strip. The adherence warnings are pre-existing, from `admin-app.jsx`, unrelated to this change.
 
+## User
+
+Design a standalone Quanta 'Table / spreadsheet region' mockup (light theme), on the worksheet paper with the faint blueprint dot-grid, consistent with editor.html and the _ds tokens. Show the region across states:
+- An embedded table with a header row, banded rows, thin hairline gridlines, numeric cells right-aligned in Geist Mono, and per-column unit labels (e.g. 'Length [mm]', 'Force [kN]').
+- A selected cell with a formula bar above it showing its '=' formula (e.g. =A2*B2 or =Vlookup(...)).
+- A computed cell showing its result with a unit; a conditional-formatted cell (pass = green tint, fail = red tint).
+- A named-range chip and a sort/filter control on a column header.
+- A compact read/present version of the same table (clean banded, no gridlines).
+Keep Quanta tokens (blueprint accent, hairlines, 4/6 radii, STIX for any math, Geist Mono for cells); compact density; no emoji. It is a calculation table inside a worksheet, not a generic data grid.
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+Building the table/spreadsheet region specimen — edit and present states on worksheet paper.
+
+_[tool: write_file]_
+
+_[tool: show_html]_
+
+_[tool: show_html]_
+
+Both states render exactly as specced. The edit table shows the selected cell (A3 utilization, blueprint outline), formula bar with `=C4/D4` and fx icon, `anchor_schedule` named-range chip, cell-ref box (E4), per-column unit labels (`Length [mm]`, `Force [kN]`), the sorted Force column, banded rows with hairline gridlines, right-aligned mono numerics, and conditional pass/fail tints (green OK, red FAIL on UR 1.38). The present table is the clean version — banded, no gridlines, rules top/bottom.
+
+One refinement: the selected-cell ref reads "E4" but utilization is the 5th data column with row 4 → that's correct (col E, row 4). Good. Let me snip resolved work and hand off.
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+_[tool: ready_for_verification]_
+
+The **Table / spreadsheet region** specimen is delivered and loads cleanly — verifier running. The adherence findings are all pre-existing, from `admin-app.jsx`, unrelated to this file.
+
+**table-region.html** shows the calculation table in both states on worksheet paper:
+
+- **Edit state** — selected cell (A3 utilization) with a blueprint outline; formula bar above showing its `=` formula (`=C4/D4`, with `=Vlookup(...)` for capacity cells) and an fx icon; the `anchor_schedule` **named-range chip** and a cell-ref box; per-column **unit labels** (`Length [mm]`, `Force [kN]`, `Capacity [kN]`); a **sorted** column with its indicator and a sort/filter control on others; banded rows with thin hairline gridlines; right-aligned numeric cells in Geist Mono; and **conditional formatting** (green pass tint with "OK", red fail tint with "FAIL" on UR 1.38). The footer reinforces that result cells carry their unit (`29.7 kN`).
+- **Present state** — the same table clean: banded rows, no gridlines, rules top and bottom — what prints and what a checker sees.
+
+Want me to add it to `index.html` (under a Region types group) like the other specimens?
+
+## User
+
+Design a standalone Quanta 'Plot region' mockup (light theme), on the worksheet paper with the blueprint dot-grid, consistent with editor.html and the _ds tokens. Show:
+- An XY line/scatter plot bound to an expression, with axes labelled with units (x [m], y [kN]), thin hairline gridlines, a blueprint trace, an editable axis range, and a hover read-out tooltip of the nearest point.
+- Small variant thumbnails of the other plot types: bar/column, polar, contour, 3D surface.
+- A legend with toggleable series and an inline-editable title.
+- An empty state (region added, no x/y chosen yet) with a one-line prompt to pick variables.
+Keep Quanta tokens (blueprint accent, hairlines, restrained styling, STIX for axis math); compact density; cool/technical, not consumer-chart styling; no emoji.
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+Building the plot region specimen — XY plot with unit axes, hover read-out, type thumbnails, legend, and empty state.
+
+_[tool: write_file]_
+
+_[tool: show_html]_
+
+The XY plot renders beautifully — inline-editable title, x/y range controls with units, hairline gridlines, blueprint trace, the dashed green capacity series, scatter markers, and the dark hover read-out tooltip (`x 3.00 m / M 18.0 kN`). Axis labels carry STIX symbols + units. The type thumbnails (XY active, bar, polar, contour, 3D) all render cleanly. Let me check the legend and empty state at the bottom.
+
+_[tool: save_screenshot]_
+
+The legend (toggleable Demand/Capacity series chips, "bound to M(x) := 2·x²"), the 3D surface thumbnail, and the empty state (icon, "Pick variables to plot" prompt, x/y selectors) all render correctly. Everything's working.
+
+_[tool: delete_file]_
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+_[tool: ready_for_verification]_
+
+The **Plot region** specimen is delivered and loads cleanly — verifier running. The adherence findings are all pre-existing (from `admin-app.jsx`), unrelated to this file.
+
+**plot-region.html** shows the plot region on worksheet paper:
+
+- **(a) XY plot** — bound to `M(x) := 2·x²`, with unit-labelled axes (STIX symbol + `[m]` / `[kN]`), hairline gridlines, a blueprint trace with scatter markers, a dashed green capacity series, editable x/y axis ranges, a toggleable-series legend, an inline-editable title, and a dark **hover read-out** tooltip of the nearest point (`x 3.00 m / M 18.0 kN`).
+- **(b) Plot types** — variant thumbnails for XY (active), bar/column, polar, contour, and 3D surface.
+- **(c) Empty state** — region added, no x/y chosen, with the "Pick variables to plot" prompt and x/y selectors.
+
+All Quanta tokens, cool/technical styling, compact density. Want me to add the two new region specimens (table + plot) to `index.html` under a "Region types" group?
+
+## User
+
+Design a standalone Quanta 'Input controls' mockup (light theme), on the worksheet paper with the dot-grid, consistent with editor.html and the _ds tokens. Show each control as it appears INSIDE a calculation document (driving a variable), not as a web form:
+- A combo-box / dropdown bound to a variable (e.g. 'steel_grade := S355');
+- A slider with min/max, step, an invert option, and a unit on its value;
+- A radio group with a default-selected option;
+- A checkbox, a button, a textbox, and a listbox.
+For one control, show the live link: the control sets a value and a nearby math region recomputes (a result with its unit updates).
+Keep Quanta tokens (blueprint accent, hairlines, 4px radii, Geist for labels, STIX for the driven value); compact density; precise/instrument feel; no emoji.
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+Building the input-controls specimen — each control shown driving a variable inside the document, with one live-linked example.
+
+_[tool: write_file]_
+
+_[tool: show_html]_
+
+All seven controls render correctly inside the worksheet, each with its `name := value` binding in STIX. The slider is live-linked — it's at 4.2 m and the moment region shows `M_Ed = w·L²/8 = 27.6 kN·m` with the blueprint-highlighted result. Combo (steel_grade := "S355"), radio (load_case := "ULS", default tagged), listbox (section), textbox (project_ref), and checkbox (redistribute := true, green). Precise/instrument feel throughout, on Quanta tokens. Everything's working.
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+_[tool: ready_for_verification]_
+
+The **Input controls** specimen is delivered and loads cleanly — verifier running. The adherence findings are all pre-existing (from `admin-app.jsx`), unrelated to this file.
+
+**input-controls.html** shows seven controls embedded in a worksheet, each **driving a named variable** (with its `name := value` binding in STIX beneath):
+
+- **Slider** — `L := 4.2 m` with min/max (2–8 m), step 0.1, invert option, unit on the value, and **live-linked**: it recomputes the moment region `M_Ed = w·L²/8 = 27.6 kN·m` with a highlighted result.
+- **Combo box** — `steel_grade := "S355"` (dropdown).
+- **Radio group** — `load_case := "ULS"` with the default option tagged.
+- **Listbox** — `section := "406×178×60"`.
+- **Textbox** — `project_ref := "Skyline Tower"`.
+- **Checkbox** — `redistribute := true` (green).
+- **Button** — runs the solve block.
+
+Precise/instrument feel, compact density, all on Quanta tokens.
+
+That's three region-type specimens now (table, plot, input controls). Want me to fold all the recent specimens — table, plot, input controls, math region, keyboard shortcuts — into `index.html` under a "Region types" group so the handoff index stays complete?
+
+## User
+
+Design a standalone Quanta 'Solve block' mockup (light theme), on the worksheet paper with the dot-grid, consistent with editor.html and the _ds tokens. Show a bordered solve block containing:
+- A 'Given' guess-values section (variables with starting values + units);
+- A constraints list in natural math notation (equations and inequalities in STIX, with a bold relational equals);
+- A solver call line (e.g. find(...), minimize(...)) with a small menu hinting the algorithm choice (find / minimize / maximize / minerr / odesolve);
+- A result line binding the solution to output names, with units, highlighted in the result color;
+- An error state ('No solution found').
+Keep Quanta tokens (blueprint accent, a hairline border around the block, STIX for the math, Geist for labels); compact density; no emoji. It should read like a Mathcad solve block inside a worksheet.
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+Building the solve block specimen — two states (solved + error) on worksheet paper.
+
+_[tool: write_file]_
+
+## Assistant
+
+_[tool: write_file]_
+
+_[tool: show_html]_
+
+Both states render correctly — the bordered solve block with the blueprint left rule, Given guesses (`t := 10 mm`, `θ := 30 deg`), constraints with bold relational equals (von Mises `=`, `≤ 1.0`, `t ≥ 6 mm`, the angle bounds), the solver call with the switchable `find ▾` algorithm menu, and converged/no-solution badges. Let me confirm the lower halves (result binding + error message).
+
+_[tool: snip]_
+
+_[tool: save_screenshot]_
+
+Both states fully confirmed: the solved block binds `t = 14.2 mm` and `θ = 41.7 deg` (blueprint-highlighted results with units), and the error state shows the specific, actionable "No solution found" message in the app's voice.
+
+_[tool: delete_file]_
+
+_[tool: update_todos]_
+
+_[tool: snip]_
+
+_[tool: ready_for_verification]_
+
+The **Solve block** specimen is delivered and loads cleanly — verifier running. The adherence findings are pre-existing (from `admin-app.jsx`), unrelated to this file.
+
+**solve-block.html** shows the bordered solve block on worksheet paper in both states:
+
+- **(a) Solved** — a Given guess-values section (`t := 10 mm`, `θ := 30 deg` with units), a constraints list in textbook notation (von Mises `=`, `M_Ed/m_pl ≤ 1.0`, `t ≥ 6 mm`, the angle bounds — each with a **bold relational operator**), a solver call line with a **switchable algorithm menu** (find / minimize / maximize / minerr / Odesolve), and the result bound to `t = 14.2 mm` and `θ = 41.7 deg`, highlighted in the result color with units. A "converged" badge sits in the block header.
+- **(b) Error** — the same block ending in a specific "No solution found" message explaining the conflict and how to fix it, in the app's voice.
+
+The blueprint left rule frames it as a Mathcad-style solve block. That's four region-type specimens now (table, plot, input controls, solve block).
+
+## User
+
+Design a standalone Quanta 'Dialogs' board (light theme) showing the app's modal patterns on the _ds Dialog component (single soft shadow, scrim, 8px radius, hairline header/footer, Geist). Show a representative set as small framed examples:
+- Insert function (searchable list + a live preview of the selected function's signature in STIX);
+- Insert unit (categorised unit picker);
+- Result format (decimals / sig figs / notation / radix / fractions, with a live sample);
+- Conditional formatting (rule editor with a pass/fail color);
+- Share / permissions (people + role dropdowns + link access);
+- Command palette (Cmd+K, fuzzy list);
+- A confirmation dialog (destructive action, clear primary/secondary).
+Keep Quanta tokens (blueprint accent, hairlines, restrained shadow, STIX for any math previews); compact density; sentence-case buttons that name the action ('Insert', 'Apply format'), never 'OK/Submit'; no emoji.
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: update_todos]_
+
+Building the dialogs board — seven framed modal patterns on the Quanta Dialog visual language.
+
+_[tool: write_file]_
+
+_[tool: show_html]_
+
+The view scrolled to the lower frames — Result format (live sample `N_Rd = 52.80 kN`, Apply format), Conditional formatting (Apply rules), Share/permissions (people + role dropdowns + link access + Copy link), and Command palette (⌘K fuzzy list, "Insert math region" highlighted with the enter key). Let me confirm the top row (Insert function, Insert unit, Confirmation).
+
+_[tool: snip]_
+
+_[tool: save_screenshot]_
+
+Top row confirmed — Insert function (searchable list, live STIX `interp(vx, vy, x)` signature preview), Insert unit (categorised picker, MPa selected), and the sentence-case action buttons ("Insert function", "Insert unit", never OK). All seven dialog patterns render correctly on the unified Dialog language.
+
+_[tool: delete_file]_
+
+_[tool: update_todos]_
+
+_[tool: snip]_
+
+_[tool: ready_for_verification]_
+
+The **Dialogs board** is delivered and loads cleanly — verifier running. The adherence findings are pre-existing (from `admin-app.jsx`), unrelated to this file.
+
+**dialogs.html** shows all seven modal patterns on one Dialog language (single soft shadow over a scrim, 8px radius, hairline header/footer, Geist):
+
+- **(a) Insert function** — searchable list + live STIX signature preview (`interp(vx, vy, x)`)
+- **(b) Insert unit** — categorised picker (MPa selected, with conversion note)
+- **(c) Result format** — decimals / notation / radix segmented controls with a live sample (`N_Rd = 52.80 kN`)
+- **(d) Conditional formatting** — rule editor with pass/fail colour pickers
+- **(e) Share / permissions** — people + role dropdowns + link access + Copy link
+- **(f) Command palette** — ⌘K fuzzy list with key hints
+- **(g) Confirmation** — destructive action with a red primary, clear Keep it / Move to trash
+
+Every button names its action ("Insert function", "Apply format", "Apply rules") — never OK/Submit — sentence case, no emoji, all on Quanta tokens.
+
+## User
+
+update the index html to cover these changes
+
+## Assistant
+
+_[tool: snip]_
+
+_[tool: grep]_
+
+_[tool: grep]_
+
+Let me read the data structure and groups to add the 5 new specimens (math region, keyboard, table, plot, input controls, solve block, dialogs) and a new "Region types" group.
+
+_[tool: read_file]_
+
+I'll add new icon glyphs for the region-type specimens, insert a "Region types" group, move math-region into it, and add the dialogs entry to catalogues.
+
+_[tool: str_replace_edit]_
+
+_[tool: str_replace_edit]_
+
+_[tool: snip]_
+
+_[tool: show_html]_
+
+The header now shows **23 HTML deliverables**. Let me verify the new "Region types" group renders correctly.
+
+_[tool: snip]_
+
+_[tool: eval_js]_
+
+All four groups present and 23 cards confirmed. The index is updated.
+
+_[tool: snip]_
+
+_[tool: ready_for_verification]_
+
+The index is updated and loads cleanly. It now reflects **23 deliverables** across four groups:
+
+- **Pages — full screens (11):** Sign in, Dashboard, Worksheet editor, Template gallery, File browser, Reference library, Settings, Shared, Version history, Export preview, Workspace admin
+- **Editor component specimens (4):** App bar, Ribbon, Left panel, Canvas surface
+- **Region types (5):** Math region, Table / spreadsheet, Plot, Input controls, Solve block
+- **Component catalogues (3):** Empty states, Keyboard shortcuts, Dialogs
+
+I added icon glyphs for the new region-type and dialog specimens, created the dedicated "Region types" group (moving Math region into it), and added the Dialogs entry to catalogues. The metadata strip already carried the density-toggle note.
+
