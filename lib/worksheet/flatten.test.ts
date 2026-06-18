@@ -3,6 +3,7 @@ import type { SheetResult } from "@/lib/calc";
 import type { WorksheetContent } from "./content";
 import {
   findRegion,
+  findRowOf,
   flattenToRegionInputs,
   mapResults,
   readingOrderIds,
@@ -72,6 +73,21 @@ describe("findRegion", () => {
 
   it("returns undefined for an unknown id", () => {
     expect(findRegion(doc, "ZZZ")).toBeUndefined();
+  });
+});
+
+describe("findRowOf", () => {
+  it("finds the row of a top-level region", () => {
+    expect(findRowOf(doc, "A")?.id).toBe("r1");
+    expect(findRowOf(doc, "N")?.id).toBe("r2");
+  });
+
+  it("finds the row of a region nested inside an area", () => {
+    expect(findRowOf(doc, "C")?.id).toBe("r3");
+  });
+
+  it("returns null for an unknown id", () => {
+    expect(findRowOf(doc, "ZZZ")).toBeNull();
   });
 });
 
