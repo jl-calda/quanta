@@ -19,7 +19,13 @@ export {
 } from "./recalc";
 
 // Building blocks (exposed for tests, tooling, and the editor layer).
-export { parseRegion, splitDefinition, collectDeps, normalizeSource } from "./parse";
+export {
+  parseRegion,
+  splitDefinition,
+  collectDeps,
+  filterUnitLiterals,
+  normalizeSource,
+} from "./parse";
 export { latexToSource, sourceToLatex } from "./latex";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";

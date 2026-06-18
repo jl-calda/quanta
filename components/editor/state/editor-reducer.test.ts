@@ -89,6 +89,34 @@ describe("INSERT_REGION_WITH_SOURCE", () => {
   });
 });
 
+describe("INSERT_HEADING", () => {
+  it("creates an H1 text region in an empty doc and opens it for editing", () => {
+    const s = editorReducer(freshState(), {
+      type: "INSERT_HEADING",
+      anchorId: null,
+      where: "below",
+    });
+    expect(s.content.rows).toHaveLength(1);
+    const region = s.content.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("text");
+    expect(region.type === "text" && region.heading).toBe(1);
+    expect(s.selectedId).toBe(region.id);
+    expect(s.editingId).toBe(region.id);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("inserts the heading below an anchor in the same container", () => {
+    const s = editorReducer(freshState(twoColDoc), {
+      type: "INSERT_HEADING",
+      anchorId: "A",
+      where: "below",
+    });
+    const regions = s.content.rows[0].cells[0].regions;
+    expect(regions[0].id).toBe("A");
+    expect(regions[1].type === "text" && regions[1].heading).toBe(1);
+  });
+});
+
 describe("OPEN_REFERENCE / CLOSE_REFERENCE", () => {
   it("opens to a group and closes again", () => {
     const opened = editorReducer(freshState(), { type: "OPEN_REFERENCE", kind: "UNITS" });

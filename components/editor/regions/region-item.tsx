@@ -6,6 +6,7 @@ import type { AreaRegion, Region } from "@/lib/worksheet/content";
 import { useEditor } from "../state/editor-provider";
 import type { EditorAction } from "../state/editor-reducer";
 import { Icon, type IconName } from "../icons";
+import { regionDomId } from "../scroll-to-region";
 import { MathRegionView } from "./math-region";
 import { TextRegionView } from "./text-region";
 import {
@@ -63,6 +64,7 @@ export function RegionItem({ region }: { region: Region }) {
 
   return (
     <div
+      id={regionDomId(region.id)}
       className={className}
       onClick={onClick}
       onDragOver={onDragOver}

@@ -95,6 +95,14 @@
   opacity: 0.5;
 }
 
+/* ---- left-panel rows (Outline / Variables / Files) ---- */
+.lp-row {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.lp-row:hover {
+  background: var(--surface-hover);
+}
+
 /* ---- ribbon / panel tabs ---- */
 .ed-tab {
   position: relative;

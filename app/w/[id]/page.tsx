@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { parseContent } from "@/lib/worksheet/content";
 import { parseWorkspaceSettings } from "@/lib/schema/settings";
 import { getWorksheetComments } from "@/server/queries/comments";
+import { getEditorProjectTree } from "@/server/queries/editor";
 import { EditorApp } from "@/components/editor/editor-app";
 import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/use-presence";
 
@@ -28,7 +29,7 @@ export default async function WorksheetEditorPage({
 
   const { data: worksheet } = await supabase
     .from("worksheets")
-    .select("id, title, content, calc_mode, units_system, workspace_id")
+    .select("id, title, content, calc_mode, units_system, workspace_id, project_id")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -74,8 +75,12 @@ export default async function WorksheetEditorPage({
     color: avatarColor(user.id),
   };
 
-  // Comments for the app-bar comments panel + its open-count badge (RLS-scoped).
-  const initialComments = await getWorksheetComments(id);
+  // Comments for the app-bar comments panel + its open-count badge (RLS-scoped),
+  // and the project tree for the left panel's Files tab — fetched together.
+  const [initialComments, projectTree] = await Promise.all([
+    getWorksheetComments(id),
+    getEditorProjectTree(worksheet.workspace_id),
+  ]);
 
   return (
     <EditorApp
@@ -85,7 +90,9 @@ export default async function WorksheetEditorPage({
         content: parseContent(worksheet.content),
         calcMode: worksheet.calc_mode,
         unitsSystem: worksheet.units_system,
+        projectId: worksheet.project_id,
       }}
+      projectTree={projectTree}
       canEdit={canEdit}
       canManage={canManage}
       canExport={canExport}
