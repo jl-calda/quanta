@@ -3,6 +3,7 @@
 import "katex/dist/katex.min.css";
 import "./editor.css";
 import type { WorksheetContent } from "@/lib/worksheet/content";
+import type { ProjectTree } from "@/lib/worksheet/project-tree";
 import { EditorProvider } from "./state/editor-provider";
 import type { CalcMode, UnitsSystem } from "./state/editor-reducer";
 import type { PresenceUser } from "./use-presence";
@@ -26,6 +27,8 @@ export interface EditorWorksheet {
   content: WorksheetContent;
   calcMode: CalcMode;
   unitsSystem: UnitsSystem;
+  /** The owning project, or null for a workspace-root sheet (Files tab). */
+  projectId: string | null;
 }
 
 /**
@@ -36,6 +39,7 @@ export interface EditorWorksheet {
  */
 export function EditorApp({
   worksheet,
+  projectTree,
   canEdit,
   canManage,
   canExport,
@@ -44,6 +48,7 @@ export function EditorApp({
   me,
 }: {
   worksheet: EditorWorksheet;
+  projectTree: ProjectTree;
   canEdit: boolean;
   canManage: boolean;
   canExport: boolean;
@@ -70,7 +75,12 @@ export function EditorApp({
           <EditorAppBar initialTitle={worksheet.title} canManage={canManage} canExport={canExport} me={me} />
           <Ribbon />
           <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-            <LeftPanel worksheetTitle={worksheet.title} />
+            <LeftPanel
+              worksheetTitle={worksheet.title}
+              currentSheetId={worksheet.id}
+              currentProjectId={worksheet.projectId}
+              projectTree={projectTree}
+            />
             <Canvas worksheetTitle={worksheet.title} />
             <Inspector />
             <RightDrawer />

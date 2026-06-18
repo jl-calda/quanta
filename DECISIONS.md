@@ -2,6 +2,54 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Editor left panel (Func §5.3 + Claude Design `left-panel.html`)
+
+- **Outline right-column shows the auto section number, not a page number.** The
+  mockup's right-aligned mono number is a page number, but Func §5.3 calls for
+  "auto outline numbering" and the worksheet isn't paginated yet (the canvas is a
+  single continuous page). So the slot renders the hierarchical TOC number
+  (`1`, `1.1`, `1.1.1`, `2`, …) computed in reading order from heading levels
+  (`buildOutline` in `lib/worksheet/outline.ts`). Tagged-region leaves are
+  unnumbered. Feature matrix governs over the mockup placeholder per CLAUDE.md.
+- **Folder open/closed is shown by chevron rotation, not a new icon.** The icon
+  registry has no `folderOpen` glyph; rather than invent one (CLAUDE.md: no new
+  visual language / flag substitutions), the Files tree rotates the existing
+  `chevR` 90° when open and keeps the `folder` glyph constant.
+- **Reference count = distinct *other* regions that reference a name.** Computed
+  purely from content (`buildSymbolTable`) by parsing each math region
+  (`parseRegion`) and intersecting deps with the set of defined names via the
+  engine's `filterUnitLiterals` — so unit literals (`kN`, bare `b`) never inflate
+  counts, a user-defined name that shadows a unit *is* counted, and a region's
+  self-reference is excluded. Content-derived (not result-derived), so it's
+  correct in Manual mode before a recalc. `filterUnitLiterals` is now re-exported
+  from `@/lib/calc`.
+- **Variables value/unit split gates on `isUnit(value)`, not on whitespace.** The
+  engine's `formatted` joins value+unit with one space, but matrices/booleans can
+  contain spaces; `splitValueUnit` only splits (on the first space) when the raw
+  value is a unit, otherwise the whole string is the value with an empty unit.
+- **Error rows show only the alert icon** (full message in `title`) and the footer
+  summarizes the count of `unit-mismatch` errors specifically — matching the
+  mockup, and avoiding a false "conflict" when results are merely stale.
+- **Files tree is a server-side snapshot.** `getEditorProjectTree` (new
+  `server/queries/editor.ts`) reuses the file browser's cached `getProjectTree`
+  plus a non-deleted-worksheets read, assembled by the pure `buildWorksheetTree`
+  (`lib/worksheet/project-tree.ts`), and threaded through `EditorApp` →
+  `LeftPanel`. Clicking a sheet client-navigates via `next/navigation`; folders
+  default-open along the current sheet's ancestor chain. No client Supabase calls,
+  no `localStorage` for open state (React state only).
+- **"+ heading" needed a dedicated `INSERT_HEADING` reducer action.**
+  `INSERT_REGION` can't set `heading` atomically and doesn't return the new id, so
+  a follow-up `SET_REGION_PROP` couldn't reach it; `INSERT_HEADING` mirrors
+  `INSERT_REGION_WITH_SOURCE`, creating an H1 text region and opening it for edit.
+- **Scroll-to-region** adds a stable `region-<id>` DOM id to the region wrapper and
+  a `scrollToRegion` helper (`block: "nearest"`, reduced-motion aware, no-op when
+  the node is absent — e.g. inside a collapsed area); panel rows call it after
+  `SELECT` on the next animation frame.
+- **`.lp-row` hover wash lives in `editor.css`, and non-active rows omit the inline
+  background** (the mockup's inline `transparent` would override the `:hover`
+  rule), so the hover only applies where intended while active rows keep their
+  inline `accent-tint`.
+
 ## Ribbon (M5 · Func §5.2 + Claude Design `ribbon-app.jsx`)
 
 - **Full ribbon ported as a folder, not one file.** `components/editor/ribbon.tsx`
