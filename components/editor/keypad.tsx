@@ -2,13 +2,15 @@
 
 import { useRef, useState } from "react";
 import { DEFAULT_KEYMAP_ID } from "@/lib/keymap";
+import { insertIntoActiveField } from "./math-entry";
 import { Icon } from "./icons";
 
 /**
  * Floating math keypad — a draggable palette that inserts notation into the
  * focused formula field. Buttons use mousedown+preventDefault so they never
- * steal focus from the editor; insertion goes through the native value setter so
- * React's controlled inputs pick up the change. Tabs mirror the design mockup.
+ * steal focus from the editor; insertion goes through the shared math-entry
+ * bridge so it works in both the MathLive field and the mono input. Tabs mirror
+ * the design mockup.
  */
 interface Key {
   s: string;
@@ -73,17 +75,7 @@ export function Keypad() {
   };
 
   const insert = (text: string) => {
-    const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) return;
-    const proto = el.tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    const next = el.value.slice(0, start) + text + el.value.slice(end);
-    setter?.call(el, next);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    const caret = start + text.length;
-    el.setSelectionRange(caret, caret);
+    insertIntoActiveField({ text });
   };
 
   const panelStyle: React.CSSProperties =

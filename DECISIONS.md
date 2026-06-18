@@ -2,6 +2,57 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Ribbon (M5 · Func §5.2 + Claude Design `ribbon-app.jsx`)
+
+- **Full ribbon ported as a folder, not one file.** `components/editor/ribbon.tsx`
+  (Home/Insert-only stub) is replaced by `components/editor/ribbon/` —
+  `index.tsx` (shell: tab strip + collapse + active tab), `primitives.tsx`
+  (typed `Group`/`BigBtn`/`SmBtn`/`Stepper`/`DropField`/`ColumnsPicker`/
+  `RowsColsPicker`/`Tile`/…), `glyphs.tsx` (STIX math glyphs), `tabs.tsx` (all 11
+  tab bodies), `quick-access.tsx`, and `commands.ts`. `editor-app.tsx` imports
+  `./ribbon` unchanged (resolves to `index.tsx`).
+- **One typed command dispatcher — `useRibbonCommands()`.** Every control fires a
+  `cmd.*` that maps onto the existing reducer actions / provider helpers
+  (`recalculate`, `setMode`) / the math-entry bridge; `sel.*` reflects the current
+  selection (region type, decimals, show-steps, border, row columns, calc mode,
+  units system, comments-open, isPlot) so controls render the right
+  active/value/enabled state. Mutations gate on `canEdit`; `New comment` on
+  `useComments().canComment`; view/nav (tab switch, collapse, recalc, reference,
+  units cycle, comments panel) stay enabled.
+- **Math-operator groups drive natural entry via a shared bridge.** New
+  `components/editor/math-entry.ts` (`insertIntoActiveField`) inserts a LaTeX
+  template into the focused MathLive `<math-field>` (`executeCommand(["insert",…])`,
+  detected by tag name — no `mathlive` import, SSR-safe) or plain text into an
+  `<input>`/`<textarea>`. `keypad.tsx` was refactored onto it (so the keypad now
+  also works in the 2D math field). Operator/matrix tiles use
+  `onMouseDown`+`preventDefault` so they never steal field focus; with no field
+  focused they fall back to opening a seeded math region. Templates
+  (`OPERATOR_TEMPLATES`, `MATRIX_TEMPLATES`, `matrixLatex/Source`) are pure and
+  unit-tested.
+- **Honest wiring vs. faithful placeholders.** Wired to real features: region
+  inserts, decimals, show-steps, region border, indent/outdent, row columns, span,
+  calc mode, recalc/to-here, function/unit/constant reference, comments panel,
+  operator/structure/matrix inserts, evaluation glyphs, and the units-system
+  cycle. Controls with no backing feature yet (clipboard, sketch, page setup /
+  margins / headers, TOC / go-to-page, track changes / compare / spell / lock,
+  multithreading / solver options, trace style, find, text styles, bold/italic/
+  underline, color, align, conditional format) render faithfully but `disabled`
+  with a "— coming soon" tooltip rather than faking behaviour.
+- **Plot tab's Traces/Axes/Chart groups are contextual.** They render only when a
+  plot region is selected (`sel.isPlot`) — the contextual *appearance* is the
+  wired behaviour; their inner controls are disabled until plot editing ships.
+- **`findRowOf(content, id)` added to `flatten.ts`** (pure, descends into areas)
+  so the column controls target the selected region's row and the picker reflects
+  its count.
+- **Quick-access strip built but not mounted.** The component
+  (`ribbon/quick-access.tsx`) is fully wired and exported, but no new chrome
+  toggle is added to switch the editor into it this pass — the design export shows
+  it only on a spec board, and the collapsed ribbon already covers reclaiming
+  vertical room. Mounting it behind a preference is a later follow-up.
+- **~45 ribbon icons added to `icons.tsx`**, path data ported 1:1 from
+  `ribbon-icons.jsx` (same 24×24 / 1.5px wrapper). `IconName` being a
+  `Record`-keyed union makes typecheck enforce that every glyph exists.
+
 ## Workspace admin (§4.11 / Func §4.11)
 
 - **No new migration.** The existing schema already supports everything:

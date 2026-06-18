@@ -6,7 +6,7 @@
  * is what enforces "a name must be defined earlier than it is used".
  */
 import type { RegionInput, RegionResult, SheetResult } from "@/lib/calc";
-import type { Region, WorksheetContent } from "./content";
+import type { Region, Row, WorksheetContent } from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -78,4 +78,27 @@ export function findRegion(
     if (region.id === id) return region;
   }
   return undefined;
+}
+
+/** True when `id` is one of `regions` or nested inside one of their areas. */
+function listHasRegion(regions: Region[], id: string): boolean {
+  for (const region of regions) {
+    if (region.id === id) return true;
+    if (region.type === "area" && listHasRegion(region.regions, id)) return true;
+  }
+  return false;
+}
+
+/**
+ * Find the row that owns a region id (descending into areas), or null. Drives
+ * the ribbon's column controls — `SET_COLUMNS`/`TOGGLE_SPAN` operate on the row
+ * holding the current selection, and the column picker reflects its count.
+ */
+export function findRowOf(content: WorksheetContent, id: string): Row | null {
+  for (const row of content.rows) {
+    for (const cell of row.cells) {
+      if (listHasRegion(cell.regions, id)) return row;
+    }
+  }
+  return null;
 }

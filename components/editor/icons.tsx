@@ -15,7 +15,16 @@ export type IconName =
   | "kebab" | "kebabH" | "grip" | "indentR" | "indentL" | "spanCols" | "splitCols"
   | "border" | "folder" | "sheet" | "outline" | "varsX" | "gear" | "fit"
   | "alertTri" | "alertCirc" | "dot" | "search" | "eye" | "link" | "lock" | "target"
-  | "x" | "send" | "checkCirc";
+  | "x" | "send" | "checkCirc"
+  // Ribbon set — ported 1:1 from `mathcad-like/project/ribbon-icons.jsx`.
+  | "text" | "sketch" | "include" | "polar" | "contour" | "plot3d" | "chart"
+  | "units" | "find" | "palette" | "vectorize" | "label" | "fx"
+  | "transpose" | "inverse" | "determinant" | "identity" | "augment" | "indexing"
+  | "bold" | "italic" | "underline" | "color"
+  | "alignLeft" | "alignCenter" | "alignRight" | "condfmt"
+  | "pagesetup" | "columns" | "header" | "margins" | "gridlines" | "toc"
+  | "gotopage" | "frameToggle" | "refreshHere" | "thread" | "algo"
+  | "commentPlus" | "track" | "compare" | "spell" | "protect" | "redefine" | "more";
 
 const GLYPHS: Record<IconName, ReactNode> = {
   menu: (<><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></>),
@@ -72,6 +81,53 @@ const GLYPHS: Record<IconName, ReactNode> = {
   x: <path d="M6 6l12 12M18 6 6 18" />,
   send: (<><path d="M20 4 9.5 14.5" /><path d="M20 4l-6.5 16-3.5-7.5L2.5 9z" /></>),
   checkCirc: (<><circle cx="12" cy="12" r="9" /><path d="M8.5 12.2l2.4 2.4 4.6-4.8" /></>),
+
+  // ----- Ribbon set (ported 1:1 from ribbon-icons.jsx) -----
+  text: (<><path d="M5 6.5V5h14v1.5" /><path d="M12 5v14" /><path d="M9.5 19h5" /></>),
+  sketch: (<><path d="M4 20l1-4L16 5a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L8 19z" /><path d="M14 7l3 3" /></>),
+  include: (<><rect x="4" y="4" width="16" height="16" rx="1.6" /><path d="M12 8v8M8 12h8" /></>),
+  polar: (<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><line x1="12" y1="4" x2="12" y2="20" /><line x1="4" y1="12" x2="20" y2="12" /><path d="M12 12 17.5 7" /></>),
+  contour: (<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="2" /></>),
+  plot3d: (<><path d="M12 3 21 8v8l-9 5-9-5V8z" /><path d="M12 3v8M12 11l9-3M12 11l-9-3" /></>),
+  chart: (<><path d="M5 20V10" /><path d="M10 20V5" /><path d="M15 20v-7" /><path d="M20 20v-11" /></>),
+  units: (<><rect x="3" y="8" width="18" height="8" rx="1.4" /><path d="M7.5 8v3.5M11.5 8v5M15.5 8v3.5" /></>),
+  find: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" /></>),
+  palette: (<><path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 2-2 1.8 1.8 0 0 1 1.8-1.8H18a3 3 0 0 0 3-3c0-4.8-4-8.2-9-8.2z" /><circle cx="7.5" cy="11.5" r="1" /><circle cx="12" cy="8" r="1" /><circle cx="16.5" cy="11.5" r="1" /></>),
+  vectorize: (<><path d="M4 6h12" /><path d="M16 4l2 2-2 2" /><path d="M5 12h13" /><path d="M5 18h10" /></>),
+  label: (<><path d="M4 4h7l9 9-7 7-9-9z" /><circle cx="8" cy="8" r="1.2" /></>),
+  fx: (<><path d="M14.5 5.2A2.4 2.4 0 0 0 10 6.4V9" /><path d="M7.5 12.5h6" /><path d="M13.5 19c-2 .2-3-1-3-3.2V8" /></>),
+  transpose: (<><path d="M5 5h8v8" /><path d="M5 5l14 14" /><path d="M19 19h-6" /></>),
+  inverse: (<><path d="M7 5h4a4 4 0 0 1 0 8H7zM7 13l5 6" /><path d="M16 5h2M17 5v6" /></>),
+  determinant: (<><path d="M7 4H5v16h2M17 4h2v16h-2" /><path d="M9.5 15 14.5 9" /></>),
+  identity: (<><path d="M6 4H4v16h2M18 4h2v16h-2" /><path d="M9 9h6M12 9v6M9 15h6" /></>),
+  augment: (<><rect x="3.5" y="6" width="7" height="12" rx="1" /><path d="M14 6v12" /><rect x="15.5" y="6" width="5" height="12" rx="1" /></>),
+  indexing: (<><path d="M6 4H4v16h2M18 4h2v16h-2" /><path d="M10.5 13.5 13 16" /><path d="M13 13.5 10.5 16" /></>),
+  bold: <path d="M7 5h6.5a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z" />,
+  italic: <path d="M11 5h6M7 19h6M14 5l-4 14" />,
+  underline: (<><path d="M7 5v6a5 5 0 0 0 10 0V5" /><path d="M5 20h14" /></>),
+  color: <path d="M12 3 6 15a6 6 0 0 0 12 0z" />,
+  alignLeft: <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />,
+  alignCenter: <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />,
+  alignRight: <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />,
+  condfmt: (<><path d="M4 5h16v4H4z" /><path d="M4 12h16M4 16h16" /></>),
+  pagesetup: (<><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 3v18M9 8h10M9 13h10" /></>),
+  columns: <path d="M4 5v14M12 5v14M20 5v14" />,
+  header: (<><rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M4 9h16" /></>),
+  margins: (<><rect x="4" y="4" width="16" height="16" rx="1" /><rect x="7.5" y="7.5" width="9" height="9" rx="0.5" /></>),
+  gridlines: <path d="M4 9h16M4 15h16M9 4v16M15 4v16" />,
+  toc: <path d="M5 6h2M10 6h9M5 12h2M10 12h9M5 18h2M10 18h9" />,
+  gotopage: (<><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M9 12h6M13 9l3 3-3 3" /></>),
+  frameToggle: (<><rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M4 4l3 3M20 4l-3 3M4 20l3-3M20 20l-3-3" /></>),
+  refreshHere: (<><path d="M20 11A8 8 0 1 0 18 16.5" /><path d="M20 6v5h-5" /><path d="M9 12l2 2 4-4" /></>),
+  thread: (<><circle cx="6" cy="6" r="2" /><circle cx="6" cy="18" r="2" /><circle cx="18" cy="12" r="2" /><path d="M8 6h6a2 2 0 0 1 2 2v2M8 18h6a2 2 0 0 0 2-2v-2" /></>),
+  algo: (<><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" /></>),
+  commentPlus: (<><path d="M5 5h14a1.2 1.2 0 0 1 1.2 1.2v8.4A1.2 1.2 0 0 1 19 15.8H9.5L5.5 19.5V6.2A1.2 1.2 0 0 1 6.7 5z" /><path d="M12 8v5M9.5 10.5h5" /></>),
+  track: (<><path d="M4 18l1-4L16 3a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L8 17z" /><path d="M5 21h14" /></>),
+  compare: (<><rect x="3" y="5" width="7" height="14" rx="1" /><rect x="14" y="5" width="7" height="14" rx="1" /><path d="M12 3v18" /></>),
+  spell: (<><path d="M4 16l3-9 3 9M5 13h4" /><path d="M14 16l2-2 5 5" /></>),
+  protect: (<><rect x="5" y="10.5" width="14" height="9.5" rx="1.6" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>),
+  redefine: (<><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></>),
+  more: (<><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></>),
 };
 
 export interface IconProps {
