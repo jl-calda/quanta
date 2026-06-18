@@ -99,6 +99,27 @@ describe("OPEN_REFERENCE / CLOSE_REFERENCE", () => {
   });
 });
 
+describe("TOGGLE_RIGHT_PANEL / CLOSE_RIGHT_PANEL", () => {
+  it("opens a drawer, toggles it shut, and switches between drawers", () => {
+    const base = freshState();
+    expect(base.ui.rightPanel).toBe("none");
+
+    const comments = editorReducer(base, { type: "TOGGLE_RIGHT_PANEL", panel: "comments" });
+    expect(comments.ui.rightPanel).toBe("comments");
+
+    // Re-clicking the active drawer's button closes it.
+    const closedAgain = editorReducer(comments, { type: "TOGGLE_RIGHT_PANEL", panel: "comments" });
+    expect(closedAgain.ui.rightPanel).toBe("none");
+
+    // Opening AI while comments is open switches (mutually exclusive).
+    const ai = editorReducer(comments, { type: "TOGGLE_RIGHT_PANEL", panel: "ai" });
+    expect(ai.ui.rightPanel).toBe("ai");
+
+    const closed = editorReducer(ai, { type: "CLOSE_RIGHT_PANEL" });
+    expect(closed.ui.rightPanel).toBe("none");
+  });
+});
+
 describe("DELETE_REGION", () => {
   it("removes the region and prunes a now-empty row", () => {
     const doc: WorksheetContent = {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Badge, Button, Tooltip } from "@/components/ds";
 import { QuantaMark } from "@/components/quanta-mark";
 import { useEditor } from "./state/editor-provider";
+import { useComments } from "./comments/comments-provider";
 import { usePresence, type PresenceUser } from "./use-presence";
 import { Icon } from "./icons";
 import { ShareDialog } from "@/components/shared/share-dialog";
@@ -33,9 +34,11 @@ export function EditorAppBar({
   me: PresenceUser;
 }) {
   const { state, dispatch, canEdit, worksheetId, setMode, recalculate, rename, saveVersion } = useEditor();
+  const { openCount } = useComments();
   const [title, setTitle] = useState(initialTitle);
   const [shareOpen, setShareOpen] = useState(false);
   const peers = usePresence(worksheetId, me);
+  const rightPanel = state.ui.rightPanel;
 
   // Debounced rename: persist as the engineer types (§5.1), and commit
   // immediately on blur / Enter. The timer is cleared on unmount.
@@ -203,25 +206,59 @@ export function EditorAppBar({
           >
             Share
           </Button>
-          <Tooltip label="Comments" side="bottom">
-            <GhostButton aria-label="Comments">
-              <Icon name="comment" size={18} />
-            </GhostButton>
+          <Tooltip label={rightPanel === "comments" ? "Hide comments" : "Comments"} side="bottom">
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              <GhostButton
+                aria-label="Comments"
+                aria-pressed={rightPanel === "comments"}
+                active={rightPanel === "comments"}
+                onClick={() => dispatch({ type: "TOGGLE_RIGHT_PANEL", panel: "comments" })}
+              >
+                <Icon name="comment" size={18} />
+              </GhostButton>
+              {openCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    minWidth: 15,
+                    height: 15,
+                    padding: "0 4px",
+                    borderRadius: 99,
+                    background: "var(--accent)",
+                    color: "#fff",
+                    font: "600 9.5px/15px var(--font-sans)",
+                    textAlign: "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  {openCount}
+                </span>
+              )}
+            </span>
           </Tooltip>
-          <Tooltip label="Ask Quanta AI" side="bottom">
+          <Tooltip label={rightPanel === "ai" ? "Hide Quanta AI" : "Ask Quanta AI"} side="bottom">
             <button
               aria-label="Ask Quanta AI"
+              aria-pressed={rightPanel === "ai"}
+              onClick={() => dispatch({ type: "TOGGLE_RIGHT_PANEL", panel: "ai" })}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
                 width: 30,
                 height: 30,
-                border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
-                background: "var(--accent-tint)",
+                border:
+                  rightPanel === "ai"
+                    ? "1px solid var(--accent)"
+                    : "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
+                background: rightPanel === "ai" ? "var(--accent)" : "var(--accent-tint)",
                 borderRadius: "var(--radius-md)",
-                color: "var(--accent)",
+                color: rightPanel === "ai" ? "var(--text-inverse)" : "var(--accent)",
                 cursor: "pointer",
+                transition: "background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out)",
               }}
             >
               <Icon name="sparkle" size={17} />
@@ -316,12 +353,17 @@ function Avatar({ user, size, style }: { user: PresenceUser; size: number; style
   );
 }
 
-/** 30px ghost icon button with the standard hover wash (mockup pattern). */
+/**
+ * 30px ghost icon button with the standard hover wash (mockup pattern). When
+ * `active`, it stays in the blueprint-tint/accent state (a docked panel is open),
+ * per the DS "active icon button" treatment.
+ */
 function GhostButton({
   children,
   style,
+  active = false,
   ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
   return (
     <button
       {...rest}
@@ -332,18 +374,20 @@ function GhostButton({
         width: 30,
         height: 30,
         border: "none",
-        background: "transparent",
+        background: active ? "var(--accent-tint)" : "transparent",
         borderRadius: "var(--radius-md)",
-        color: "var(--text-muted)",
+        color: active ? "var(--accent)" : "var(--text-muted)",
         cursor: "pointer",
         transition: "background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out)",
         ...style,
       }}
       onMouseEnter={(e) => {
+        if (active) return;
         e.currentTarget.style.background = "var(--surface-hover)";
         e.currentTarget.style.color = "var(--text-primary)";
       }}
       onMouseLeave={(e) => {
+        if (active) return;
         e.currentTarget.style.background = "transparent";
         e.currentTarget.style.color = "var(--text-muted)";
       }}

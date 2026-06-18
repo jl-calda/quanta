@@ -666,8 +666,27 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
 - **Tooltips use the DS `Tooltip` with `side="bottom"`** so they sit below the
   40px bar (matching the mockup); `IconButton`'s built-in tooltip is top-anchored
   and would clip above the bar.
-- **Present / Comments / AI are rendered design-faithfully but stubbed.** The
-  reducer's `ui` state has no panels for them yet (they belong to later
-  milestones), so the buttons are non-destructive no-ops for now; the comments
-  count badge is omitted until a real count source exists. Share is fully wired
-  (opens the existing `ShareDialog`).
+- **Comments / AI buttons now open docked right-edge drawers** (Func §5.1
+  "buttons open panels"), superseding the earlier no-op stub. A new reducer UI
+  field `rightPanel: "none" | "comments" | "ai"` (toggled via
+  `TOGGLE_RIGHT_PANEL` / `CLOSE_RIGHT_PANEL`, mutually exclusive) drives a
+  `RightDrawer` that sits beside the inspector; the buttons show the DS active
+  (blueprint-tint/solid) state while their drawer is open.
+  - **Comments panel is fully wired to real data.** A `CommentsProvider` client
+    store is seeded server-side by `getWorksheetComments` (RLS-scoped, author
+    identity stitched in one `.in()` hop), and `addComment` / `setCommentResolved`
+    server actions (Zod-validated, RLS-gated) handle posting and resolve/reopen
+    with optimistic update + revert-on-error. New notes anchor to the selected
+    region (or the `"worksheet"` sentinel — `region_id` is free text). The
+    app-bar comments badge now shows the live **open (unresolved) count** from
+    the provider, restoring the mockup's count pill. `canComment` (commenter+)
+    gates the composer; pure helpers (`openCommentCount`, `sortCommentsAsc`,
+    `upsertComment`, `reidComment`) are unit-tested.
+  - **AI panel is an honest preview shell.** The assistant ships in M11
+    (export/AI); rather than fake responses, the drawer shows what Quanta AI will
+    do, suggestion chips, and a composer that reports it isn't connected yet.
+    Flagged "Preview".
+- **Present stays a non-destructive stub** (present mode is a later milestone; not
+  in the §5.1 button-panel list). Share remains fully wired (opens `ShareDialog`).
+- **Two small editor icons added** (`x`, `send`, plus `checkCirc` for resolve) to
+  the editor icon registry, matching the Lucide 1.5px line set.

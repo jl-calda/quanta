@@ -28,6 +28,8 @@ export type CalcStatus = "current" | "stale" | "error";
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 export type UnitsSystem = "si" | "uscs" | "cgs" | "custom";
 export type LeftTab = "outline" | "variables" | "files";
+/** The auxiliary right-edge drawer opened from the app bar (mutually exclusive). */
+export type RightPanel = "none" | "comments" | "ai";
 
 export interface EditorUiState {
   leftOpen: boolean;
@@ -41,6 +43,8 @@ export interface EditorUiState {
   referenceKind: RefGroup;
   /** Whether the Print / export preview overlay is open. */
   exportOpen: boolean;
+  /** Which app-bar drawer is docked on the right (comments / AI / none). */
+  rightPanel: RightPanel;
 }
 
 export interface EditorState {
@@ -114,7 +118,9 @@ export type EditorAction =
   | { type: "OPEN_REFERENCE"; kind: RefGroup }
   | { type: "CLOSE_REFERENCE" }
   | { type: "OPEN_EXPORT" }
-  | { type: "CLOSE_EXPORT" };
+  | { type: "CLOSE_EXPORT" }
+  | { type: "TOGGLE_RIGHT_PANEL"; panel: Exclude<RightPanel, "none"> }
+  | { type: "CLOSE_RIGHT_PANEL" };
 
 /* ------------------------------------------------------------------ *
  * Tree locators (operate on a structuredClone, mutating in place)
@@ -466,6 +472,17 @@ export function editorReducer(
       return { ...state, ui: { ...state.ui, exportOpen: true } };
     case "CLOSE_EXPORT":
       return { ...state, ui: { ...state.ui, exportOpen: false } };
+    case "TOGGLE_RIGHT_PANEL":
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          // Re-clicking the active drawer's button closes it; otherwise switch.
+          rightPanel: state.ui.rightPanel === action.panel ? "none" : action.panel,
+        },
+      };
+    case "CLOSE_RIGHT_PANEL":
+      return { ...state, ui: { ...state.ui, rightPanel: "none" } };
 
     default:
       return state;
@@ -501,6 +518,7 @@ export function initEditorState(args: {
       referenceOpen: false,
       referenceKind: "FUNCTIONS",
       exportOpen: false,
+      rightPanel: "none",
     },
   };
 }
