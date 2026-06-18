@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseContent } from "@/lib/worksheet/content";
 import { parseWorkspaceSettings } from "@/lib/schema/settings";
+import { getWorksheetComments } from "@/server/queries/comments";
 import { EditorApp } from "@/components/editor/editor-app";
 import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/use-presence";
 
@@ -38,6 +39,9 @@ export default async function WorksheetEditorPage({
   // enforces the same on every mutation).
   const { data: role } = await supabase.rpc("worksheet_effective_role", { sheet: id });
   const canEdit = role === "owner" || role === "editor";
+  // Commenting (the comments panel) is open to commenter+ — mirrors
+  // `comments_insert` RLS.
+  const canComment = canEdit || role === "commenter";
 
   // Managing sharing (the Share dialog) is reserved for the sheet owner or a
   // workspace admin — mirrors `worksheet_collaborators_write`.
@@ -70,6 +74,9 @@ export default async function WorksheetEditorPage({
     color: avatarColor(user.id),
   };
 
+  // Comments for the app-bar comments panel + its open-count badge (RLS-scoped).
+  const initialComments = await getWorksheetComments(id);
+
   return (
     <EditorApp
       worksheet={{
@@ -82,6 +89,8 @@ export default async function WorksheetEditorPage({
       canEdit={canEdit}
       canManage={canManage}
       canExport={canExport}
+      canComment={canComment}
+      initialComments={initialComments}
       me={me}
     />
   );

@@ -6,12 +6,15 @@ import type { WorksheetContent } from "@/lib/worksheet/content";
 import { EditorProvider } from "./state/editor-provider";
 import type { CalcMode, UnitsSystem } from "./state/editor-reducer";
 import type { PresenceUser } from "./use-presence";
+import type { CommentItem } from "@/lib/worksheet/comments";
+import { CommentsProvider } from "./comments/comments-provider";
 import { EditorAppBar } from "./app-bar";
 import { EditorKeyboard } from "./editor-keyboard";
 import { Ribbon } from "./ribbon";
 import { LeftPanel } from "./left-panel";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
+import { RightDrawer } from "./right-drawer";
 import { StatusBar } from "./status-bar";
 import { Keypad } from "./keypad";
 import { ReferenceOverlay } from "./reference-overlay";
@@ -36,12 +39,16 @@ export function EditorApp({
   canEdit,
   canManage,
   canExport,
+  canComment,
+  initialComments,
   me,
 }: {
   worksheet: EditorWorksheet;
   canEdit: boolean;
   canManage: boolean;
   canExport: boolean;
+  canComment: boolean;
+  initialComments: CommentItem[];
   me: PresenceUser;
 }) {
   return (
@@ -52,20 +59,28 @@ export function EditorApp({
       initialUnits={worksheet.unitsSystem}
       canEdit={canEdit}
     >
-      <div className="editor-root">
-        <EditorKeyboard />
-        <EditorAppBar initialTitle={worksheet.title} canManage={canManage} canExport={canExport} me={me} />
-        <Ribbon />
-        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <LeftPanel worksheetTitle={worksheet.title} />
-          <Canvas worksheetTitle={worksheet.title} />
-          <Inspector />
+      <CommentsProvider
+        worksheetId={worksheet.id}
+        me={me}
+        canComment={canComment}
+        initial={initialComments}
+      >
+        <div className="editor-root">
+          <EditorKeyboard />
+          <EditorAppBar initialTitle={worksheet.title} canManage={canManage} canExport={canExport} me={me} />
+          <Ribbon />
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <LeftPanel worksheetTitle={worksheet.title} />
+            <Canvas worksheetTitle={worksheet.title} />
+            <Inspector />
+            <RightDrawer />
+          </div>
+          <StatusBar />
+          <Keypad />
+          <ReferenceOverlay />
+          <ExportOverlay canExport={canExport} worksheetTitle={worksheet.title} />
         </div>
-        <StatusBar />
-        <Keypad />
-        <ReferenceOverlay />
-        <ExportOverlay canExport={canExport} worksheetTitle={worksheet.title} />
-      </div>
+      </CommentsProvider>
     </EditorProvider>
   );
 }

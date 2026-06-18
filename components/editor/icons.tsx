@@ -14,7 +14,8 @@ export type IconName =
   | "solve" | "func" | "unit" | "decimals" | "steps" | "fmt" | "plus" | "plusSm"
   | "kebab" | "kebabH" | "grip" | "indentR" | "indentL" | "spanCols" | "splitCols"
   | "border" | "folder" | "sheet" | "outline" | "varsX" | "gear" | "fit"
-  | "alertTri" | "alertCirc" | "dot" | "search" | "eye" | "link" | "lock" | "target";
+  | "alertTri" | "alertCirc" | "dot" | "search" | "eye" | "link" | "lock" | "target"
+  | "x" | "send" | "checkCirc";
 
 const GLYPHS: Record<IconName, ReactNode> = {
   menu: (<><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></>),
@@ -68,6 +69,9 @@ const GLYPHS: Record<IconName, ReactNode> = {
   link: (<><path d="M9.5 14.5 14.5 9.5" /><path d="M11 7l1-1a3.5 3.5 0 0 1 5 5l-1 1" /><path d="M13 17l-1 1a3.5 3.5 0 0 1-5-5l1-1" /></>),
   lock: (<><rect x="5" y="10.5" width="14" height="9.5" rx="1.6" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>),
   target: (<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="0.6" /></>),
+  x: <path d="M6 6l12 12M18 6 6 18" />,
+  send: (<><path d="M20 4 9.5 14.5" /><path d="M20 4l-6.5 16-3.5-7.5L2.5 9z" /></>),
+  checkCirc: (<><circle cx="12" cy="12" r="9" /><path d="M8.5 12.2l2.4 2.4 4.6-4.8" /></>),
 };
 
 export interface IconProps {
