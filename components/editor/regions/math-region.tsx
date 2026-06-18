@@ -7,7 +7,9 @@ import { latexToSource } from "@/lib/calc";
 import { DEFAULT_DISPLAY, type MathRegion as MathRegionData } from "@/lib/worksheet/content";
 import { KatexMath } from "../katex-math";
 import { MathField } from "../math-field";
+import { insertIntoActiveField } from "../math-entry";
 import { Icon } from "../icons";
+import { MATH_PALETTE, splitResultUnit } from "./math-display";
 import type { RegionRenderProps } from "./types";
 
 type EntryMode = "math" | "text";
@@ -62,6 +64,59 @@ function MathCommitted({
     dispatch(canEdit ? { type: "BEGIN_EDIT", id: region.id } : { type: "SELECT", id: region.id });
   };
 
+  const formula =
+    display.formula && result?.tex ? (
+      <KatexMath tex={result.tex} size={19} />
+    ) : (
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--text-primary)" }}>
+        {region.source || "Empty formula"}
+      </span>
+    );
+
+  const hasResult = display.result && !!result?.formatted;
+  const resultRow = (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35em" }}>
+      <span style={{ fontFamily: "var(--font-math)", fontSize: 19, color: "var(--text-math)" }}>=</span>
+      <ResultPill formatted={result?.formatted ?? ""} value={result?.value} tone={tone} />
+      {style?.label && <StatusLabel label={style.label} color={tone.fg} />}
+      {stale && (
+        <span style={{ font: "500 var(--text-11)/1 var(--font-sans)", color: "var(--status-warning)" }}>
+          stale
+        </span>
+      )}
+    </span>
+  );
+
+  // Show-steps — the three-line breakdown (Mockup 6.1 Frame C): the symbolic
+  // definition, the formula with values substituted (muted), then the
+  // highlighted result. A dashed rule separates each section after the first.
+  const showSteps = display.substituted && !!result?.substitutedTex;
+  if (showSteps) {
+    let shown = 0;
+    return (
+      <div
+        onClick={onClick}
+        title={canEdit ? "Click to edit formula" : undefined}
+        style={{ display: "flex", flexDirection: "column", gap: 10, cursor: canEdit ? "text" : "default", opacity: stale ? 0.6 : 1 }}
+      >
+        {display.formula && (
+          <StepSection header="Name := formula" divider={shown++ > 0}>
+            <KatexMath tex={result!.tex} size={19} />
+          </StepSection>
+        )}
+        <StepSection header="Substituted" divider={shown++ > 0}>
+          <KatexMath tex={result!.substitutedTex!} size={19} muted />
+        </StepSection>
+        {hasResult && (
+          <StepSection header="Result" divider={shown++ > 0}>
+            {resultRow}
+          </StepSection>
+        )}
+      </div>
+    );
+  }
+
+  // Compact — name = formula = result on one wrapping line (Frames B / E).
   return (
     <div
       onClick={onClick}
@@ -76,58 +131,98 @@ function MathCommitted({
         opacity: stale ? 0.6 : 1,
       }}
     >
-      {display.formula && result?.tex ? (
-        <KatexMath tex={result.tex} size={19} />
-      ) : (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--text-primary)" }}>
-          {region.source || "Empty formula"}
-        </span>
-      )}
+      {formula}
+      {hasResult && resultRow}
+    </div>
+  );
+}
 
-      {display.substituted && result?.substitutedTex && (
-        <span style={{ display: "inline-flex", alignItems: "center", color: "var(--text-muted)" }}>
-          <span style={{ fontFamily: "var(--font-math)", padding: "0 0.25em" }}>=</span>
-          <KatexMath tex={result.substitutedTex} size={17} />
+/** The highlighted result chip: magnitude in the math face, the unit as a
+ *  distinct smaller upright sans token (Mockup 6.1 `ResUnit`), pill tone from
+ *  conditional formatting. */
+function ResultPill({
+  formatted,
+  value,
+  tone,
+}: {
+  formatted: string;
+  value: unknown;
+  tone: { fg: string; bg: string };
+}) {
+  const { magnitude, unit } = splitResultUnit(formatted, value);
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "baseline",
+        gap: "0.18em",
+        padding: "1px 8px",
+        borderRadius: "var(--radius-sm)",
+        background: tone.bg,
+        color: tone.fg,
+        fontFamily: "var(--font-math)",
+        fontSize: 18,
+        fontWeight: 600,
+      }}
+    >
+      <span>{magnitude}</span>
+      {unit && (
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontStyle: "normal",
+            fontSize: "0.74em",
+            fontWeight: 600,
+            letterSpacing: "0.01em",
+          }}
+        >
+          {unit}
         </span>
       )}
+    </span>
+  );
+}
 
-      {display.result && result?.formatted && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35em" }}>
-          <span style={{ fontFamily: "var(--font-math)", fontSize: 19, color: "var(--text-math)" }}>=</span>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "baseline",
-              padding: "1px 8px",
-              borderRadius: "var(--radius-sm)",
-              background: tone.bg,
-              color: tone.fg,
-              fontFamily: "var(--font-math)",
-              fontSize: 18,
-              fontWeight: 600,
-            }}
-          >
-            {result.formatted}
-          </span>
-          {style?.label && (
-            <span
-              style={{
-                font: "600 var(--text-11)/1 var(--font-sans)",
-                letterSpacing: "0.02em",
-                textTransform: "uppercase",
-                color: tone.fg,
-              }}
-            >
-              {style.label}
-            </span>
-          )}
-          {stale && (
-            <span style={{ font: "500 var(--text-11)/1 var(--font-sans)", color: "var(--status-warning)" }}>
-              stale
-            </span>
-          )}
-        </span>
-      )}
+/** OK / Check / Fail tag from a conditional-formatting rule. */
+function StatusLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{
+        font: "600 var(--text-11)/1 var(--font-sans)",
+        letterSpacing: "0.02em",
+        textTransform: "uppercase",
+        color,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** One labelled section of the show-steps breakdown. */
+function StepSection({
+  header,
+  divider,
+  children,
+}: {
+  header: string;
+  divider: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={divider ? { borderTop: "1px dashed var(--border-hairline)", paddingTop: 9 } : undefined}>
+      <div
+        style={{
+          font: "600 9px/1 var(--font-sans)",
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          marginBottom: 4,
+        }}
+      >
+        {header}
+      </div>
+      {children}
     </div>
   );
 }
@@ -154,44 +249,109 @@ function MathEditor({
   };
 
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <span
-        style={{
-          font: "600 var(--text-11)/1 var(--font-sans)",
-          letterSpacing: "var(--tracking-eyebrow)",
-          textTransform: "uppercase",
-          color: "var(--accent)",
-        }}
-      >
-        edit
+    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <span
+          style={{
+            font: "600 var(--text-11)/1 var(--font-sans)",
+            letterSpacing: "var(--tracking-eyebrow)",
+            textTransform: "uppercase",
+            color: "var(--accent)",
+          }}
+        >
+          edit
+        </span>
+
+        {mode === "math" ? (
+          <MathField
+            value={draft}
+            keymap={keymap}
+            onLatexChange={(latex) => (liveLatex.current = latex)}
+            onCommit={commit}
+            onCancel={() => dispatch({ type: "END_EDIT" })}
+          />
+        ) : (
+          <PlainTextEntry
+            source={draft}
+            onChangeDraft={setDraft}
+            onCommit={commit}
+            onCancel={() => dispatch({ type: "END_EDIT" })}
+          />
+        )}
+
+        <EntryModeToggle
+          mode={mode}
+          toMath={() => setMode("math")}
+          toText={() => {
+            // Carry the in-progress 2D formula across to the mono field.
+            if (liveLatex.current) setDraft(latexToSource(liveLatex.current));
+            setMode("text");
+          }}
+        />
+      </div>
+
+      <MathPalette />
+    </div>
+  );
+}
+
+/**
+ * Inline math-input bar shown beneath the field while editing (Mockup 6.1
+ * Frame A). Click a key to drop a structure at the caret of the active field,
+ * or type the shortcut shown. Insertion goes through the shared math-entry
+ * bridge so it targets the MathLive field or the mono input automatically; keys
+ * fire on `onMouseDown` + `preventDefault` so they never blur/commit the edit.
+ */
+function MathPalette() {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 9px",
+        border: "1px solid var(--border-hairline)",
+        borderRadius: "var(--radius-md)",
+        background: "var(--surface-chrome)",
+        flexWrap: "wrap",
+      }}
+    >
+      {MATH_PALETTE.map((p) => (
+        <button
+          key={p.label}
+          type="button"
+          className="palette-key"
+          title={`${p.label}  (${p.hint})`}
+          aria-label={p.label}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            insertIntoActiveField({ latex: p.latex, text: p.text });
+          }}
+          style={{
+            display: "inline-flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+            minWidth: 34,
+            padding: "4px 6px",
+            border: "1px solid var(--border-hairline)",
+            borderRadius: 5,
+            background: "var(--surface-raised)",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ fontFamily: "var(--font-math)", fontSize: 15, color: "var(--text-math)", lineHeight: 1 }}>
+            {p.glyph}
+          </span>
+          <span style={{ font: "8.5px/1 var(--font-mono)", color: "var(--text-muted)" }}>{p.hint}</span>
+        </button>
+      ))}
+      <span style={{ flex: 1 }} />
+      <span style={{ font: "11px/1.4 var(--font-sans)", color: "var(--text-muted)", maxWidth: 150, textAlign: "right" }}>
+        Type <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>/ ^ _ :</code> or{" "}
+        <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>space</code> to build notation
       </span>
-
-      {mode === "math" ? (
-        <MathField
-          value={draft}
-          keymap={keymap}
-          onLatexChange={(latex) => (liveLatex.current = latex)}
-          onCommit={commit}
-          onCancel={() => dispatch({ type: "END_EDIT" })}
-        />
-      ) : (
-        <PlainTextEntry
-          source={draft}
-          onChangeDraft={setDraft}
-          onCommit={commit}
-          onCancel={() => dispatch({ type: "END_EDIT" })}
-        />
-      )}
-
-      <EntryModeToggle
-        mode={mode}
-        toMath={() => setMode("math")}
-        toText={() => {
-          // Carry the in-progress 2D formula across to the mono field.
-          if (liveLatex.current) setDraft(latexToSource(liveLatex.current));
-          setMode("text");
-        }}
-      />
     </div>
   );
 }
