@@ -96,6 +96,7 @@ export type EditorAction =
       anchorId: string | null;
       where: "above" | "below";
     }
+  | { type: "INSERT_HEADING"; anchorId: string | null; where: "above" | "below" }
   | { type: "DELETE_REGION"; id: string }
   | { type: "DUPLICATE_REGION"; id: string }
   | { type: "MOVE_REGION"; id: string; dir: "up" | "down" }
@@ -300,6 +301,30 @@ export function editorReducer(
       // Reference library's "Insert into worksheet".
       const region = newRegion("math");
       if (region.type === "math") region.source = action.source;
+      const content = mutate(state.content, (next) => {
+        if (!action.anchorId) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const loc = locate(next, action.anchorId);
+        if (!loc) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const at = loc.index + (action.where === "below" ? 1 : 0);
+        loc.container.splice(at, 0, region);
+      });
+      return touched(state, content, {
+        selectedId: region.id,
+        editingId: region.id,
+      });
+    }
+    case "INSERT_HEADING": {
+      // A heading is a text region with `heading` set in the same mutation, so
+      // the "+ heading" button can be a single dispatch and open it for editing
+      // immediately (the new id isn't returned to the caller otherwise).
+      const region = newRegion("text");
+      if (region.type === "text") region.heading = 1;
       const content = mutate(state.content, (next) => {
         if (!action.anchorId) {
           next.rows.push(singleColumnRow([region]));
