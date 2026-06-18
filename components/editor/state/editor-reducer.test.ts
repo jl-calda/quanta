@@ -277,6 +277,310 @@ describe("TOGGLE_SPAN", () => {
   });
 });
 
+const listDoc = (): WorksheetContent => ({
+  version: 1,
+  rows: [
+    {
+      id: "r1",
+      columns: 1,
+      cells: [
+        {
+          regions: [
+            { id: "A", type: "math", indent: 0, source: "a := 1" },
+            { id: "B", type: "math", indent: 0, source: "b := 2" },
+            { id: "C", type: "math", indent: 0, source: "c := 3" },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const areaDoc: WorksheetContent = {
+  version: 1,
+  rows: [
+    {
+      id: "r1",
+      columns: 1,
+      cells: [
+        {
+          regions: [
+            {
+              id: "AR",
+              type: "area",
+              indent: 0,
+              title: "Derivation",
+              collapsed: false,
+              regions: [{ id: "X", type: "math", indent: 0, source: "x := 1" }],
+            },
+            { id: "Y", type: "math", indent: 0, source: "y := 2" },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+describe("multi-selection", () => {
+  it("SELECT resets the multi-selection to the single id (or clears it)", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    expect(s.selectedId).toBe("A");
+    expect(s.selectedIds).toEqual(["A"]);
+    s = editorReducer(s, { type: "SELECT", id: null });
+    expect(s.selectedId).toBeNull();
+    expect(s.selectedIds).toEqual([]);
+  });
+
+  it("TOGGLE_SELECT adds, then removes, promoting a new primary", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    expect(s.selectedIds).toEqual(["A", "B"]);
+    expect(s.selectedId).toBe("B");
+    // Removing a non-primary keeps the primary.
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "A" });
+    expect(s.selectedIds).toEqual(["B"]);
+    expect(s.selectedId).toBe("B");
+    // Removing the primary clears it (last remaining → null here).
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    expect(s.selectedIds).toEqual([]);
+    expect(s.selectedId).toBeNull();
+  });
+
+  it("SELECT_TO selects the reading-order range either direction", () => {
+    const forward = editorReducer(
+      editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" }),
+      { type: "SELECT_TO", id: "C" },
+    );
+    expect(forward.selectedIds).toEqual(["A", "B", "C"]);
+    expect(forward.selectedId).toBe("C");
+
+    const backward = editorReducer(
+      editorReducer(freshState(listDoc()), { type: "SELECT", id: "C" }),
+      { type: "SELECT_TO", id: "A" },
+    );
+    expect(backward.selectedIds).toEqual(["A", "B", "C"]);
+    expect(backward.selectedId).toBe("A");
+  });
+
+  it("SELECT_TO ranges across an area's children in reading order", () => {
+    const s = editorReducer(
+      editorReducer(freshState(areaDoc), { type: "SELECT", id: "AR" }),
+      { type: "SELECT_TO", id: "Y" },
+    );
+    expect(s.selectedIds).toEqual(["AR", "X", "Y"]);
+  });
+
+  it("SELECT_TO with no anchor falls back to a single select", () => {
+    const s = editorReducer(freshState(listDoc()), { type: "SELECT_TO", id: "B" });
+    expect(s.selectedIds).toEqual(["B"]);
+  });
+
+  it("SELECT_ALL selects every region in reading order", () => {
+    const s = editorReducer(freshState(listDoc()), { type: "SELECT_ALL" });
+    expect(s.selectedIds).toEqual(["A", "B", "C"]);
+    expect(s.selectedId).toBe("C");
+  });
+
+  it("BEGIN_EDIT collapses a multi-selection to the edited id", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    s = editorReducer(s, { type: "BEGIN_EDIT", id: "A" });
+    expect(s.selectedIds).toEqual(["A"]);
+    expect(s.editingId).toBe("A");
+  });
+});
+
+describe("DELETE_SELECTED", () => {
+  const twoRowDoc: WorksheetContent = {
+    version: 1,
+    rows: [
+      { id: "r1", columns: 1, cells: [{ regions: [{ id: "A", type: "math", indent: 0, source: "a := 1" }] }] },
+      {
+        id: "r2",
+        columns: 1,
+        cells: [
+          {
+            regions: [
+              { id: "B", type: "math", indent: 0, source: "b := 2" },
+              { id: "C", type: "math", indent: 0, source: "c := 3" },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("removes every selected region, prunes empty rows, and clears the selection", () => {
+    let s = editorReducer(freshState(twoRowDoc), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    s = editorReducer(s, { type: "DELETE_SELECTED" });
+    expect(readingOrderIds(s.content)).toEqual(["C"]);
+    expect(s.content.rows).toHaveLength(1);
+    expect(s.selectedId).toBeNull();
+    expect(s.selectedIds).toEqual([]);
+  });
+});
+
+describe("DELETE_REGION selection reconcile", () => {
+  it("deleting an area drops its nested children from the multi-selection", () => {
+    let s = editorReducer(freshState(areaDoc), { type: "SELECT", id: "Y" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "AR" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "X" });
+    expect(s.selectedIds).toEqual(["Y", "AR", "X"]);
+    s = editorReducer(s, { type: "DELETE_REGION", id: "AR" });
+    // AR and its child X are gone; only Y survives in the selection.
+    expect(readingOrderIds(s.content)).toEqual(["Y"]);
+    expect(s.selectedIds).toEqual(["Y"]);
+    expect(s.selectedId).toBe("Y");
+  });
+});
+
+describe("INDENT_SELECTED", () => {
+  it("indents every selected region, clamping each independently", () => {
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                { id: "A", type: "math", indent: 0, source: "a := 1" },
+                { id: "B", type: "math", indent: 8, source: "b := 2" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    let s = editorReducer(freshState(doc), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    s = editorReducer(s, { type: "INDENT_SELECTED", delta: 1 });
+    const [a, b] = s.content.rows[0].cells[0].regions;
+    expect(a.indent).toBe(1);
+    expect(b.indent).toBe(8); // already at the cap
+  });
+});
+
+describe("DUPLICATE_SELECTED", () => {
+  it("duplicates each selected region and selects the copies", () => {
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                { id: "A", type: "math", indent: 0, source: "a := 1" },
+                { id: "B", type: "math", indent: 0, source: "b := 2" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    let s = editorReducer(freshState(doc), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" });
+    s = editorReducer(s, { type: "DUPLICATE_SELECTED" });
+    const ids = s.content.rows[0].cells[0].regions.map((r) => r.id);
+    expect(ids).toHaveLength(4);
+    expect(ids[0]).toBe("A");
+    expect(ids[2]).toBe("B");
+    const copies = [ids[1], ids[3]];
+    expect(new Set(ids).size).toBe(4); // all ids unique
+    expect(s.selectedIds).toEqual(copies);
+    expect(s.selectedId).toBe(copies[1]);
+  });
+});
+
+describe("SET_SPLIT", () => {
+  it("stores a normalized ratio array of length === columns", () => {
+    const s = editorReducer(freshState(twoColDoc), { type: "SET_SPLIT", rowId: "r1", split: [0.65, 0.35] });
+    const split = s.content.rows[0].split!;
+    expect(split).toHaveLength(2);
+    expect(split[0] + split[1]).toBeCloseTo(1, 5);
+    expect(split[0]).toBeGreaterThan(split[1]);
+  });
+
+  it("clamps a collapsing column away from zero", () => {
+    const s = editorReducer(freshState(twoColDoc), { type: "SET_SPLIT", rowId: "r1", split: [0.97, 0.03] });
+    const split = s.content.rows[0].split!;
+    expect(split.every((v) => v > 0.1)).toBe(true);
+  });
+
+  it("is a no-op on a single-column row", () => {
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [{ id: "r1", columns: 1, cells: [{ regions: [{ id: "A", type: "math", indent: 0, source: "a := 1" }] }] }],
+    };
+    const base = freshState(doc);
+    const s = editorReducer(base, { type: "SET_SPLIT", rowId: "r1", split: [0.5, 0.5] });
+    expect(s).toBe(base);
+  });
+
+  it("SET_COLUMNS clears a previously dragged split", () => {
+    let s = editorReducer(freshState(twoColDoc), { type: "SET_SPLIT", rowId: "r1", split: [0.7, 0.3] });
+    expect(s.content.rows[0].split).toBeDefined();
+    s = editorReducer(s, { type: "SET_COLUMNS", rowId: "r1", columns: 3 });
+    expect(s.content.rows[0].split).toBeUndefined();
+  });
+});
+
+describe("MOVE_TO_CELL", () => {
+  const emptyCellDoc: WorksheetContent = {
+    version: 1,
+    rows: [
+      {
+        id: "r1",
+        columns: 2,
+        cells: [
+          { regions: [{ id: "A", type: "math", indent: 0, source: "a := 1" }] },
+          { regions: [] },
+        ],
+      },
+    ],
+  };
+
+  it("appends a region into an empty cell, preserving the cells===columns invariant", () => {
+    const s = editorReducer(freshState(emptyCellDoc), { type: "MOVE_TO_CELL", id: "A", rowId: "r1", cellIndex: 1 });
+    expect(s.content.rows[0].cells[0].regions).toHaveLength(0);
+    expect(s.content.rows[0].cells[1].regions.map((r) => r.id)).toEqual(["A"]);
+    expect(s.content.rows[0].cells).toHaveLength(s.content.rows[0].columns);
+  });
+
+  it("is a no-op when the region already lives in the target cell", () => {
+    const base = freshState(emptyCellDoc);
+    const s = editorReducer(base, { type: "MOVE_TO_CELL", id: "A", rowId: "r1", cellIndex: 0 });
+    expect(s).toBe(base);
+  });
+
+  it("is a no-op for an out-of-range cell index", () => {
+    const base = freshState(emptyCellDoc);
+    const s = editorReducer(base, { type: "MOVE_TO_CELL", id: "A", rowId: "r1", cellIndex: 5 });
+    expect(s).toBe(base);
+  });
+
+  it("prunes the source row when the moved region was its only content", () => {
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [
+        { id: "r1", columns: 1, cells: [{ regions: [{ id: "A", type: "math", indent: 0, source: "a := 1" }] }] },
+        {
+          id: "r2",
+          columns: 2,
+          cells: [{ regions: [{ id: "B", type: "math", indent: 0, source: "b := 2" }] }, { regions: [] }],
+        },
+      ],
+    };
+    const s = editorReducer(freshState(doc), { type: "MOVE_TO_CELL", id: "A", rowId: "r2", cellIndex: 1 });
+    expect(s.content.rows).toHaveLength(1);
+    expect(readingOrderIds(s.content)).toEqual(["B", "A"]);
+  });
+});
+
 describe("SET_RESULTS / MARK_STALE", () => {
   const sheet: SheetResult = {
     status: "current",

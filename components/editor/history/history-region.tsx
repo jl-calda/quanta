@@ -30,6 +30,7 @@ const STATUS_STYLE: Record<Exclude<DiffStatus, "same">, { rule: string; bg: stri
 /** The render-only views ignore these, but their props require them. */
 const passthrough = {
   selected: false,
+  multiActive: false,
   editing: false,
   canEdit: false,
   dispatch: (() => {}) as Dispatch<EditorAction>,

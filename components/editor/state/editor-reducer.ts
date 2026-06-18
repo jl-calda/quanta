@@ -21,7 +21,7 @@ import {
   type Row,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
-import { findRegion } from "@/lib/worksheet/flatten";
+import { findRegion, readingOrderIds } from "@/lib/worksheet/flatten";
 
 export type CalcMode = "auto" | "manual";
 export type CalcStatus = "current" | "stale" | "error";
@@ -50,7 +50,14 @@ export interface EditorUiState {
 export interface EditorState {
   content: WorksheetContent;
   results: Map<string, RegionResult>;
+  /** The primary/active selection — drives the inspector, ribbon, comment anchor. */
   selectedId: string | null;
+  /**
+   * The full multi-selection set (cmd/shift-click). Always contains `selectedId`
+   * when it is non-null; an empty array means nothing is selected. Group ops
+   * (delete/indent/duplicate) act on this set; everything else reads `selectedId`.
+   */
+  selectedIds: string[];
   editingId: string | null;
   calcMode: CalcMode;
   calcStatus: CalcStatus;
@@ -78,6 +85,9 @@ export interface RegionPatch {
 
 export type EditorAction =
   | { type: "SELECT"; id: string | null }
+  | { type: "TOGGLE_SELECT"; id: string }
+  | { type: "SELECT_TO"; id: string }
+  | { type: "SELECT_ALL" }
   | { type: "BEGIN_EDIT"; id: string }
   | { type: "END_EDIT" }
   | { type: "EDIT_SOURCE"; id: string; source: string }
@@ -90,6 +100,7 @@ export type EditorAction =
       where: "above" | "below";
     }
   | { type: "INSERT_INTO_CELL"; rowId: string; cellIndex: number; regionType: RegionType }
+  | { type: "MOVE_TO_CELL"; id: string; rowId: string; cellIndex: number }
   | {
       type: "INSERT_REGION_WITH_SOURCE";
       source: string;
@@ -98,11 +109,15 @@ export type EditorAction =
     }
   | { type: "INSERT_HEADING"; anchorId: string | null; where: "above" | "below" }
   | { type: "DELETE_REGION"; id: string }
+  | { type: "DELETE_SELECTED" }
   | { type: "DUPLICATE_REGION"; id: string }
+  | { type: "DUPLICATE_SELECTED" }
   | { type: "MOVE_REGION"; id: string; dir: "up" | "down" }
   | { type: "MOVE_TO"; id: string; targetId: string; position: "before" | "after" }
   | { type: "INDENT"; id: string; delta: 1 | -1 }
+  | { type: "INDENT_SELECTED"; delta: 1 | -1 }
   | { type: "SET_COLUMNS"; rowId: string; columns: 1 | 2 | 3 }
+  | { type: "SET_SPLIT"; rowId: string; split: number[] }
   | { type: "TOGGLE_SPAN"; id: string }
   | { type: "TOGGLE_AREA"; id: string }
   | { type: "SET_RESULTS"; sheet: SheetResult }
@@ -181,6 +196,42 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Smallest fraction a single column may shrink to when dragging the split. */
+const MIN_COL_FRACTION = 0.14;
+
+/**
+ * Normalize a column-split into exactly `length` positive ratios that sum to 1,
+ * with no column thinner than `MIN_COL_FRACTION`. Drag handlers can hand us raw
+ * pointer fractions; this keeps every cell usable and the grid well-formed.
+ */
+function clampSplit(split: number[]): number[] {
+  const clamped = split.map((v) => Math.max(MIN_COL_FRACTION, Number.isFinite(v) ? v : 0));
+  const sum = clamped.reduce((a, b) => a + b, 0) || 1;
+  return clamped.map((v) => v / sum);
+}
+
+/** The selection patch for a single primary id (or a cleared selection). */
+function selectOne(id: string | null): Pick<EditorState, "selectedId" | "selectedIds"> {
+  return { selectedId: id, selectedIds: id ? [id] : [] };
+}
+
+/**
+ * After a structural delete, drop any selected ids that no longer exist (e.g. an
+ * area's children when the area was removed) and repair the primary so it stays a
+ * member of the set — keeping the inspector/ribbon in sync with what's visible.
+ */
+function reconcileSelection(
+  content: WorksheetContent,
+  selectedId: string | null,
+  selectedIds: string[],
+): Pick<EditorState, "selectedId" | "selectedIds"> {
+  const alive = new Set(readingOrderIds(content));
+  const ids = selectedIds.filter((id) => alive.has(id));
+  const primary =
+    selectedId && alive.has(selectedId) ? selectedId : ids[ids.length - 1] ?? null;
+  return { selectedId: primary, selectedIds: ids };
+}
+
 /** Clone the tree, run a mutator over it, return the new tree. */
 function mutate(
   content: WorksheetContent,
@@ -238,9 +289,56 @@ export function editorReducer(
   switch (action.type) {
     /* ---- selection / editing ---- */
     case "SELECT":
-      return { ...state, selectedId: action.id, editingId: null };
+      return { ...state, ...selectOne(action.id), editingId: null };
+    case "TOGGLE_SELECT": {
+      // Cmd/Ctrl-click: add to or remove from the multi-selection. Removing the
+      // primary promotes the last remaining id (in click order) to primary.
+      if (state.selectedIds.includes(action.id)) {
+        const selectedIds = state.selectedIds.filter((id) => id !== action.id);
+        const selectedId =
+          state.selectedId === action.id
+            ? selectedIds[selectedIds.length - 1] ?? null
+            : state.selectedId;
+        return { ...state, selectedId, selectedIds, editingId: null };
+      }
+      return {
+        ...state,
+        selectedId: action.id,
+        selectedIds: [...state.selectedIds, action.id],
+        editingId: null,
+      };
+    }
+    case "SELECT_TO": {
+      // Shift-click: select the contiguous reading-order range from the current
+      // primary (the anchor) to the clicked id. Falls back to a single select
+      // when there's no anchor or an id isn't found.
+      const order = readingOrderIds(state.content);
+      const a = state.selectedId ? order.indexOf(state.selectedId) : -1;
+      const b = order.indexOf(action.id);
+      if (a === -1 || b === -1) {
+        return { ...state, ...selectOne(action.id), editingId: null };
+      }
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      return {
+        ...state,
+        selectedId: action.id,
+        selectedIds: order.slice(lo, hi + 1),
+        editingId: null,
+      };
+    }
+    case "SELECT_ALL": {
+      const order = readingOrderIds(state.content);
+      if (order.length === 0) return state;
+      return {
+        ...state,
+        selectedId: order[order.length - 1],
+        selectedIds: order,
+        editingId: null,
+      };
+    }
     case "BEGIN_EDIT":
-      return { ...state, selectedId: action.id, editingId: action.id };
+      // Editing is inherently single-target — collapse any multi-selection.
+      return { ...state, selectedId: action.id, selectedIds: [action.id], editingId: action.id };
     case "END_EDIT":
       return { ...state, editingId: null };
 
@@ -291,6 +389,7 @@ export function editorReducer(
       const editable = region.type === "math" || region.type === "text";
       return touched(state, content, {
         selectedId: region.id,
+        selectedIds: [region.id],
         editingId: editable ? region.id : null,
       });
     }
@@ -316,6 +415,7 @@ export function editorReducer(
       });
       return touched(state, content, {
         selectedId: region.id,
+        selectedIds: [region.id],
         editingId: region.id,
       });
     }
@@ -340,6 +440,7 @@ export function editorReducer(
       });
       return touched(state, content, {
         selectedId: region.id,
+        selectedIds: [region.id],
         editingId: region.id,
       });
     }
@@ -353,8 +454,27 @@ export function editorReducer(
       const editable = region.type === "math" || region.type === "text";
       return touched(state, content, {
         selectedId: region.id,
+        selectedIds: [region.id],
         editingId: editable ? region.id : null,
       });
+    }
+    case "MOVE_TO_CELL": {
+      // Drag a region into a (top-level) cell, appending it — the structural
+      // move that drops a region into an empty column. Mirrors MOVE_TO's
+      // splice-out → relocate → prune so reading order recomputes cleanly.
+      // Precondition-check on the original tree so genuine no-ops stay clean.
+      const destCell = state.content.rows.find((r) => r.id === action.rowId)
+        ?.cells[action.cellIndex];
+      const source = locate(state.content, action.id);
+      if (!destCell || !source || source.cell === destCell) return state;
+      const content = mutate(state.content, (next) => {
+        const cell = next.rows.find((r) => r.id === action.rowId)!.cells[action.cellIndex];
+        const src = locate(next, action.id)!;
+        const [moved] = src.container.splice(src.index, 1);
+        cell.regions.push(moved);
+        pruneEmptyRows(next);
+      });
+      return touched(state, content, { selectedId: action.id, selectedIds: [action.id] });
     }
     case "DELETE_REGION": {
       const content = mutate(state.content, (next) => {
@@ -362,10 +482,27 @@ export function editorReducer(
         if (loc) loc.container.splice(loc.index, 1);
         pruneEmptyRows(next);
       });
-      const clearSel = state.selectedId === action.id;
       return touched(state, content, {
-        selectedId: clearSel ? null : state.selectedId,
+        ...reconcileSelection(content, state.selectedId, state.selectedIds),
         editingId: state.editingId === action.id ? null : state.editingId,
+      });
+    }
+    case "DELETE_SELECTED": {
+      if (state.selectedIds.length === 0) return state;
+      const ids = state.selectedIds;
+      const content = mutate(state.content, (next) => {
+        // Re-locate per id (indices shift as we splice); descendants of a deleted
+        // area go with it, then reconcileSelection drops their ids below.
+        for (const id of ids) {
+          const loc = locate(next, id);
+          if (loc) loc.container.splice(loc.index, 1);
+        }
+        pruneEmptyRows(next);
+      });
+      return touched(state, content, {
+        selectedId: null,
+        selectedIds: [],
+        editingId: state.editingId && ids.includes(state.editingId) ? null : state.editingId,
       });
     }
     case "DUPLICATE_REGION": {
@@ -378,8 +515,23 @@ export function editorReducer(
         loc.container.splice(loc.index + 1, 0, copy);
       });
       return touched(state, content, {
-        selectedId: newRegionId.current || state.selectedId,
+        ...selectOne(newRegionId.current || state.selectedId),
       });
+    }
+    case "DUPLICATE_SELECTED": {
+      if (state.selectedIds.length === 0) return state;
+      const newIds: string[] = [];
+      const content = mutate(state.content, (next) => {
+        for (const id of state.selectedIds) {
+          const loc = locate(next, id);
+          if (!loc) continue;
+          const copy = reidRegion(structuredClone(loc.container[loc.index]));
+          newIds.push(copy.id);
+          loc.container.splice(loc.index + 1, 0, copy);
+        }
+      });
+      if (newIds.length === 0) return state;
+      return touched(state, content, { selectedId: newIds[newIds.length - 1], selectedIds: newIds });
     }
     case "MOVE_REGION": {
       const content = mutate(state.content, (next) => {
@@ -418,6 +570,17 @@ export function editorReducer(
       });
       return touched(state, content);
     }
+    case "INDENT_SELECTED": {
+      if (state.selectedIds.length === 0) return state;
+      const ids = new Set(state.selectedIds);
+      const content = mutate(state.content, (next) => {
+        for (const id of ids) {
+          const region = findRegion(next, id);
+          if (region) region.indent = clamp(region.indent + action.delta, 0, 8);
+        }
+      });
+      return touched(state, content);
+    }
     case "SET_COLUMNS": {
       const content = mutate(state.content, (next) => {
         const row = next.rows.find((r) => r.id === action.rowId);
@@ -436,6 +599,18 @@ export function editorReducer(
       });
       return touched(state, content);
     }
+    case "SET_SPLIT": {
+      const target = state.content.rows.find((r) => r.id === action.rowId);
+      // Single-column rows have no split; a mismatched length is ignored.
+      if (!target || target.columns < 2 || action.split.length !== target.columns) {
+        return state;
+      }
+      const content = mutate(state.content, (next) => {
+        const row = next.rows.find((r) => r.id === action.rowId)!;
+        row.split = clampSplit(action.split);
+      });
+      return touched(state, content);
+    }
     case "TOGGLE_SPAN": {
       const content = mutate(state.content, (next) => {
         const loc = locate(next, action.id);
@@ -448,7 +623,7 @@ export function editorReducer(
         next.rows.splice(rowIndex + 1, 0, singleColumnRow([region]));
         pruneEmptyRows(next);
       });
-      return touched(state, content, { selectedId: action.id });
+      return touched(state, content, { ...selectOne(action.id) });
     }
     case "TOGGLE_AREA": {
       const content = mutate(state.content, (next) => {
@@ -527,6 +702,7 @@ export function initEditorState(args: {
     content: args.content,
     results: new Map(),
     selectedId: null,
+    selectedIds: [],
     editingId: null,
     calcMode: args.calcMode,
     calcStatus: "current",

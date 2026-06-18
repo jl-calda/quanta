@@ -161,7 +161,9 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
 
   const indent = (delta: 1 | -1) => {
     if (!canEdit || !state.selectedId) return;
-    dispatch({ type: "INDENT", id: state.selectedId, delta });
+    // A multi-selection indents as a group; a lone selection indents itself.
+    if (state.selectedIds.length > 1) dispatch({ type: "INDENT_SELECTED", delta });
+    else dispatch({ type: "INDENT", id: state.selectedId, delta });
   };
 
   const setColumns = (columns: 1 | 2 | 3) => {

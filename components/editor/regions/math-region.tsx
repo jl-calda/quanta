@@ -10,6 +10,7 @@ import { MathField } from "../math-field";
 import { insertIntoActiveField } from "../math-entry";
 import { Icon } from "../icons";
 import { MATH_PALETTE, splitResultUnit } from "./math-display";
+import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
 
 type EntryMode = "math" | "text";
@@ -27,6 +28,7 @@ export function MathRegionView({
   result,
   editing,
   canEdit,
+  multiActive,
   dispatch,
 }: RegionRenderProps<MathRegionData>) {
   if (editing && canEdit) {
@@ -36,7 +38,7 @@ export function MathRegionView({
     return <MathError region={region} message={result.error.message} fix={result.error.fixHint} />;
   }
   return (
-    <MathCommitted region={region} result={result} canEdit={canEdit} dispatch={dispatch} />
+    <MathCommitted region={region} result={result} canEdit={canEdit} multiActive={multiActive} dispatch={dispatch} />
   );
 }
 
@@ -48,8 +50,9 @@ function MathCommitted({
   region,
   result,
   canEdit,
+  multiActive,
   dispatch,
-}: Pick<RegionRenderProps<MathRegionData>, "region" | "result" | "canEdit" | "dispatch">) {
+}: Pick<RegionRenderProps<MathRegionData>, "region" | "result" | "canEdit" | "multiActive" | "dispatch">) {
   const display = { ...DEFAULT_DISPLAY, ...(region.display ?? {}) };
   const stale = result?.status === "stale";
   const style = result?.style;
@@ -61,6 +64,7 @@ function MathCommitted({
 
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (applyModifierSelect(e, region.id, dispatch, multiActive)) return;
     dispatch(canEdit ? { type: "BEGIN_EDIT", id: region.id } : { type: "SELECT", id: region.id });
   };
 

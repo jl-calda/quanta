@@ -16,6 +16,7 @@ import {
   PlotRegionView,
   TableRegionView,
 } from "./render-only";
+import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -27,7 +28,9 @@ import type { RegionRenderProps } from "./types";
  */
 export function RegionItem({ region }: { region: Region }) {
   const { state, dispatch, canEdit } = useEditor();
-  const selected = state.selectedId === region.id;
+  const inSelection = state.selectedIds.includes(region.id);
+  const isPrimary = state.selectedId === region.id;
+  const multiActive = state.selectedIds.length > 1;
   const editing = state.editingId === region.id;
   const result = state.results.get(region.id);
   const isError = result?.status === "error";
@@ -36,6 +39,7 @@ export function RegionItem({ region }: { region: Region }) {
 
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (applyModifierSelect(e, region.id, dispatch, multiActive)) return;
     if (!editing) dispatch({ type: "SELECT", id: region.id });
   };
 
@@ -48,6 +52,9 @@ export function RegionItem({ region }: { region: Region }) {
   };
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    // Stop the drop bubbling to the owning cell — a region-relative move and a
+    // cell append must never both fire for one drop.
+    e.stopPropagation();
     const dragged = e.dataTransfer.getData("text/region-id");
     const pos = dropPos;
     setDropPos(null);
@@ -58,7 +65,7 @@ export function RegionItem({ region }: { region: Region }) {
 
   const className =
     "region" +
-    (selected ? " is-selected" : "") +
+    (inSelection ? " is-selected" : "") +
     (editing ? " is-editing" : "") +
     (isError ? " is-error" : "");
 
@@ -90,9 +97,13 @@ export function RegionItem({ region }: { region: Region }) {
         </span>
       )}
 
-      <RegionBody region={region} result={result} selected={selected} editing={editing} canEdit={canEdit} dispatch={dispatch} />
+      <RegionBody region={region} result={result} selected={isPrimary} multiActive={multiActive} editing={editing} canEdit={canEdit} dispatch={dispatch} />
 
-      {canEdit && selected && !editing && <SelectionToolbar region={region} dispatch={dispatch} />}
+      {/* Per-region tools only for a lone selection; a multi-selection uses the
+          canvas group bar instead. */}
+      {canEdit && isPrimary && !multiActive && !editing && (
+        <SelectionToolbar region={region} dispatch={dispatch} />
+      )}
       {canEdit && !editing && <InsertBelow anchorId={region.id} dispatch={dispatch} />}
     </div>
   );

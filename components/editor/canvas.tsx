@@ -1,22 +1,39 @@
 "use client";
 
-import { useState } from "react";
-import type { Dispatch } from "react";
-import type { Row } from "@/lib/worksheet/content";
+import { useRef, useState } from "react";
+import type { Dispatch, ReactNode, RefObject } from "react";
+import type { Region, Row } from "@/lib/worksheet/content";
 import { useEditor } from "./state/editor-provider";
 import type { EditorAction } from "./state/editor-reducer";
 import { RegionItem } from "./regions/region-item";
 import { Icon } from "./icons";
 
+/** Above this many rows the page body switches on CSS content-visibility so the
+ *  browser skips laying out off-screen rows (cheap virtualization that keeps the
+ *  DOM — and therefore drag/scroll-to-region — intact). */
+const VIRTUALIZE_ROWS = 60;
+/** Gutter track width between columns (matches the mockup's dashed gutter). */
+const GUTTER = 16;
+/** Smallest column fraction the split drag will produce (mirrors the reducer). */
+const MIN_COL = 0.14;
+
 /**
  * Canvas — the worksheet field. A grey scroll field holds the white page (dot-
  * grid body, header/footer bands). Content renders as the hybrid-flow grid:
- * reading-order rows, each split into 1–3 columns with a dashed gutter, regions
- * flowing within a cell. No free placement — everything snaps to a cell.
+ * reading-order rows, each split into 1–3 columns with a draggable dashed gutter,
+ * regions flowing within a cell. No free placement — everything snaps to a cell.
+ * Owns structural editing: create, reorder (drag within/between cells), columns +
+ * split ratio, span, indent, delete, and multi-select group ops.
  */
 export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
   const { state, dispatch, canEdit } = useEditor();
   const { content, zoom } = state;
+
+  const virtualize = content.rows.length > VIRTUALIZE_ROWS;
+  const liveIds = new Set(state.selectedIds);
+  if (state.editingId) liveIds.add(state.editingId);
+
+  const multi = canEdit && state.selectedIds.length > 1;
 
   return (
     <div
@@ -24,16 +41,23 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
       onClick={() => dispatch({ type: "SELECT", id: null })}
       style={{ flex: 1, height: "100%", padding: "24px 0 120px" }}
     >
+      {multi && <GroupBar count={state.selectedIds.length} dispatch={dispatch} />}
       <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform var(--dur-base) var(--ease-out)" }}>
         <article className="ed-page">
           <Band left="Quanta" right={worksheetTitle} />
-          <div className="ed-page-body q-grid">
+          <div className={"ed-page-body q-grid" + (virtualize ? " ed-virtualize" : "")}>
             <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
               {content.rows.length === 0 ? (
                 <EmptyState canEdit={canEdit} dispatch={dispatch} />
               ) : (
                 content.rows.map((row) => (
-                  <RowView key={row.id} row={row} canEdit={canEdit} dispatch={dispatch} />
+                  <RowView
+                    key={row.id}
+                    row={row}
+                    canEdit={canEdit}
+                    dispatch={dispatch}
+                    live={rowIsLive(row, liveIds)}
+                  />
                 ))
               )}
             </div>
@@ -43,6 +67,15 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
       </div>
     </div>
   );
+}
+
+/** True when any region in the row (descending into areas) is selected/editing —
+ *  such rows opt out of content-visibility so their hover chrome isn't clipped. */
+function rowIsLive(row: Row, liveIds: Set<string>): boolean {
+  if (liveIds.size === 0) return false;
+  const walk = (regions: Region[]): boolean =>
+    regions.some((r) => liveIds.has(r.id) || (r.type === "area" && walk(r.regions)));
+  return row.cells.some((cell) => walk(cell.regions));
 }
 
 function Band({ left, right, footer }: { left: string; right: string; footer?: boolean }) {
@@ -68,11 +101,253 @@ function Band({ left, right, footer }: { left: string; right: string; footer?: b
   );
 }
 
-function RowView({ row, canEdit, dispatch }: { row: Row; canEdit: boolean; dispatch: Dispatch<EditorAction> }) {
-  const [hover, setHover] = useState(false);
+/* ------------------------------------------------------------------ *
+ * Row — 1–N columns with a draggable gutter
+ * ------------------------------------------------------------------ */
 
-  const controls = canEdit && hover && (
+function RowView({
+  row,
+  canEdit,
+  dispatch,
+  live,
+}: {
+  row: Row;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+  live: boolean;
+}) {
+  const [hover, setHover] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const rowClass = "ed-row" + (live ? " is-live" : "");
+
+  const controls = canEdit && hover && <ColumnsControl row={row} dispatch={dispatch} />;
+
+  if (row.columns === 1) {
+    return (
+      <div
+        className={rowClass}
+        style={{ position: "relative" }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        {controls}
+        {row.cells[0]?.regions.map((r) => (
+          <RegionItem key={r.id} region={r} />
+        ))}
+      </div>
+    );
+  }
+
+  // Equal columns unless a drag-set ratio is present; interleave fr cell tracks
+  // with fixed gutter tracks so the gutter (dashed rule + drag handle) sits on the
+  // column boundary.
+  const fr =
+    row.split && row.split.length === row.columns ? row.split : Array(row.columns).fill(1);
+  const tracks: string[] = [];
+  fr.forEach((f, i) => {
+    if (i) tracks.push(`${GUTTER}px`);
+    tracks.push(`${f}fr`);
+  });
+
+  const items: ReactNode[] = [];
+  row.cells.forEach((cell, ci) => {
+    if (ci) {
+      items.push(
+        <Gutter
+          key={`g${ci}`}
+          boundary={ci - 1}
+          fr={fr}
+          rowId={row.id}
+          gridRef={gridRef}
+          canEdit={canEdit}
+          dispatch={dispatch}
+        />,
+      );
+    }
+    items.push(<CellView key={`c${ci}`} row={row} cell={cell} cellIndex={ci} canEdit={canEdit} dispatch={dispatch} />);
+  });
+
+  return (
     <div
+      ref={gridRef}
+      className={rowClass}
+      style={{ position: "relative", display: "grid", gridTemplateColumns: tracks.join(" "), marginTop: 2 }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {controls}
+      {items}
+    </div>
+  );
+}
+
+/** A cell's column. Empty cells become drop targets for a dragged region (the
+ *  drag-into-empty-column move) and offer a one-click add. */
+function CellView({
+  row,
+  cell,
+  cellIndex,
+  canEdit,
+  dispatch,
+}: {
+  row: Row;
+  cell: { regions: Region[] };
+  cellIndex: number;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const [over, setOver] = useState(false);
+  const empty = cell.regions.length === 0;
+  const droppable = canEdit && empty;
+
+  return (
+    <div
+      style={{ minWidth: 0 }}
+      onDragOver={
+        droppable
+          ? (e) => {
+              if (!e.dataTransfer.types.includes("text/region-id")) return;
+              e.preventDefault();
+              setOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={droppable ? () => setOver(false) : undefined}
+      onDrop={
+        droppable
+          ? (e) => {
+              e.preventDefault();
+              setOver(false);
+              const dragged = e.dataTransfer.getData("text/region-id");
+              if (dragged) dispatch({ type: "MOVE_TO_CELL", id: dragged, rowId: row.id, cellIndex });
+            }
+          : undefined
+      }
+    >
+      {cell.regions.map((r) => (
+        <RegionItem key={r.id} region={r} />
+      ))}
+      {canEdit && empty && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "INSERT_INTO_CELL", rowId: row.id, cellIndex, regionType: "math" });
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            border: "1px dashed " + (over ? "var(--accent)" : "var(--border-strong)"),
+            borderRadius: "var(--radius-sm)",
+            background: over ? "var(--accent-tint)" : "transparent",
+            color: over ? "var(--accent)" : "var(--text-muted)",
+            font: "12px/1 var(--font-sans)",
+            cursor: "pointer",
+            padding: "8px 10px",
+            width: "100%",
+            transition: "background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out)",
+          }}
+        >
+          <Icon name="plusSm" size={13} /> {over ? "Drop here" : "Add a region"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The gutter between two columns: a dashed rule plus (when editable) a handle to
+ *  drag the split ratio. */
+function Gutter({
+  boundary,
+  fr,
+  rowId,
+  gridRef,
+  canEdit,
+  dispatch,
+}: {
+  boundary: number;
+  fr: number[];
+  rowId: string;
+  gridRef: RefObject<HTMLDivElement | null>;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  return (
+    <div style={{ position: "relative", display: "flex", justifyContent: "center" }}>
+      <span className="ed-gutter" />
+      {canEdit && <SplitHandle boundary={boundary} fr={fr} rowId={rowId} gridRef={gridRef} dispatch={dispatch} />}
+    </div>
+  );
+}
+
+function SplitHandle({
+  boundary,
+  fr,
+  rowId,
+  gridRef,
+  dispatch,
+}: {
+  boundary: number;
+  fr: number[];
+  rowId: string;
+  gridRef: RefObject<HTMLDivElement | null>;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const [drag, setDrag] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDrag(true);
+
+    // The boundary's left neighbour-pair is invariant during the drag, so we
+    // resolve the new split from the pointer's absolute fraction across the row
+    // (same scaled rect for left + width → zoom-safe).
+    const sum = fr.reduce((a, b) => a + b, 0) || 1;
+    const norm = fr.map((v) => v / sum);
+    const pre = norm.slice(0, boundary).reduce((a, b) => a + b, 0);
+    const pairSum = norm[boundary] + norm[boundary + 1];
+
+    const move = (ev: PointerEvent) => {
+      const el = gridRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const p = (ev.clientX - rect.left) / rect.width;
+      const left = Math.min(pairSum - MIN_COL, Math.max(MIN_COL, p - pre));
+      const next = [...norm];
+      next[boundary] = left;
+      next[boundary + 1] = pairSum - left;
+      dispatch({ type: "SET_SPLIT", rowId, split: next });
+    };
+    const up = () => {
+      setDrag(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <span
+      className="ed-split-handle"
+      data-drag={drag || undefined}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Drag to resize columns"
+      title="Drag to resize columns"
+      onPointerDown={onPointerDown}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
+/** Per-row hover control: set the column count (1/2/3). Columns are also
+ *  settable from the ribbon's layout group. */
+function ColumnsControl({ row, dispatch }: { row: Row; dispatch: Dispatch<EditorAction> }) {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: "absolute",
         top: -12,
@@ -88,6 +363,9 @@ function RowView({ row, canEdit, dispatch }: { row: Row; canEdit: boolean; dispa
         zIndex: 6,
       }}
     >
+      <span style={{ display: "inline-flex", color: "var(--text-muted)" }}>
+        <Icon name="splitCols" size={13} />
+      </span>
       <span style={{ font: "10px/1 var(--font-sans)", color: "var(--text-muted)", padding: "0 2px" }}>Columns</span>
       {([1, 2, 3] as const).map((n) => (
         <button
@@ -112,70 +390,110 @@ function RowView({ row, canEdit, dispatch }: { row: Row; canEdit: boolean; dispa
       ))}
     </div>
   );
+}
 
-  if (row.columns === 1) {
-    return (
-      <div style={{ position: "relative" }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-        {controls}
-        {row.cells[0]?.regions.map((r) => (
-          <RegionItem key={r.id} region={r} />
-        ))}
-      </div>
-    );
-  }
+/* ------------------------------------------------------------------ *
+ * Multi-select group bar
+ * ------------------------------------------------------------------ */
 
-  const template =
-    row.split && row.split.length === row.columns
-      ? row.split.map((n) => `${n}fr`).join(" ")
-      : `repeat(${row.columns}, 1fr)`;
+function GroupBar({ count, dispatch }: { count: number; dispatch: Dispatch<EditorAction> }) {
+  const btn = (label: string, icon: Parameters<typeof Icon>[0]["name"], action: EditorAction) => (
+    <button
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        dispatch(action);
+      }}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 26,
+        height: 26,
+        border: "none",
+        background: "transparent",
+        borderRadius: "var(--radius-sm)",
+        color: "var(--text-primary)",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <Icon name={icon} size={16} />
+    </button>
+  );
+
+  const sep = <span style={{ width: 1, height: 16, background: "var(--border-hairline)", margin: "0 2px" }} />;
 
   return (
+    // Full-width sticky wrapper so the bar centres over the page yet lets clicks
+    // outside it pass through to the field (which clears the selection).
     <div
-      style={{ position: "relative", display: "grid", gridTemplateColumns: template, marginTop: 2 }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      style={{
+        position: "sticky",
+        top: 12,
+        zIndex: 20,
+        display: "flex",
+        justifyContent: "center",
+        pointerEvents: "none",
+      }}
     >
-      {controls}
-      {row.cells.map((cell, ci) => (
-        <div
-          key={ci}
-          style={{
-            paddingLeft: ci ? 26 : 0,
-            paddingRight: ci < row.columns - 1 ? 26 : 0,
-            borderLeft: ci ? "1px dashed var(--border-strong)" : "none",
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          pointerEvents: "auto",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 2,
+          background: "var(--surface-raised)",
+          border: "1px solid var(--border-hairline)",
+          borderRadius: "var(--radius-md)",
+          boxShadow: "var(--shadow-popover)",
+          padding: "3px 6px",
+        }}
+      >
+        <span style={{ font: "600 12px/1 var(--font-sans)", color: "var(--text-primary)", padding: "0 6px" }}>
+          {count} selected
+        </span>
+        {sep}
+        {btn("Outdent", "indentL", { type: "INDENT_SELECTED", delta: -1 })}
+        {btn("Indent", "indentR", { type: "INDENT_SELECTED", delta: 1 })}
+        {btn("Duplicate", "copy", { type: "DUPLICATE_SELECTED" })}
+        {sep}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "DELETE_SELECTED" });
           }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            height: 26,
+            padding: "0 9px",
+            border: "none",
+            background: "transparent",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--status-error)",
+            font: "500 12.5px/1 var(--font-sans)",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--status-error-bg)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
         >
-          {cell.regions.map((r) => (
-            <RegionItem key={r.id} region={r} />
-          ))}
-          {canEdit && cell.regions.length === 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                dispatch({ type: "INSERT_INTO_CELL", rowId: row.id, cellIndex: ci, regionType: "math" });
-              }}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                border: "1px dashed var(--border-strong)",
-                borderRadius: "var(--radius-sm)",
-                background: "transparent",
-                color: "var(--text-muted)",
-                font: "12px/1 var(--font-sans)",
-                cursor: "pointer",
-                padding: "8px 10px",
-                width: "100%",
-              }}
-            >
-              <Icon name="plusSm" size={13} /> Add a region
-            </button>
-          )}
-        </div>
-      ))}
+          Delete
+        </button>
+        {sep}
+        {btn("Clear selection", "x", { type: "SELECT", id: null })}
+      </div>
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ *
+ * Empty document
+ * ------------------------------------------------------------------ */
 
 function EmptyState({ canEdit, dispatch }: { canEdit: boolean; dispatch: Dispatch<EditorAction> }) {
   return (

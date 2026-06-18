@@ -5,9 +5,10 @@ import { useEditor } from "./state/editor-provider";
 
 /**
  * Worksheet-level keyboard shortcuts (renders nothing). F9 recalculates from
- * anywhere; `=` on the canvas (not inside a field) opens a new math region —
- * the Mathcad move. Editing commit/cancel (Enter/Esc) lives in the region
- * editors; the ⌘K command palette is a later follow-up.
+ * anywhere; on the canvas (not inside a field): `=` opens a new math region (the
+ * Mathcad move), Delete/Backspace removes the selection, Escape clears it, and
+ * ⌘/Ctrl+A selects every region. Editing commit/cancel (Enter/Esc) lives in the
+ * region editors; the ⌘K command palette is a later follow-up.
  */
 export function EditorKeyboard() {
   const { state, dispatch, canEdit, recalculate } = useEditor();
@@ -22,6 +23,24 @@ export function EditorKeyboard() {
       const t = e.target as HTMLElement | null;
       const inField = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
       if (inField) return;
+
+      const hasSelection = state.selectedIds.length > 0;
+
+      if (e.key === "Escape" && hasSelection) {
+        e.preventDefault();
+        dispatch({ type: "SELECT", id: null });
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && canEdit && !state.editingId && hasSelection) {
+        e.preventDefault();
+        dispatch({ type: "DELETE_SELECTED" });
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A") && canEdit && !state.editingId) {
+        e.preventDefault();
+        dispatch({ type: "SELECT_ALL" });
+        return;
+      }
       if (e.key === "=" && canEdit && !state.editingId) {
         e.preventDefault();
         dispatch({ type: "INSERT_REGION", regionType: "math", anchorId: state.selectedId, where: "below" });
@@ -29,7 +48,7 @@ export function EditorKeyboard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.selectedId, state.editingId, canEdit, recalculate, dispatch]);
+  }, [state.selectedId, state.selectedIds.length, state.editingId, canEdit, recalculate, dispatch]);
 
   return null;
 }
