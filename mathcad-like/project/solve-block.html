@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Solve block</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Sub) { return setTimeout(start, 40); }
+    const { Sub, Sup, Frac, Op, Sqrt } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      chevD: (s) => svg(<path d="m6 9 6 6 6-6"/>, s),
+      check: (s) => svg(<path d="M5 12l4.5 4.5L19 7"/>, s),
+      alert: (s) => svg(<><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></>, s),
+      bolt: (s) => svg(<path d="M13 3 4 14h6l-1 7 9-11h-6z"/>, s),
+      grip: (s) => svg(<><circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/></>, s),
+    };
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- math helpers ---- */
+    const It = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+    const M = ({ children, size = 17 }) => <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '0.14em', rowGap: 2, fontFamily: 'var(--font-math)', fontSize: size, color: 'var(--text-math)', lineHeight: 1.3 }}>{children}</span>;
+    const Rel = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0.18em' }}>{children}</span>;
+    const num = (v, un) => <>{v}{un && <span style={{ fontSize: '0.82em', marginLeft: '0.1em', color: 'var(--text-muted)' }}>{un}</span>}</>;
+    const Res = (children, tone) => <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.16em', padding: '1px 8px', borderRadius: 4, marginLeft: '0.12em', background: tone === 'error' ? 'var(--status-error-bg)' : 'var(--accent-tint)', color: tone === 'error' ? 'var(--status-error)' : 'var(--accent)', fontWeight: 600 }}>{children}</span>;
+
+    /* ---- algorithm menu ---- */
+    function AlgoMenu({ algo, setAlgo }) {
+      const [open, setOpen] = useState(false);
+      const opts = [
+        ['find', 'find', 'Solve equations exactly'],
+        ['minimize', 'minimize', 'Least value of an objective'],
+        ['maximize', 'maximize', 'Greatest value of an objective'],
+        ['minerr', 'minerr', 'Best fit when no exact solution'],
+        ['odesolve', 'Odesolve', 'Differential equations'],
+      ];
+      return (
+        <span style={{ position: 'relative', display: 'inline-block' }}>
+          <button onClick={() => setOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 22, padding: '0 6px', borderRadius: 4, border: '1px solid ' + (open ? 'var(--accent)' : 'var(--border-strong)'), background: 'var(--surface-raised)', cursor: 'pointer', font: '13px/1 var(--font-mono)', color: 'var(--accent)', verticalAlign: 'middle' }}>
+            {algo}<span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{I.chevD(13)}</span>
+          </button>
+          {open && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 244, zIndex: 30, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-popover)', padding: 4 }}>
+              {opts.map(([id, label, desc]) => (
+                <button key={id} onClick={() => { setAlgo(label); setOpen(false); }} style={{ display: 'flex', alignItems: 'baseline', gap: 8, width: '100%', padding: '6px 8px', border: 'none', borderRadius: 4, background: label === algo ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer', textAlign: 'left' }} onMouseEnter={(e) => { if (label !== algo) e.currentTarget.style.background = 'var(--surface-hover)'; }} onMouseLeave={(e) => { if (label !== algo) e.currentTarget.style.background = 'transparent'; }}>
+                  <span style={{ font: '12.5px/1.2 var(--font-mono)', color: label === algo ? 'var(--accent)' : 'var(--text-primary)', minWidth: 64 }}>{label}</span>
+                  <span style={{ font: '11px/1.3 var(--font-sans)', color: 'var(--text-muted)' }}>{desc}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </span>
+      );
+    }
+
+    /* ---- the solve block ---- */
+    function Section({ label, children }) {
+      return (
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ font: '600 9.5px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '10px 0 7px' }}>{label}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingLeft: 4 }}>{children}</div>
+        </div>
+      );
+    }
+
+    function SolveBlock({ state, algo, setAlgo }) {
+      const err = state === 'error';
+      return (
+        <div className="region" style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: -19, top: 14, color: 'var(--text-muted)' }}>{I.grip(15)}</span>
+          {/* the bordered block — accent left rule is the Mathcad solve-block frame */}
+          <div style={{ border: '1px solid var(--border-strong)', borderLeft: '3px solid var(--accent)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-raised)', padding: '12px 16px 14px', boxShadow: 'var(--shadow-sm)' }}>
+            {/* block header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ font: '600 12px/1 var(--font-sans)', color: 'var(--text-primary)' }}>Solve block</span>
+              <span style={{ font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '2px 5px' }}>plate thickness</span>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, font: '10px/1 var(--font-sans)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600, color: err ? 'var(--status-error)' : 'var(--status-pass)' }}>
+                {err ? <>{I.alert(13)} no solution</> : <>{I.check(13)} converged</>}
+              </span>
+            </div>
+
+            {/* Given */}
+            <Section label="Given — guess values">
+              <M><It>t</It><Op>:=</Op>{num('10', 'mm')}<span style={{ marginLeft: 12, font: '11.5px var(--font-sans)', fontStyle: 'italic', color: 'var(--text-muted)' }}>plate thickness (guess)</span></M>
+              <M><It>θ</It><Op>:=</Op>{num('30', 'deg')}<span style={{ marginLeft: 12, font: '11.5px var(--font-sans)', fontStyle: 'italic', color: 'var(--text-muted)' }}>yield-line angle (guess)</span></M>
+            </Section>
+
+            {/* Constraints */}
+            <Section label="Constraints">
+              <M><Sub base="σ" sub="vm" /><span style={{ fontFamily: 'var(--font-math)' }}>(</span><It>t</It><span style={{ fontFamily: 'var(--font-math)' }}>)</span><Rel>=</Rel><Sub base="f" sub="y" /><span style={{ marginLeft: 8, font: '11px var(--font-sans)', color: 'var(--text-muted)' }}>von Mises at yield</span></M>
+              <M><Frac num={<span><It>M</It><Sub base="" sub="Ed" /></span>} den={<span><It>m</It><Sub base="" sub="pl" /><span style={{ fontFamily: 'var(--font-math)' }}>(</span><It>t</It><span style={{ fontFamily: 'var(--font-math)' }}>)</span></span>} /><Rel>≤</Rel><span>1.0</span></M>
+              <M><It>t</It><Rel>≥</Rel>{num('6', 'mm')}<span style={{ marginLeft: 8, font: '11px var(--font-sans)', color: 'var(--text-muted)' }}>min. plate</span></M>
+              <M><span>5</span><Op>·</Op><span style={{ fontFamily: 'var(--font-math)' }}>°</span><Rel>≤</Rel><It>θ</It><Rel>≤</Rel><span>85</span><Op>·</Op><span style={{ fontFamily: 'var(--font-math)' }}>°</span></M>
+            </Section>
+
+            {/* solver call */}
+            <div style={{ font: '600 9.5px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '12px 0 7px' }}>Solve</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, paddingLeft: 4, flexWrap: 'wrap' }}>
+              <M size={17}>
+                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.18em' }}><span style={{ fontFamily: 'var(--font-math)' }}>(</span><It>t</It><span style={{ fontFamily: 'var(--font-math)' }}>,</span><It>θ</It><span style={{ fontFamily: 'var(--font-math)' }}>)</span></span>
+                <Op>:=</Op>
+              </M>
+              <span style={{ margin: '0 6px' }}><AlgoMenu algo={algo} setAlgo={setAlgo} /></span>
+              <M size={17}><span style={{ fontFamily: 'var(--font-math)' }}>(</span><It>t</It><span style={{ fontFamily: 'var(--font-math)' }}>,</span><It>θ</It><span style={{ fontFamily: 'var(--font-math)' }}>)</span></M>
+            </div>
+
+            {/* result / error */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-hairline)' }}>
+              {err ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--status-error-bg)', border: '1px solid color-mix(in srgb, var(--status-error) 28%, transparent)' }}>
+                  <span style={{ display: 'inline-flex', color: 'var(--status-error)', flex: '0 0 auto', marginTop: 1 }}>{I.alert(16)}</span>
+                  <div>
+                    <div style={{ font: '600 12.5px/1.4 var(--font-sans)', color: 'var(--status-error)' }}>No solution found</div>
+                    <div style={{ font: '12px/1.5 var(--font-sans)', color: 'var(--text-primary)', marginTop: 2 }}>The constraints can&rsquo;t be met together — the capacity check needs <It>t</It> &gt; 18 mm, but the geometry caps it at 16 mm. Loosen a constraint or revise the guess values.</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <M size={18}><It>t</It><Op>=</Op>{Res(num('14.2', 'mm'))}<span style={{ marginLeft: '0.5em', font: '11px var(--font-sans)', color: 'var(--text-muted)' }}>required plate thickness</span></M>
+                  <M size={18}><It>θ</It><Op>=</Op>{Res(num('41.7', 'deg'))}<span style={{ marginLeft: '0.5em', font: '11px var(--font-sans)', color: 'var(--text-muted)' }}>governing yield-line angle</span></M>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ---- board ---- */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    );
+    const Paper = ({ children, w = 500 }) => (
+      <div className="q-grid" style={{ background: 'var(--surface-paper)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-sm)', borderRadius: 2, padding: '26px 30px', width: w, maxWidth: '100%' }}>{children}</div>
+    );
+
+    function Board() {
+      const [algo, setAlgo] = useState('find');
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Solve block specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Region type</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Solve block</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 700 }}>A bordered Given / Constraints / solver block embedded in the worksheet — guess values, equations and inequalities in textbook notation, a solver call with a switchable algorithm, and the solution bound to output names with units.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 28, marginTop: 32, alignItems: 'start' }}>
+            <div>
+              <Label k="(a)" sub="Converged — guesses, constraints with bold relational equals, a switchable solver call (click the algorithm), and the result bound to t and θ with units, highlighted.">Solved state</Label>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 22px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                <Paper><SolveBlock state="ok" algo={algo} setAlgo={setAlgo} /></Paper>
+              </div>
+            </div>
+            <div>
+              <Label k="(b)" sub="No solution found — a specific, actionable message in the app's voice.">Error state</Label>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 22px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                <Paper><SolveBlock state="error" algo={algo} setAlgo={setAlgo} /></Paper>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

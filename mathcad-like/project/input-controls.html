@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Input controls</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  input[type=range].q-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 99px; background: var(--border-strong); outline: none; }
+  input[type=range].q-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface-raised); box-shadow: var(--shadow-sm); cursor: pointer; }
+  input[type=range].q-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface-raised); cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Sub) { return setTimeout(start, 40); }
+    const { Sub, Sup, Frac, Op } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      chevD: (s) => svg(<path d="m6 9 6 6 6-6"/>, s),
+      check: (s) => svg(<path d="M5 12l4.5 4.5L19 7"/>, s),
+      swap: (s) => svg(<path d="M7 4 4 7l3 3M4 7h13M17 20l3-3-3-3M20 17H7"/>, s),
+      bolt: (s) => svg(<path d="M13 3 4 14h6l-1 7 9-11h-6z"/>, s),
+      link: (s) => svg(<><path d="M9.5 14.5 14.5 9.5"/><path d="M11 7l1-1a3.5 3.5 0 0 1 5 5l-1 1"/><path d="M13 17l-1 1a3.5 3.5 0 0 1-5-5l1-1"/></>, s),
+    };
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- shared notation bits ---- */
+    const Var = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+    const Unit = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', color: 'var(--text-muted)' }}>{children}</span>;
+    // the := binding line under each control, in STIX
+    function Binding({ name, val, unit, valColor }) {
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.3em', fontFamily: 'var(--font-math)', fontSize: 17, color: 'var(--text-math)' }}>
+          {name}<Op>:=</Op>
+          <span style={{ color: valColor || 'var(--text-math)', fontWeight: 600 }}>{val}</span>
+          {unit && <span style={{ fontSize: '0.82em', color: 'var(--text-muted)' }}>{unit}</span>}
+        </div>
+      );
+    }
+
+    /* ---- a control card: label eyebrow + control + binding ---- */
+    function Ctrl({ tag, title, children, binding, live }) {
+      return (
+        <div className="region" style={{ position: 'relative', background: live ? 'var(--surface-selected)' : 'var(--surface-raised)', border: '1px solid ' + (live ? 'var(--accent)' : 'var(--border-hairline)'), borderRadius: 'var(--radius-sm)', padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+            <span style={{ font: '600 9.5px/1 var(--font-sans)', letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{tag}</span>
+            <span style={{ font: '11px/1 var(--font-mono)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '2px 5px' }}>{title}</span>
+            {live && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, font: '9.5px/1 var(--font-sans)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>{I.link(12)} live</span>}
+          </div>
+          {children}
+          <div style={{ marginTop: 11, paddingTop: 9, borderTop: '1px dashed var(--border-hairline)' }}>{binding}</div>
+        </div>
+      );
+    }
+
+    /* ====================== combo / dropdown ====================== */
+    function ComboCtrl() {
+      const grades = ['S275', 'S355', 'S420', 'S460'];
+      const [g, setG] = useState('S355');
+      const [open, setOpen] = useState(false);
+      return (
+        <Ctrl tag="Combo box" title="steel_grade" binding={<Binding name={<span>steel_grade</span>} val={'"' + g + '"'} valColor="var(--accent)" />}>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', width: '100%', height: 30, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (open ? 'var(--accent)' : 'var(--border-strong)'), background: 'var(--surface-raised)', cursor: 'pointer', boxShadow: open ? '0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)' : 'none' }}>
+              <span style={{ font: '13px/1 var(--font-mono)', color: 'var(--text-primary)' }}>{g}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', display: 'inline-flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast)' }}>{I.chevD(15)}</span>
+            </button>
+            {open && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20, background: 'var(--surface-raised)', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-popover)', padding: 4 }}>
+                {grades.map((gr) => (
+                  <button key={gr} onClick={() => { setG(gr); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', width: '100%', height: 28, padding: '0 8px', border: 'none', borderRadius: 4, background: gr === g ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer', font: '12.5px/1 var(--font-mono)', color: gr === g ? 'var(--accent)' : 'var(--text-primary)' }} onMouseEnter={(e) => { if (gr !== g) e.currentTarget.style.background = 'var(--surface-hover)'; }} onMouseLeave={(e) => { if (gr !== g) e.currentTarget.style.background = 'transparent'; }}>
+                    {gr}
+                    {gr === g && <span style={{ marginLeft: 'auto', display: 'inline-flex', color: 'var(--accent)' }}>{I.check(14)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Ctrl>
+      );
+    }
+
+    /* ====================== slider (live-linked) ====================== */
+    function SliderCtrl() {
+      const [span, setSpan] = useState(4.2);   // L in metres, drives a moment calc
+      const min = 2, max = 8, step = 0.1;
+      const w = 12.5; // kN/m
+      const M = (w * span * span / 8);          // kN·m
+      const pct = ((span - min) / (max - min)) * 100;
+      return (
+        <Ctrl tag="Slider" title="L" live
+          binding={<Binding name={<Var>L</Var>} val={span.toFixed(1)} unit="m" valColor="var(--accent)" />}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{ font: '10.5px/1 var(--font-mono)', color: 'var(--text-muted)', width: 28 }}>{min} m</span>
+            <input type="range" className="q-slider" min={min} max={max} step={step} value={span} onChange={(e) => setSpan(+e.target.value)} style={{ flex: 1 }} />
+            <span style={{ font: '10.5px/1 var(--font-mono)', color: 'var(--text-muted)', width: 28, textAlign: 'right' }}>{max} m</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, font: '10.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>
+            <span>step <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>0.1</span></span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{I.swap(12)} invert</span>
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'baseline', gap: '0.16em', padding: '2px 7px', borderRadius: 3, background: 'var(--surface-raised)', border: '1px solid var(--border-strong)', font: '600 12px/1 var(--font-mono)', color: 'var(--text-primary)' }}>{span.toFixed(1)}<span style={{ fontSize: '0.82em', color: 'var(--text-muted)' }}>m</span></span>
+          </div>
+          {/* live link → math region */}
+          <div style={{ marginTop: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ display: 'inline-flex', color: 'var(--accent)', flex: '0 0 auto' }}>{I.bolt(15)}</span>
+            <div style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', columnGap: '0.18em', fontFamily: 'var(--font-math)', fontSize: 17, color: 'var(--text-math)' }}>
+              <Sub base="M" sub="Ed" /><Op>=</Op><Frac num={<span><Var>w</Var><Op>·</Op><Sup base="L" sup="2" /></span>} den="8" /><Op>=</Op>
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.16em', padding: '1px 8px', borderRadius: 4, background: 'var(--accent-tint)', color: 'var(--accent)', fontWeight: 600 }}>{M.toFixed(1)}<span style={{ fontSize: '0.78em' }}>kN·m</span></span>
+            </div>
+          </div>
+        </Ctrl>
+      );
+    }
+
+    /* ====================== radio group ====================== */
+    function RadioCtrl() {
+      const opts = [['sls', 'Serviceability (SLS)'], ['uls', 'Ultimate (ULS)'], ['fls', 'Fatigue (FLS)']];
+      const [v, setV] = useState('uls');
+      return (
+        <Ctrl tag="Radio group" title="load_case" binding={<Binding name={<span>load_case</span>} val={'"' + v.toUpperCase() + '"'} valColor="var(--accent)" />}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {opts.map(([id, label]) => {
+              const on = v === id;
+              return (
+                <button key={id} onClick={() => setV(id)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 8px', border: '1px solid ' + (on ? 'var(--accent)' : 'var(--border-hairline)'), borderRadius: 4, background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', cursor: 'pointer', textAlign: 'left' }}>
+                  <span style={{ flex: '0 0 auto', width: 15, height: 15, borderRadius: '50%', border: '1.5px solid ' + (on ? 'var(--accent)' : 'var(--border-strong)'), display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{on && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)' }} />}</span>
+                  <span style={{ font: '12.5px/1 var(--font-sans)', color: on ? 'var(--accent)' : 'var(--text-primary)', fontWeight: on ? 600 : 400 }}>{label}</span>
+                  {id === 'uls' && <span style={{ marginLeft: 'auto', font: '9.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>default</span>}
+                </button>
+              );
+            })}
+          </div>
+        </Ctrl>
+      );
+    }
+
+    /* ====================== checkbox + button row ====================== */
+    function CheckCtrl() {
+      const [redist, setRedist] = useState(true);
+      return (
+        <Ctrl tag="Checkbox" title="redistribute" binding={<Binding name={<span>redistribute</span>} val={redist ? 'true' : 'false'} valColor={redist ? 'var(--status-pass)' : 'var(--text-muted)'} />}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+            <span onClick={() => setRedist((r) => !r)} style={{ flex: '0 0 auto', width: 17, height: 17, borderRadius: 4, border: '1.5px solid ' + (redist ? 'var(--accent)' : 'var(--border-strong)'), background: redist ? 'var(--accent)' : 'var(--surface-raised)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{redist && I.check(13)}</span>
+            <span style={{ font: '12.5px/1.4 var(--font-sans)', color: 'var(--text-primary)' }}>Allow 15% moment redistribution</span>
+          </label>
+        </Ctrl>
+      );
+    }
+    function ButtonCtrl() {
+      return (
+        <Ctrl tag="Button" title="run_solver" binding={<span style={{ font: '11.5px/1.5 var(--font-sans)', color: 'var(--text-muted)' }}>Runs the solve block when pressed.</span>}>
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 13px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent)', color: '#fff', font: '500 12.5px/1 var(--font-sans)', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--accent-press)'} onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent)'}>{I.bolt(15)} Solve section</button>
+        </Ctrl>
+      );
+    }
+
+    /* ====================== textbox ====================== */
+    function TextCtrl() {
+      const [v, setV] = useState('Skyline Tower');
+      return (
+        <Ctrl tag="Textbox" title="project_ref" binding={<Binding name={<span>project_ref</span>} val={'"' + v + '"'} valColor="var(--accent)" />}>
+          <input value={v} onChange={(e) => setV(e.target.value)} style={{ width: '100%', height: 30, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '13px/1 var(--font-mono)', color: 'var(--text-primary)', outline: 'none' }} onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)'; }} onBlur={(e) => { e.target.style.borderColor = 'var(--border-strong)'; e.target.style.boxShadow = 'none'; }} />
+        </Ctrl>
+      );
+    }
+
+    /* ====================== listbox ====================== */
+    function ListCtrl() {
+      const items = ['UB 305×165×40', 'UB 356×171×51', 'UB 406×178×60', 'UB 457×191×74', 'UB 533×210×92'];
+      const [sel, setSel] = useState('UB 406×178×60');
+      return (
+        <Ctrl tag="Listbox" title="section" binding={<Binding name={<span>section</span>} val={'"' + sel.replace('UB ', '') + '"'} valColor="var(--accent)" />}>
+          <div style={{ border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--surface-raised)' }}>
+            {items.map((it, i) => {
+              const on = it === sel;
+              return (
+                <button key={it} onClick={() => setSel(it)} style={{ display: 'flex', alignItems: 'center', width: '100%', height: 27, padding: '0 9px', border: 'none', borderTop: i ? '1px solid var(--border-hairline)' : 'none', background: on ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer', font: '12px/1 var(--font-mono)', color: on ? 'var(--accent)' : 'var(--text-primary)', textAlign: 'left' }} onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'var(--surface-hover)'; }} onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent'; }}>
+                  {it}
+                  {on && <span style={{ marginLeft: 'auto', display: 'inline-flex', color: 'var(--accent)' }}>{I.check(14)}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </Ctrl>
+      );
+    }
+
+    /* ====================== board ====================== */
+    const Paper = ({ children, w }) => (
+      <div className="q-grid" style={{ background: 'var(--surface-paper)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-sm)', borderRadius: 2, padding: '26px 30px', width: w, maxWidth: '100%' }}>{children}</div>
+    );
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Input controls specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Region type</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Input controls</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 700 }}>Controls embedded in the worksheet — each one <em>drives a named variable</em> (shown in the <span style={{ fontFamily: 'var(--font-math)' }}>name := value</span> binding beneath it), not a web form. The slider is live-linked: move it and the moment region recomputes.</p>
+
+          <div style={{ marginTop: 30, display: 'flex', justifyContent: 'center', padding: '28px 26px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+            <Paper w={860}>
+              <div style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>Inputs · driven by controls</div>
+              <div style={{ font: '600 16px/1.3 var(--font-sans)', color: 'var(--text-primary)', marginBottom: 16 }}>Beam design inputs</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--d-gap-lg, 16px)' }}>
+                <SliderCtrl />
+                <ComboCtrl />
+                <RadioCtrl />
+                <ListCtrl />
+                <TextCtrl />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--d-gap-lg, 16px)' }}>
+                  <CheckCtrl />
+                  <ButtonCtrl />
+                </div>
+              </div>
+            </Paper>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

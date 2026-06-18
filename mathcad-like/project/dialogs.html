@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Dialogs</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .dlg { background: var(--surface-raised); border: 1px solid var(--border-hairline); border-radius: var(--radius-lg, 8px); box-shadow: var(--shadow-modal); overflow: hidden; }
+  .dlg-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border-hairline); }
+  .dlg-f { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-top: 1px solid var(--border-hairline); background: var(--surface-chrome); }
+  .row:hover { background: var(--surface-hover); }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button || !Q.Sub) { return setTimeout(start, 40); }
+    const { Button, Sub, Sup, Frac, Op } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      x: (s) => svg(<path d="M6 6l12 12M18 6 6 18"/>, s),
+      search: (s) => svg(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></>, s),
+      chevD: (s) => svg(<path d="m6 9 6 6 6-6"/>, s),
+      check: (s) => svg(<path d="M5 12l4.5 4.5L19 7"/>, s),
+      fx: (s) => svg(<path d="M14.5 5.2A2.4 2.4 0 0 0 10 6.4V9M7.5 12.5h6M13.5 19c-2 .2-3-1-3-3.2V8"/>, s),
+      ruler: (s) => svg(<><rect x="3" y="8" width="18" height="8" rx="1.4"/><path d="M7.5 8v3.5M11.5 8v5M15.5 8v3.5"/></>, s),
+      trash: (s) => svg(<><path d="M4 7h16M9.5 7V5h5v2M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></>, s),
+      link: (s) => svg(<><path d="M9.5 14.5 14.5 9.5"/><path d="M11 7l1-1a3.5 3.5 0 0 1 5 5l-1 1"/><path d="M13 17l-1 1a3.5 3.5 0 0 1-5-5l1-1"/></>, s),
+      enter: (s) => svg(<path d="M9 10l-4 4 4 4M5 14h11a3 3 0 0 0 3-3V6"/>, s),
+      arrow: (s) => svg(<path d="M5 12h14M13 6l6 6-6 6"/>, s),
+      alert: (s) => svg(<><path d="M10.3 4.2 2.2 18a1.6 1.6 0 0 0 1.4 2.4h16.8a1.6 1.6 0 0 0 1.4-2.4L13.7 4.2a1.6 1.6 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/></>, s),
+    };
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+    const It = ({ children }) => <span style={{ fontFamily: 'var(--font-math)', fontStyle: 'italic' }}>{children}</span>;
+
+    const HClose = () => <button aria-label="Close" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, border: 'none', background: 'transparent', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer' }} onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-hover)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>{I.x(17)}</button>;
+    const Title = ({ icon, children }) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flex: 1 }}>{icon && <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{icon}</span>}<span style={{ font: '600 14px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>{children}</span></span>;
+    const Field = ({ children, w = '100%' }) => <div style={{ position: 'relative', width: w }}>{children}</div>;
+    const Inp = (props) => <input {...props} style={{ width: '100%', height: 30, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '12.5px/1 var(--font-sans)', color: 'var(--text-primary)', outline: 'none', ...(props.style || {}) }} />;
+    const Seg = ({ options, value, set, mono }) => (
+      <div style={{ display: 'inline-flex', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', height: 28 }}>
+        {options.map((o, i) => { const on = value === o; return <button key={o} onClick={() => set(o)} style={{ padding: '0 9px', height: '100%', border: 'none', borderLeft: i ? '1px solid var(--border-hairline)' : 'none', cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', color: on ? 'var(--accent)' : 'var(--text-muted)', font: (on ? '600' : '500') + ' 11.5px/1 ' + (mono ? 'var(--font-mono)' : 'var(--font-sans)') }}>{o}</button>; })}
+      </div>
+    );
+
+    /* ============ 1 · Insert function ============ */
+    function DlgInsertFunction() {
+      const fns = [
+        { n: 'interp', sig: 'interp(vx, vy, x)', cat: 'Lookup', on: true },
+        { n: 'Vlookup', sig: 'Vlookup(value, table, col)', cat: 'Lookup' },
+        { n: 'root', sig: 'root(f(x), x)', cat: 'Solving' },
+        { n: 'Max', sig: 'Max(a, b, …)', cat: 'Math' },
+        { n: 'mean', sig: 'mean(A)', cat: 'Stats' },
+      ];
+      return (
+        <div className="dlg" style={{ width: 460 }}>
+          <div className="dlg-h"><Title icon={I.fx(18)}>Insert function</Title><HClose /></div>
+          <div style={{ padding: 14, display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Field><span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>{I.search(14)}</span><Inp placeholder="Search functions…" defaultValue="interp" style={{ paddingLeft: 30 }} /></Field>
+              <div style={{ marginTop: 8, border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', maxHeight: 168, overflowY: 'auto' }}>
+                {fns.map((f) => (
+                  <div key={f.n} className="row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px', borderBottom: '1px solid var(--border-hairline)', background: f.on ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer' }}>
+                    <code style={{ font: '12px/1.2 var(--font-mono)', color: f.on ? 'var(--accent)' : 'var(--text-primary)', flex: 1 }}>{f.n}</code>
+                    <span style={{ font: '10px/1 var(--font-sans)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '2px 5px' }}>{f.cat}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ width: 168, flex: '0 0 auto', borderLeft: '1px solid var(--border-hairline)', paddingLeft: 12 }}>
+              <div style={{ font: '600 10px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>Preview</div>
+              <div style={{ fontFamily: 'var(--font-math)', fontSize: 16, color: 'var(--text-math)' }}>interp<span style={{ color: 'var(--text-muted)' }}>(</span><It>vx</It>, <It>vy</It>, <It>x</It><span style={{ color: 'var(--text-muted)' }}>)</span></div>
+              <div style={{ font: '11.5px/1.5 var(--font-sans)', color: 'var(--text-muted)', marginTop: 8 }}>Linear interpolation of <It>x</It> against paired data vectors. Result carries the units of <It>vy</It>.</div>
+            </div>
+          </div>
+          <div className="dlg-f"><span style={{ marginLeft: 'auto' }} /><Button variant="secondary">Cancel</Button><Button variant="primary">Insert function</Button></div>
+        </div>
+      );
+    }
+
+    /* ============ 2 · Insert unit ============ */
+    function DlgInsertUnit() {
+      const cats = ['Length', 'Force', 'Pressure', 'Mass', 'Time'];
+      const [cat, setCat] = useState('Pressure');
+      const units = { Pressure: [['Pa', 'pascal'], ['kPa', 'kilopascal'], ['MPa', 'megapascal', true], ['ksi', 'kips / in²'], ['bar', 'bar']] }[cat] || [['MPa', 'megapascal', true]];
+      return (
+        <div className="dlg" style={{ width: 420 }}>
+          <div className="dlg-h"><Title icon={I.ruler(18)}>Insert unit</Title><HClose /></div>
+          <div style={{ display: 'flex', minHeight: 188 }}>
+            <div style={{ width: 120, flex: '0 0 auto', borderRight: '1px solid var(--border-hairline)', padding: 6 }}>
+              {cats.map((c) => <button key={c} onClick={() => setCat(c)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', borderRadius: 5, background: c === cat ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer', font: (c === cat ? '600 ' : '500 ') + '12px/1 var(--font-sans)', color: c === cat ? 'var(--accent)' : 'var(--text-primary)', marginBottom: 1 }}>{c}</button>)}
+            </div>
+            <div style={{ flex: 1, padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, alignContent: 'start' }}>
+              {units.map(([u, name, on]) => (
+                <button key={u} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 10px', border: '1px solid ' + (on ? 'var(--accent)' : 'var(--border-hairline)'), borderRadius: 'var(--radius-sm)', background: on ? 'var(--accent-tint)' : 'var(--surface-raised)', cursor: 'pointer' }}>
+                  <span style={{ font: '14px/1 var(--font-math)', color: on ? 'var(--accent)' : 'var(--text-math)' }}>{u}</span>
+                  <span style={{ font: '10.5px/1 var(--font-sans)', color: 'var(--text-muted)' }}>{name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="dlg-f"><span style={{ font: '11.5px/1 var(--font-mono)', color: 'var(--text-muted)' }}>1 MPa = 10⁶ Pa</span><span style={{ marginLeft: 'auto' }} /><Button variant="secondary">Cancel</Button><Button variant="primary">Insert unit</Button></div>
+        </div>
+      );
+    }
+
+    /* ============ 3 · Result format ============ */
+    function DlgResultFormat() {
+      const [dec, setDec] = useState('2');
+      const [nota, setNota] = useState('Auto');
+      const [radix, setRadix] = useState('Dec');
+      const Row = ({ label, children }) => <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '7px 0' }}><span style={{ font: '12.5px/1 var(--font-sans)', color: 'var(--text-primary)' }}>{label}</span>{children}</div>;
+      return (
+        <div className="dlg" style={{ width: 380 }}>
+          <div className="dlg-h"><Title>Result format</Title><HClose /></div>
+          <div style={{ padding: '6px 16px 12px' }}>
+            <Row label="Decimal places"><Seg options={['0', '2', '3', '4']} value={dec} set={setDec} mono /></Row>
+            <Row label="Significant figures"><span style={{ font: '12px/1 var(--font-mono)', color: 'var(--text-muted)' }}>Auto</span></Row>
+            <Row label="Notation"><Seg options={['Auto', 'Sci', 'Eng']} value={nota} set={setNota} /></Row>
+            <Row label="Radix"><Seg options={['Dec', 'Hex', 'Bin']} value={radix} set={setRadix} mono /></Row>
+            <div style={{ marginTop: 10, padding: '12px 14px', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-paper)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ font: '10px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Sample</span>
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.3em', fontFamily: 'var(--font-math)', fontSize: 18, color: 'var(--text-math)', marginLeft: 'auto' }}><Sub base="N" sub="Rd" /><Op>=</Op><span style={{ padding: '1px 7px', borderRadius: 4, background: 'var(--accent-tint)', color: 'var(--accent)', fontWeight: 600 }}>52.80<span style={{ fontSize: '0.78em' }}> kN</span></span></span>
+            </div>
+          </div>
+          <div className="dlg-f"><span style={{ marginLeft: 'auto' }} /><Button variant="secondary">Cancel</Button><Button variant="primary">Apply format</Button></div>
+        </div>
+      );
+    }
+
+    /* ============ 4 · Conditional formatting ============ */
+    function DlgConditional() {
+      return (
+        <div className="dlg" style={{ width: 400 }}>
+          <div className="dlg-h"><Title>Conditional formatting</Title><HClose /></div>
+          <div style={{ padding: 14 }}>
+            <div style={{ font: '11.5px/1.5 var(--font-sans)', color: 'var(--text-muted)', marginBottom: 10 }}>Restyle the result by its value — e.g. flag a utilisation over 1.0.</div>
+            {[['if result', '>', '1.0', 'red', 'var(--status-error)'], ['if result', '≤', '1.0', 'green', 'var(--status-pass)']].map((r, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+                <span style={{ font: '12px/1 var(--font-mono)', color: 'var(--text-muted)' }}>{r[0]}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 28, border: '1px solid var(--border-strong)', borderRadius: 4, font: '13px/1 var(--font-math)', background: 'var(--surface-raised)' }}>{r[1]}</span>
+                <Field w="62px"><Inp defaultValue={r[2]} style={{ fontFamily: 'var(--font-mono)', height: 28, textAlign: 'right' }} /></Field>
+                <span style={{ font: '12px/1 var(--font-sans)', color: 'var(--text-muted)' }}>→</span>
+                <button style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 9px', border: '1px solid var(--border-strong)', borderRadius: 4, background: 'var(--surface-raised)', cursor: 'pointer', font: '12px/1 var(--font-sans)', color: 'var(--text-primary)' }}><span style={{ width: 11, height: 11, borderRadius: 3, background: r[4] }} />{r[3]}<span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{I.chevD(13)}</span></button>
+                <button aria-label="Remove rule" style={{ marginLeft: 'auto', display: 'inline-flex', color: 'var(--text-muted)', border: 'none', background: 'none', cursor: 'pointer' }}>{I.trash(15)}</button>
+              </div>
+            ))}
+            <button style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4, border: 'none', background: 'none', color: 'var(--accent)', font: '500 12px/1 var(--font-sans)', cursor: 'pointer' }}>+ Add rule</button>
+          </div>
+          <div className="dlg-f"><span style={{ marginLeft: 'auto' }} /><Button variant="secondary">Cancel</Button><Button variant="primary">Apply rules</Button></div>
+        </div>
+      );
+    }
+
+    /* ============ 5 · Share / permissions ============ */
+    function DlgShare() {
+      const people = [['NB', 'Nadia Brunel', 'Owner', 'var(--accent)'], ['MO', 'M. Okafor', 'Editor', '#1E8E5A'], ['RV', 'R. Vasquez', 'Viewer', '#7A5BBF']];
+      const RoleSel = ({ v, locked }) => <button style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 8px', border: '1px solid ' + (locked ? 'transparent' : 'var(--border-strong)'), borderRadius: 4, background: locked ? 'transparent' : 'var(--surface-raised)', cursor: locked ? 'default' : 'pointer', font: '12px/1 var(--font-sans)', color: locked ? 'var(--text-muted)' : 'var(--text-primary)' }}>{v}{!locked && <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{I.chevD(13)}</span>}</button>;
+      return (
+        <div className="dlg" style={{ width: 440 }}>
+          <div className="dlg-h"><Title>Share worksheet</Title><HClose /></div>
+          <div style={{ padding: 14 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Field><Inp placeholder="Add people by name or email…" /></Field>
+              <RoleSel v="Editor" />
+              <Button variant="primary">Invite</Button>
+            </div>
+            <div style={{ font: '600 10px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '16px 0 8px' }}>People with access</div>
+            {people.map(([ini, name, role, color]) => (
+              <div key={ini} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+                <span style={{ width: 28, height: 28, borderRadius: '50%', background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: '600 10px/1 var(--font-sans)' }}>{ini}</span>
+                <span style={{ flex: 1, font: '12.5px/1 var(--font-sans)', color: 'var(--text-primary)' }}>{name}{role === 'Owner' && <span style={{ color: 'var(--text-muted)' }}> (you)</span>}</span>
+                <RoleSel v={role} locked={role === 'Owner'} />
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 12, padding: '9px 11px', border: '1px solid var(--border-hairline)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-chrome)' }}>
+              <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{I.link(16)}</span>
+              <span style={{ flex: 1, font: '12px/1.4 var(--font-sans)', color: 'var(--text-primary)' }}>Anyone with the link can <strong>view</strong></span>
+              <button style={{ font: '12px/1 var(--font-sans)', color: 'var(--accent)', border: 'none', background: 'none', cursor: 'pointer' }}>Copy link</button>
+            </div>
+          </div>
+          <div className="dlg-f"><span style={{ marginLeft: 'auto' }} /><Button variant="primary">Done</Button></div>
+        </div>
+      );
+    }
+
+    /* ============ 6 · Command palette ============ */
+    function DlgCommand() {
+      const cmds = [
+        ['Insert math region', 'type', true], ['Recalculate worksheet', 'F9'], ['Insert plot', ''],
+        ['Export to PDF', '⌘P'], ['Share worksheet', ''], ['Worksheet settings', ''],
+      ];
+      return (
+        <div className="dlg" style={{ width: 420 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--border-hairline)' }}>
+            <span style={{ display: 'inline-flex', color: 'var(--text-muted)' }}>{I.search(17)}</span>
+            <input autoFocus placeholder="Type a command or search…" defaultValue="insert" style={{ flex: 1, border: 'none', background: 'none', outline: 'none', font: '14px/1 var(--font-sans)', color: 'var(--text-primary)' }} />
+            <kbd style={{ font: '10px/1 var(--font-mono)', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderBottom: '2px solid var(--border-strong)', borderRadius: 3, padding: '2px 5px' }}>esc</kbd>
+          </div>
+          <div style={{ padding: 6, maxHeight: 220, overflowY: 'auto' }}>
+            <div style={{ font: '10px/1 var(--font-sans)', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '6px 8px 4px' }}>Commands</div>
+            {cmds.map(([label, key, on]) => (
+              <div key={label} className="row" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 5, background: on ? 'var(--accent-tint)' : 'transparent', cursor: 'pointer' }}>
+                <span style={{ display: 'inline-flex', color: on ? 'var(--accent)' : 'var(--text-muted)' }}>{I.arrow(15)}</span>
+                <span style={{ flex: 1, font: '12.5px/1 var(--font-sans)', color: on ? 'var(--accent)' : 'var(--text-primary)', fontWeight: on ? 500 : 400 }}>{label}</span>
+                {key && <kbd style={{ font: '10px/1 var(--font-mono)', color: 'var(--text-muted)', border: '1px solid var(--border-hairline)', borderRadius: 3, padding: '2px 5px' }}>{key}</kbd>}
+                {on && <span style={{ display: 'inline-flex', color: 'var(--accent)' }}>{I.enter(15)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============ 7 · Confirmation (destructive) ============ */
+    function DlgConfirm() {
+      return (
+        <div className="dlg" style={{ width: 380 }}>
+          <div style={{ padding: '18px 18px 14px', display: 'flex', gap: 13 }}>
+            <span style={{ flex: '0 0 auto', width: 36, height: 36, borderRadius: '50%', background: 'var(--status-error-bg)', color: 'var(--status-error)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{I.alert(19)}</span>
+            <div>
+              <div style={{ font: '600 14px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>Move worksheet to trash?</div>
+              <div style={{ font: '12.5px/1.55 var(--font-sans)', color: 'var(--text-muted)', marginTop: 5 }}>“Roof anchor point — pull-out check” will be removed from this project. You can restore it from Trash within 30 days.</div>
+            </div>
+          </div>
+          <div className="dlg-f"><span style={{ marginLeft: 'auto' }} /><Button variant="secondary">Keep it</Button><button style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 13px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--status-error)', color: '#fff', font: '500 12.5px/1 var(--font-sans)', cursor: 'pointer' }}>{I.trash(15)} Move to trash</button></div>
+        </div>
+      );
+    }
+
+    /* ============ board ============ */
+    const Frame = ({ k, title, sub, children }) => (
+      <div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}><span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span><span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)' }}>{title}</span></div>
+          {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '26px 22px', background: 'color-mix(in srgb, var(--ink) 10%, #E7EAEF)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>{children}</div>
+      </div>
+    );
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Dialogs board">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Modal patterns</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Dialogs</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 700 }}>The app&rsquo;s modal patterns on one Dialog language — single soft shadow over a scrim, 8px radius, hairline header and footer. Buttons name the action; never &ldquo;OK&rdquo;.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(440px, 1fr))', gap: 24, marginTop: 32, alignItems: 'start' }}>
+            <Frame k="(a)" title="Insert function" sub="Searchable list + live STIX signature preview."><DlgInsertFunction /></Frame>
+            <Frame k="(b)" title="Insert unit" sub="Categorised unit picker."><DlgInsertUnit /></Frame>
+            <Frame k="(c)" title="Result format" sub="Decimals / notation / radix with a live sample."><DlgResultFormat /></Frame>
+            <Frame k="(d)" title="Conditional formatting" sub="Rule editor with a pass/fail colour."><DlgConditional /></Frame>
+            <Frame k="(e)" title="Share / permissions" sub="People + role dropdowns + link access."><DlgShare /></Frame>
+            <Frame k="(f)" title="Command palette" sub="⌘K fuzzy command list."><DlgCommand /></Frame>
+            <Frame k="(g)" title="Confirmation" sub="Destructive action, clear primary / secondary."><DlgConfirm /></Frame>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>

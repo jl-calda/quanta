@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quanta — Table / spreadsheet region</title>
+
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/tokens/base.css" />
+<link rel="stylesheet" href="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/quanta-design-system-019e2c54-47bc-7379-b0d3-a8f96c8d7ef1/_ds_bundle.js"></script>
+<link rel="stylesheet" href="density.css" />
+<script src="density.js"></script>
+
+<style>
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #E7EAEF; color: var(--text-primary); font-family: var(--font-sans); }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; }
+  .q-grid { background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px); background-size: 16px 16px; background-position: -1px -1px; }
+  .cell { transition: background var(--dur-fast) var(--ease-out); }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+{
+  const start = () => {
+    const Q = window.QuantaDesignSystem_019e2c;
+    if (!Q || !Q.Button) { return setTimeout(start, 40); }
+    const { Button, IconButton, Badge } = Q;
+    const { useState } = React;
+
+    const svg = (c, s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{c}</svg>;
+    const I = {
+      fx: (s) => svg(<path d="M14.5 5.2A2.4 2.4 0 0 0 10 6.4V9M7.5 12.5h6M13.5 19c-2 .2-3-1-3-3.2V8"/>, s),
+      sort: (s) => svg(<path d="M7 4v16M7 20l-3-3M7 4l3 3M17 20V4M17 4l-3 3M17 4l3 3"/>, s),
+      filter: (s) => svg(<path d="M4 5h16l-6 7v6l-4 2v-8z"/>, s),
+      chevD: (s) => svg(<path d="m6 9 6 6 6-6"/>, s),
+      check: (s) => svg(<path d="M5 12l4.5 4.5L19 7"/>, s),
+      x: (s) => svg(<path d="M6 6l12 12M18 6 6 18"/>, s),
+      grip: (s) => svg(<><circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/></>, s),
+      kebab: (s) => svg(<><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></>, s),
+      tag: (s) => svg(<><path d="M4 4h7l9 9-7 7-9-9z"/><path d="M8 8h.01"/></>, s),
+    };
+    const QMark = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="2.75" y="2.75" width="26.5" height="26.5" rx="4" stroke="var(--accent)" strokeWidth="1.5"/><line x1="8" y1="16" x2="24" y2="16" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/><line x1="12.5" y1="10.25" x2="19.5" y2="10.25" stroke="var(--ink)" strokeWidth="1.5" strokeLinecap="round"/><circle cx="16" cy="21.75" r="1.6" fill="var(--status-pass)"/></svg>
+    );
+
+    /* ---- the anchor-schedule data ---- */
+    const COLS = [
+      { key: 'mark', label: 'Mark', unit: null, align: 'left', w: 64 },
+      { key: 'len', label: 'Length', unit: 'mm', align: 'right', w: 96 },
+      { key: 'force', label: 'Force', unit: 'kN', align: 'right', w: 92, sorted: true },
+      { key: 'cap', label: 'Capacity', unit: 'kN', align: 'right', w: 100 },
+      { key: 'ur', label: 'Utilization', unit: '—', align: 'right', w: 104 },
+    ];
+    const ROWS = [
+      { mark: 'A1', len: '120', force: '12.0', cap: '52.8', ur: '0.23', pass: true },
+      { mark: 'A2', len: '120', force: '18.5', cap: '52.8', ur: '0.35', pass: true },
+      { mark: 'A3', len: '90', force: '41.0', cap: '29.7', ur: '1.38', pass: false },
+      { mark: 'A4', len: '150', force: '22.4', cap: '52.8', ur: '0.42', pass: true },
+    ];
+
+    const colLabel = (c) => c.unit ? <>{c.label} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>[{c.unit}]</span></> : c.label;
+
+    /* ====================== EDIT TABLE ====================== */
+    function EditTable() {
+      const [sel, setSel] = useState({ r: 2, c: 'ur' });   // A3 utilization selected
+      const cellRef = (ri, key) => String.fromCharCode(65 + COLS.findIndex((c) => c.key === key)) + (ri + 2);
+      const selRef = cellRef(sel.r, sel.c);
+      const formulaFor = (ri, key) => {
+        if (key === 'ur') return '=' + cellRef(ri, 'force') + '/' + cellRef(ri, 'cap');
+        if (key === 'cap') return '=Vlookup(' + cellRef(ri, 'mark') + ', anchor_db, 5)';
+        if (key === 'force') return '12.0';
+        return '';
+      };
+
+      return (
+        <div className="region" style={{ position: 'relative', background: 'var(--surface-selected)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', padding: 10 }}>
+          {/* region grip + chrome */}
+          <span style={{ position: 'absolute', left: -19, top: 12, color: 'var(--text-muted)' }}>{I.grip(15)}</span>
+
+          {/* named-range chip + formula bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 8px', borderRadius: 4, background: 'var(--accent-tint)', color: 'var(--accent)', font: '600 11px/1 var(--font-mono)', flex: '0 0 auto' }}>{I.tag(13)} anchor_schedule</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, height: 26, padding: '0 8px', borderRadius: 4, border: '1px solid var(--border-strong)', background: 'var(--surface-raised)', font: '600 12px/1 var(--font-mono)', color: 'var(--text-primary)', flex: '0 0 auto' }}>{selRef}</span>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7, height: 26, padding: '0 9px', borderRadius: 4, border: '1px solid var(--accent)', background: 'var(--surface-raised)', boxShadow: '0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent)' }}>
+              <span style={{ display: 'inline-flex', color: 'var(--accent)', flex: '0 0 auto' }}>{I.fx(15)}</span>
+              <span style={{ font: '12.5px/1 var(--font-mono)', color: 'var(--text-primary)' }}>{formulaFor(sel.r, sel.c)}</span>
+              <span style={{ width: 1, height: '1.05em', background: 'var(--accent)', marginLeft: 1 }} />
+            </div>
+          </div>
+
+          {/* the table */}
+          <div style={{ border: '1px solid var(--border-strong)', borderRadius: 4, overflow: 'hidden', background: 'var(--surface-raised)' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 26, background: 'var(--surface-chrome)', borderRight: '1px solid var(--border-hairline)', borderBottom: '1px solid var(--border-strong)' }}></th>
+                  {COLS.map((c, ci) => (
+                    <th key={c.key} style={{ width: c.w, padding: '6px 10px', textAlign: c.align, background: 'var(--surface-chrome)', borderRight: ci < COLS.length - 1 ? '1px solid var(--border-hairline)' : 'none', borderBottom: '1px solid var(--border-strong)', verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: c.align === 'right' ? 'flex-end' : 'space-between', gap: 6 }}>
+                        <span style={{ font: '600 11.5px/1.2 var(--font-sans)', color: 'var(--text-primary)' }}>{colLabel(c)}</span>
+                        {c.sorted ? (
+                          <span title="Sorted ascending" style={{ display: 'inline-flex', color: 'var(--accent)', flex: '0 0 auto' }}>{I.sort(13)}</span>
+                        ) : ci > 0 && (
+                          <span title="Sort / filter" style={{ display: 'inline-flex', color: 'var(--text-muted)', flex: '0 0 auto', cursor: 'pointer' }}>{I.filter(12)}</span>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ROWS.map((row, ri) => (
+                  <tr key={ri} style={{ background: ri % 2 ? 'color-mix(in srgb, var(--surface-chrome) 45%, var(--surface-raised))' : 'var(--surface-raised)' }}>
+                    <td style={{ textAlign: 'center', font: '10.5px/1 var(--font-mono)', color: 'var(--text-muted)', background: 'var(--surface-chrome)', borderRight: '1px solid var(--border-hairline)', borderTop: ri ? '1px solid var(--border-hairline)' : 'none' }}>{ri + 2}</td>
+                    {COLS.map((c, ci) => {
+                      const isSel = sel.r === ri && sel.c === c.key;
+                      const isUR = c.key === 'ur';
+                      const cond = isUR ? (row.pass ? 'pass' : 'fail') : null;
+                      const bg = isSel ? 'transparent' : cond === 'pass' ? 'var(--status-pass-bg)' : cond === 'fail' ? 'var(--status-error-bg)' : 'transparent';
+                      const fg = cond === 'pass' ? 'var(--status-pass)' : cond === 'fail' ? 'var(--status-error)' : 'var(--text-primary)';
+                      return (
+                        <td key={c.key} className="cell" onClick={() => setSel({ r: ri, c: c.key })} style={{ position: 'relative', padding: '5px 10px', textAlign: c.align, font: (c.key === 'mark' ? '600 ' : '') + '12px/1.3 ' + (c.key === 'mark' ? 'var(--font-sans)' : 'var(--font-mono)'), color: fg, background: bg, borderRight: ci < COLS.length - 1 ? '1px solid var(--border-hairline)' : 'none', borderTop: ri ? '1px solid var(--border-hairline)' : 'none', cursor: 'cell', outline: isSel ? '2px solid var(--accent)' : 'none', outlineOffset: -2, boxShadow: isSel ? 'inset 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)' : 'none' }}>
+                          {row[c.key]}
+                          {isUR && cond === 'fail' && !isSel && <span style={{ font: '8.5px/1 var(--font-sans)', fontWeight: 600, marginLeft: 5, letterSpacing: '0.04em' }}>FAIL</span>}
+                          {isUR && cond === 'pass' && !isSel && <span style={{ font: '8.5px/1 var(--font-sans)', fontWeight: 600, marginLeft: 5, letterSpacing: '0.04em', opacity: 0.7 }}>OK</span>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* footer: total + add row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7, padding: '0 2px' }}>
+            <span style={{ font: '11px/1 var(--font-sans)', color: 'var(--text-muted)' }}>4 rows · 1 fails check</span>
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, font: '11px/1 var(--font-sans)', color: 'var(--text-muted)' }}>
+              Result cell carries its unit <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '0.12em', padding: '1px 6px', borderRadius: 3, background: 'var(--accent-tint)', color: 'var(--accent)', font: '600 11px/1 var(--font-mono)' }}>29.7<span style={{ fontSize: '0.82em' }}>kN</span></span>
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====================== PRESENT TABLE ====================== */
+    function PresentTable() {
+      return (
+        <div>
+          <div style={{ font: '600 10px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 7 }}>Anchor schedule</div>
+          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr style={{ borderBottom: '1.5px solid var(--ink)' }}>
+                {COLS.map((c) => <th key={c.key} style={{ padding: '5px 12px', textAlign: c.align, font: '600 11px/1.3 var(--font-sans)', color: 'var(--text-primary)' }}>{colLabel(c)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 ? 'color-mix(in srgb, var(--surface-chrome) 40%, transparent)' : 'transparent', borderBottom: '1px solid var(--border-hairline)' }}>
+                  {COLS.map((c) => {
+                    const isUR = c.key === 'ur';
+                    const fg = isUR ? (row.pass ? 'var(--status-pass)' : 'var(--status-error)') : 'var(--text-primary)';
+                    return <td key={c.key} style={{ padding: '5px 12px', textAlign: c.align, font: (c.key === 'mark' ? '600 ' : '') + '12px/1.4 ' + (c.key === 'mark' ? 'var(--font-sans)' : 'var(--font-mono)'), color: fg, fontWeight: isUR ? 600 : (c.key === 'mark' ? 600 : 400) }}>{row[c.key]}{isUR && !row.pass && <span style={{ font: '8.5px/1 var(--font-sans)', fontWeight: 600, marginLeft: 5 }}>FAIL</span>}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    /* ====================== board ====================== */
+    const Label = ({ k, children, sub }) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--accent)' }}>{k}</span>
+          <span style={{ font: '600 13px/1 var(--font-sans)', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{children}</span>
+        </div>
+        {sub && <div style={{ font: '12px/1.4 var(--font-sans)', color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
+      </div>
+    );
+    const Paper = ({ children, w = 540 }) => (
+      <div className="q-grid" style={{ background: 'var(--surface-paper)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-sm)', borderRadius: 2, padding: '26px 30px', width: w, maxWidth: '100%' }}>{children}</div>
+    );
+
+    function Board() {
+      return (
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '40px 40px 80px' }} data-screen-label="Table region specimen">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 6 }}>
+            <QMark size={24} />
+            <span style={{ font: '600 11px/1 var(--font-sans)', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Quanta · Region type</span>
+          </div>
+          <h1 style={{ margin: 0, font: '600 26px/1.2 var(--font-sans)', letterSpacing: '-0.015em', color: 'var(--text-primary)' }}>Table / spreadsheet region</h1>
+          <p style={{ margin: '8px 0 0', font: '14px/1.6 var(--font-sans)', color: 'var(--text-muted)', maxWidth: 680 }}>A calculation table embedded in a worksheet — cells hold formulas, carry units, and respond to conditional formatting. Shown in its edit state and its clean present/read state, both on worksheet paper.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: 28, marginTop: 32, alignItems: 'start' }}>
+            <div>
+              <Label k="(a)" sub="Selected cell A3 with its formula bar, named-range chip, per-column unit labels, a sorted column, and conditional pass/fail tints. Numeric cells are right-aligned Geist Mono.">Edit state</Label>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 26px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                <Paper><EditTable /></Paper>
+              </div>
+            </div>
+            <div>
+              <Label k="(b)" sub="The same table in read / present mode — clean banded rows, no gridlines, rules top and bottom. What prints and what a checker sees.">Present state</Label>
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 26px', background: '#E7EAEF', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-hairline)' }}>
+                <Paper w={460}><PresentTable /></Paper>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+  };
+  start();
+}
+</script>
+</body>
+</html>
