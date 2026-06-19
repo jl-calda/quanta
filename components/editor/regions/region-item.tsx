@@ -11,11 +11,8 @@ import { MathRegionView } from "./math-region";
 import { TextRegionView } from "./text-region";
 import { TableRegionView } from "./table-region";
 import { PlotRegionView } from "./plot-region";
-import {
-  ControlRegionView,
-  GenericRegionView,
-  ImageRegionView,
-} from "./render-only";
+import { ControlRegionView } from "./control-region";
+import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
 

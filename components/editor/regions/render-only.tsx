@@ -9,10 +9,11 @@ import { PlotEmptyState, PlotFigure, PlotLegend, PlotPlaceholder } from "./plot-
 import type { RegionRenderProps } from "./types";
 
 /**
- * Render-only region types for this pass: tables, plots, images, controls,
- * includes, solve blocks. They render faithfully from their (open, non-lossy)
- * payloads; deep payload editing is a follow-up. A region with no payload yet
- * shows an intentional, labelled card rather than a blank gap.
+ * Render-only region types for this pass: tables, plots, images, includes,
+ * solve blocks. They render faithfully from their (open, non-lossy) payloads;
+ * deep payload editing is a follow-up. A region with no payload yet shows an
+ * intentional, labelled card rather than a blank gap. (Input controls are now a
+ * typed, interactive region — see `control-region.tsx`.)
  */
 
 const cardStyle: React.CSSProperties = {
@@ -77,20 +78,6 @@ export function ImageRegionView({ region }: RegionRenderProps<RenderOnlyRegion>)
   if (!src) return <Placeholder icon="image" label="Image" hint="Add an image from the inspector." />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={typeof data.alt === "string" ? data.alt : ""} style={{ maxWidth: 560, borderRadius: "var(--radius-md)", border: "1px solid var(--border-hairline)" }} />;
-}
-
-export function ControlRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {
-  const data = region as Record<string, unknown>;
-  const kind = typeof data.kind === "string" ? data.kind : "control";
-  const bind = typeof data.bind === "string" ? data.bind : "—";
-  return (
-    <div style={{ ...cardStyle, display: "inline-flex", alignItems: "center", gap: 10 }}>
-      <span style={{ color: "var(--text-muted)", display: "inline-flex" }}><Icon name="control" size={16} /></span>
-      <span style={{ font: "12.5px/1.2 var(--font-sans)", color: "var(--text-primary)" }}>
-        {kind} → <span style={{ fontFamily: "var(--font-math)", fontStyle: "italic" }}>{bind}</span>
-      </span>
-    </div>
-  );
 }
 
 export function GenericRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {

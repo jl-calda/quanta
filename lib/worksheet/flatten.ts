@@ -7,7 +7,7 @@
  */
 import { evaluatePlot, evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
 import type { PlotResult, RegionInput, RegionResult, SheetResult, TableResult } from "@/lib/calc";
-import type { PlotRegion, Region, Row, TableRegion, WorksheetContent } from "./content";
+import type { ControlRegion, PlotRegion, Region, Row, TableRegion, WorksheetContent } from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -26,23 +26,51 @@ function* walkRegionList(regions: Region[]): Generator<Region> {
 }
 
 /**
- * Flatten the tree to the engine's reading-order input list. Only `math`
- * regions are evaluables this pass; their order in the list is the reading
- * order the engine uses for name visibility and recalc.
+ * The `bind := value` definition source a control contributes to engine scope,
+ * or null when it shouldn't bind (no name, or no value to write). `valueType`
+ * decides serialization: text → quoted (matching `serializeForScope`), boolean
+ * → true/false, number → `value unit` (unit-aware), expr → verbatim. This is the
+ * crux of "an input control writes its bound variable as a definition" (§6.7).
+ */
+export function controlDefinitionSource(region: ControlRegion): string | null {
+  const bind = region.bind?.trim();
+  if (!bind || region.value === undefined || region.value === "") return null;
+  const type = region.valueType ?? "number";
+  let rhs: string;
+  if (type === "boolean") {
+    rhs = region.value ? "true" : "false";
+  } else if (type === "text") {
+    rhs = JSON.stringify(String(region.value));
+  } else if (type === "expr") {
+    rhs = String(region.value);
+  } else {
+    rhs = region.unit ? `${region.value} ${region.unit}` : String(region.value);
+  }
+  return `${bind} := ${rhs}`;
+}
+
+/**
+ * Flatten the tree to the engine's reading-order input list. `math` regions and
+ * configured `control` regions are evaluables this pass; their order in the list
+ * is the reading order the engine uses for name visibility and recalc.
  */
 export function flattenToRegionInputs(content: WorksheetContent): RegionInput[] {
   const inputs: RegionInput[] = [];
   for (const region of walkRegions(content)) {
-    if (region.type !== "math") continue;
-    inputs.push({
-      id: region.id,
-      source: region.source,
-      unit: region.unit,
-      format: region.format,
-      conditional: region.conditional,
-      display: region.display,
-      disabled: region.disabled,
-    });
+    if (region.type === "math") {
+      inputs.push({
+        id: region.id,
+        source: region.source,
+        unit: region.unit,
+        format: region.format,
+        conditional: region.conditional,
+        display: region.display,
+        disabled: region.disabled,
+      });
+    } else if (region.type === "control") {
+      const source = controlDefinitionSource(region);
+      if (source) inputs.push({ id: region.id, source });
+    }
   }
   return inputs;
 }
@@ -124,6 +152,9 @@ export function buildEngineInputs(
         display: region.display,
         disabled: region.disabled,
       });
+    } else if (region.type === "control") {
+      const source = controlDefinitionSource(region);
+      if (source) inputs.push({ id: region.id, source });
     } else if (region.type === "table") {
       const exp = tableExports?.get(region.id);
       if (exp) {

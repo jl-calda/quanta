@@ -13,8 +13,8 @@ import type { DiffStatus } from "@/lib/worksheet/diff";
 import { KatexMath } from "../katex-math";
 import { Icon } from "../icons";
 import type { EditorAction } from "../state/editor-reducer";
+import { ControlRegionView } from "../regions/control-region";
 import {
-  ControlRegionView,
   GenericRegionView,
   ImageRegionView,
   PlotRegionView,

@@ -991,3 +991,49 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   in the §5.1 button-panel list). Share remains fully wired (opens `ShareDialog`).
 - **Two small editor icons added** (`x`, `send`, plus `checkCirc` for resolve) to
   the editor icon registry, matching the Lucide 1.5px line set.
+
+## Input controls region (Func/Mockup §6.7)
+
+- **A control is a definition in reading order, not a special engine path.**
+  Each configured control emits a synthetic `bind := value` `RegionInput` (keyed
+  by its own region id) from both flatten paths — `buildEngineInputs` (live) and
+  `flattenToRegionInputs` (export/history). This reuses the exact mechanism tables
+  already use to fold exports back into the unmodified engine, so the control
+  rides the normal dependency graph: the engine returns a `RegionResult` under the
+  control's id (the view renders its own binding via `props.result`), downstream
+  regions recompute, and `worksheetScopeFromResults` exposes the bound name to
+  tables/plots. **Zero calc-engine changes.** Pure helper:
+  `controlDefinitionSource(region)` in `lib/worksheet/flatten.ts`.
+- **Live recompute is free.** A widget change dispatches the generic
+  `SET_REGION_PROP {value}` → `touched()` → the provider's `useEffect([content])`
+  → Auto `publishReconcile` / Manual `MARK_STALE`. No new reducer action; the
+  `value !== undefined` guard in `SET_REGION_PROP` correctly assigns `false`/`0`.
+  `RegionPatch.kind` was widened to `PlotKind | ControlKind` (shared field).
+- **`control` is now a typed (but `.passthrough()`) region**, removed from the
+  `RenderOnlyRegion` union and given a `ControlRegion` interface +
+  `kind/bind/value/valueType/unit/min/max/step/invert/options`. `valueType`
+  decides serialization (text→quoted, number→`value unit`, boolean→`true/false`,
+  expr→verbatim) and **defaults to `number`** so a fresh slider binds immediately.
+- **Default `bind` is empty** (NOT `x`, which collides with the plot `xVar`
+  default): an unconfigured control emits no engine input and shows a muted
+  "Bind a variable" empty-state until named in the inspector.
+- **Button writes a monotonic press counter** to its bound var (the only way to
+  force a recompute in this content-driven architecture); its binding line shows
+  the mockup's action prose, not `bind := 7`. `bind` is optional for buttons.
+- **Bespoke widgets, not the DS form atoms.** The mockup hand-rolls each control
+  (combo popover, 17px checkbox, custom radio/listbox, `.q-slider`), so
+  `control-region.tsx` ports that markup with semantic CSS vars (precedent: the
+  plot inspector's bespoke SVG pickers). The **inspector** config UI uses the DS
+  `Input`/`Select`/`Switch` + local `Stepper`/`Segmented` like every other
+  inspector. `.q-slider` CSS lives in `components/editor/editor.css`.
+- **Combo paste-multiple**: pasting newline/comma/tab-separated text into a combo
+  (or the inspector's one-per-line options textarea) splits into option rows
+  (`parseOptionList`).
+- **One provider-free view serves live + history.** `ControlRegionView` reads only
+  props (no `useEditor()`), so `region-item.tsx` (live) and `history-region.tsx`
+  (read-only, `canEdit:false`, no result → local-value fallback) share it.
+- **Validation surfaces through the engine.** A malformed RHS errors the control's
+  own card (`result.error` in the binding line, app-voice message); type/unit
+  misuse errors the consumer region — both via the engine's normal error model.
+  A control below its consumer errors `defined-later` (same reading-order rule as
+  math regions).
