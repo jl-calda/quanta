@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createActionClient, createClient } from "@/lib/supabase/server";
 import {
   createWorksheetSchema,
   nameWorksheetVersionSchema,
@@ -34,10 +34,10 @@ export async function createWorksheet(input: {
   }
   const { workspaceId, projectId, templateId } = parsed.data;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Use the token-pinned action client: the cookie client's per-request token
+  // resolution races inside a Server Action and lets the insert reach Postgres
+  // as `anon` (RLS then rejects it, 42501). See `createActionClient`.
+  const { db: supabase, user } = await createActionClient();
   if (!user) return err("You're signed out. Sign in and try again.");
 
   // Seed from the template when one was chosen; fall back to a blank page if the
