@@ -9,12 +9,12 @@ import { Icon, type IconName } from "../icons";
 import { regionDomId } from "../scroll-to-region";
 import { MathRegionView } from "./math-region";
 import { TextRegionView } from "./text-region";
+import { TableRegionView } from "./table-region";
 import {
   ControlRegionView,
   GenericRegionView,
   ImageRegionView,
   PlotRegionView,
-  TableRegionView,
 } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";

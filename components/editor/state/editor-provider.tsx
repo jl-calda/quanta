@@ -7,11 +7,12 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type Dispatch,
   type ReactNode,
 } from "react";
-import { CalcEngine, SI_SYSTEM, type SheetResult } from "@/lib/calc";
-import { flattenToRegionInputs } from "@/lib/worksheet/flatten";
+import { CalcEngine, SI_SYSTEM, type TableResult } from "@/lib/calc";
+import { buildEngineInputs, settleTables } from "@/lib/worksheet/flatten";
 import type { WorksheetContent } from "@/lib/worksheet/content";
 import {
   renameWorksheet as renameAction,
@@ -43,6 +44,8 @@ export interface EditorContextValue {
   rename: (title: string) => void;
   /** Snapshot the current content as a worksheet version. */
   saveVersion: (label?: string) => Promise<void>;
+  /** Per-table evaluation results (the scope-bridge output), keyed by region id. */
+  tableResults: Map<string, TableResult>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -81,13 +84,23 @@ export function EditorProvider({
   // SI display this pass; USCS/CGS are display-only selections (see plan).
   const engineRef = useRef<CalcEngine | null>(null);
   if (engineRef.current === null) {
-    engineRef.current = new CalcEngine(flattenToRegionInputs(initialContent), {
+    engineRef.current = new CalcEngine(buildEngineInputs(initialContent), {
       unitSystem: SI_SYSTEM,
       mode: initialCalcMode,
     });
   }
 
-  const publish = (sheet: SheetResult) => dispatch({ type: "SET_RESULTS", sheet });
+  const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
+
+  // Run the engine + tables to a settled fixpoint (the scope-bridge); `settleTables`
+  // is pure and unit-tested in `lib/worksheet/flatten`.
+  const reconcile = (content: WorksheetContent) => settleTables(content, engineRef.current!);
+
+  const publishReconcile = (content: WorksheetContent) => {
+    const { sheet, tables } = reconcile(content);
+    setTableResults(tables);
+    dispatch({ type: "SET_RESULTS", sheet });
+  };
 
   // Compute once on mount; thereafter reconcile on every content change.
   const mounted = useRef(false);
@@ -95,36 +108,29 @@ export function EditorProvider({
   modeRef.current = state.calcMode;
 
   useEffect(() => {
-    const engine = engineRef.current!;
     if (!mounted.current) {
       mounted.current = true;
-      engine.setRegions(flattenToRegionInputs(state.content));
-      publish(engine.getResult());
+      publishReconcile(state.content);
       return;
     }
     if (modeRef.current === "auto") {
-      engine.setRegions(flattenToRegionInputs(state.content));
-      publish(engine.getResult());
+      publishReconcile(state.content);
     } else {
-      // Manual: leave the engine untouched; the view shows the edit as stale
+      // Manual: leave results untouched; the view shows the edit as stale
       // until the user recalculates.
       dispatch({ type: "MARK_STALE" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.content]);
 
-  const recalculate = () => {
-    const engine = engineRef.current!;
-    engine.setRegions(flattenToRegionInputs(state.content));
-    publish(engine.getResult());
-  };
+  const recalculate = () => publishReconcile(state.content);
 
   const recalculateToHere = (id: string) => {
-    const engine = engineRef.current!;
-    engine.setRegions(flattenToRegionInputs(state.content));
-    const fresh = engine.getResult();
+    const { sheet: fresh, tables } = reconcile(state.content);
+    setTableResults(tables);
     const cut = fresh.regions.findIndex((r) => r.id === id);
     if (cut === -1) {
-      publish(fresh);
+      dispatch({ type: "SET_RESULTS", sheet: fresh });
       return;
     }
     // Commit results up to `id`; keep later regions at their previous (stale) value.
@@ -133,10 +139,13 @@ export function EditorProvider({
     );
     const errorCount = regions.filter((r) => r.status === "error").length;
     const hasStale = regions.some((r) => r.status === "stale");
-    publish({
-      regions,
-      errorCount,
-      status: errorCount > 0 ? "error" : hasStale ? "stale" : "current",
+    dispatch({
+      type: "SET_RESULTS",
+      sheet: {
+        regions,
+        errorCount,
+        status: errorCount > 0 ? "error" : hasStale ? "stale" : "current",
+      },
     });
   };
 
@@ -177,11 +186,12 @@ export function EditorProvider({
       setMode,
       rename,
       saveVersion,
+      tableResults,
     }),
-    // `state` is the only changing dependency the consumers read; the callbacks
-    // close over it and are recreated each render alongside it.
+    // `state` and `tableResults` are the changing dependencies consumers read; the
+    // callbacks close over them and are recreated each render alongside them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId],
+    [state, canEdit, worksheetId, tableResults],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;

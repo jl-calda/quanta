@@ -7,8 +7,9 @@
  * so the spreadsheet agrees with the worksheet to the digit.
  */
 import * as XLSX from "xlsx";
+import { evaluateTable } from "@/lib/calc";
 import { walkRegions } from "@/lib/worksheet/flatten";
-import type { RenderOnlyRegion } from "@/lib/worksheet/content";
+import type { TableRegion } from "@/lib/worksheet/content";
 import type { ExportDocumentProps } from "./document";
 import { selectInputs } from "./inputs";
 
@@ -37,14 +38,22 @@ function resultsSheet(props: ExportDocumentProps): Row[] {
   return rows;
 }
 
-function tableRows(region: RenderOnlyRegion): Row[] | null {
-  const data = region as Record<string, unknown>;
-  const cells = Array.isArray(data.cells) ? (data.cells as unknown[][]) : null;
-  const header = Array.isArray(data.header) ? (data.header as string[]) : null;
-  if (!cells || cells.length === 0) return null;
-  const rows: Row[] = [];
-  if (header) rows.push(header);
-  for (const r of cells) rows.push(r.map((c) => (typeof c === "number" ? c : String(c))));
+function tableRows(region: TableRegion): Row[] | null {
+  const cols = region.columns;
+  if (cols.length === 0) return null;
+  // Same pure evaluator as the screen/PDF; numeric cells stay numbers in Excel.
+  const result = evaluateTable(region, {});
+  const rows: Row[] = [cols.map((col) => (col.unit ? `${col.label} [${col.unit}]` : col.label))];
+  region.rows.forEach((_, ri) => {
+    rows.push(
+      cols.map((col, ci) => {
+        const cell = result.cells[ri]?.[ci];
+        if (!cell || cell.error) return cell?.error ? "#error" : "";
+        const num = Number(String(cell.formatted).replace(/,/g, ""));
+        return cell.formatted !== "" && Number.isFinite(num) ? num : cell.formatted;
+      }),
+    );
+  });
   return rows;
 }
 
@@ -80,8 +89,7 @@ export function buildXlsx(props: ExportDocumentProps): Buffer {
     if (region.type !== "table" || region.disabled) continue;
     const rows = tableRows(region);
     if (!rows) continue;
-    const data = region as Record<string, unknown>;
-    const title = typeof data.title === "string" && data.title ? data.title : `Table ${tableIndex}`;
+    const title = region.name || region.eyebrow || `Table ${tableIndex}`;
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), safeSheetName(title, used));
     tableIndex += 1;
   }

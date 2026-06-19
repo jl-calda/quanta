@@ -102,6 +102,57 @@ describe("non-lossy round-trip", () => {
   });
 });
 
+describe("typed table region", () => {
+  const tableDoc = (region: Record<string, unknown>) => ({
+    version: 1,
+    rows: [{ id: "r1", columns: 1, cells: [{ regions: [region] }] }],
+  });
+
+  it("round-trips a typed table (columns, rows, name, per-column unit/format)", () => {
+    const input = tableDoc({
+      id: "t1",
+      type: "table",
+      indent: 0,
+      name: "anchor_schedule",
+      columns: [
+        { key: "mark", label: "Mark" },
+        { key: "len", label: "Length", unit: "mm", format: { decimals: 1 } },
+      ],
+      rows: [["A1", "120"], ["A2", "=B2*2"]],
+    });
+    const out = validateContent(input) as WorksheetContent;
+    const table = out.rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(table.name).toBe("anchor_schedule");
+    expect((table.columns as { key: string }[]).map((c) => c.key)).toEqual(["mark", "len"]);
+    expect(table.rows).toEqual([["A1", "120"], ["A2", "=B2*2"]]);
+  });
+
+  it("migrates a legacy {rows: count, cells, columnUnits} table without nulling the document", () => {
+    const input = tableDoc({
+      id: "t1",
+      type: "table",
+      indent: 0,
+      rows: 2, // legacy numeric count — would fail the typed schema unmigrated
+      columnUnits: ["mm", "kN"],
+      cells: [["a", "b"]],
+    });
+    const out = validateContent(input);
+    expect(out).not.toBeNull();
+    const table = (out as WorksheetContent).rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(table.rows).toEqual([["a", "b"]]); // numeric count overwritten by the string grid
+    expect((table.columns as { unit?: string }[]).map((c) => c.unit)).toEqual(["mm", "kN"]);
+  });
+
+  it("seeds newRegion('table') with editable columns and rows", () => {
+    const r = newRegion("table");
+    expect(r.type).toBe("table");
+    if (r.type === "table") {
+      expect(r.columns.length).toBeGreaterThan(0);
+      expect(r.rows.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("newRegion", () => {
   it("creates a math region with show-steps defaults", () => {
     const r = newRegion("math");

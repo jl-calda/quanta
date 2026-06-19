@@ -5,8 +5,9 @@
  * maps `RegionResult`s back onto region ids for O(1) render lookup. Reading order
  * is what enforces "a name must be defined earlier than it is used".
  */
-import type { RegionInput, RegionResult, SheetResult } from "@/lib/calc";
-import type { Region, Row, WorksheetContent } from "./content";
+import { evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
+import type { RegionInput, RegionResult, SheetResult, TableResult } from "@/lib/calc";
+import type { Region, Row, TableRegion, WorksheetContent } from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -51,6 +52,160 @@ export function mapResults(sheet: SheetResult): Map<string, RegionResult> {
   const map = new Map<string, RegionResult>();
   for (const result of sheet.regions) map.set(result.id, result);
   return map;
+}
+
+/** Every table region, in reading order — drives the provider's table evaluation. */
+export function tableRegions(content: WorksheetContent): TableRegion[] {
+  const out: TableRegion[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "table") out.push(region);
+  }
+  return out;
+}
+
+/**
+ * The worksheet name→value scope from a finished sheet result — the read side of
+ * the table scope-bridge. Uses each definition's RAW value (as the engine itself
+ * scopes it), so a table cell's `toDisplayUnit` behaves exactly like a region's.
+ */
+export function worksheetScopeFromResults(
+  regions: RegionResult[],
+): Record<string, unknown> {
+  const scope: Record<string, unknown> = {};
+  for (const r of regions) {
+    if (r.name && r.status === "current" && r.value !== undefined) scope[r.name] = r.value;
+  }
+  return scope;
+}
+
+/**
+ * Engine input list with table outputs folded back in (the write side of the
+ * scope-bridge). Walks reading order: each math region emits its input, and after
+ * each table its serialized named exports are spliced in as synthetic definitions
+ * (`name := <source>`) so the UNMODIFIED engine resolves them for downstream
+ * regions through its normal reading-order graph. With no `tableExports` this is
+ * exactly {@link flattenToRegionInputs}.
+ */
+export function buildEngineInputs(
+  content: WorksheetContent,
+  tableExports?: Map<string, Record<string, string>>,
+): RegionInput[] {
+  const inputs: RegionInput[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "math") {
+      inputs.push({
+        id: region.id,
+        source: region.source,
+        unit: region.unit,
+        format: region.format,
+        conditional: region.conditional,
+        display: region.display,
+        disabled: region.disabled,
+      });
+    } else if (region.type === "table") {
+      const exp = tableExports?.get(region.id);
+      if (exp) {
+        for (const [name, source] of Object.entries(exp)) {
+          inputs.push({ id: `${SYNTHETIC_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
+        }
+      }
+    }
+  }
+  return inputs;
+}
+
+/* ------------------------------------------------------------------ *
+ * Scope-bridge settle loop (Functional Brief §6.3)
+ *
+ * Pure and engine-agnostic so it is unit-testable: tables read the worksheet
+ * scope from the engine's results and fold their named outputs back as synthetic
+ * definitions the UNMODIFIED engine evaluates. We iterate to a fixpoint so a
+ * table→downstream-math chain settles, bounded by a hard cap and an oscillation
+ * guard (a repeated export snapshot) so it can never spin.
+ * ------------------------------------------------------------------ */
+
+const MAX_SETTLE_ITERS = 8;
+const SYNTHETIC_PREFIX = "tbl:";
+
+/** The minimal slice of `CalcEngine` the settle loop drives. */
+export interface TableEngine {
+  setRegions(inputs: RegionInput[]): void;
+  getResult(): SheetResult;
+}
+
+/** Deterministic snapshot of per-table serialized exports, for the settle guard. */
+function snapshotExports(map: Map<string, Record<string, string>>): string {
+  const obj: Record<string, Record<string, string>> = {};
+  for (const key of [...map.keys()].sort()) {
+    const inner: Record<string, string> = {};
+    const src = map.get(key)!;
+    for (const name of Object.keys(src).sort()) inner[name] = src[name];
+    obj[key] = inner;
+  }
+  return JSON.stringify(obj);
+}
+
+/** Drop synthetic table-export regions so results reflect real regions only. */
+function stripSynthetic(sheet: SheetResult): SheetResult {
+  const regions = sheet.regions.filter((r) => !r.id.startsWith(SYNTHETIC_PREFIX));
+  if (regions.length === sheet.regions.length) return sheet;
+  const errorCount = regions.filter((r) => r.status === "error").length;
+  const hasStale = regions.some((r) => r.status === "stale");
+  return { regions, errorCount, status: errorCount > 0 ? "error" : hasStale ? "stale" : "current" };
+}
+
+/**
+ * Run the engine + tables to a settled fixpoint. Tables read the worksheet scope
+ * from the engine's results; their serialized named exports are folded back as
+ * synthetic definitions and the engine re-runs, until the export snapshot stops
+ * changing (or the cap / oscillation guard trips). Returns the real-region sheet
+ * (synthetic defs stripped) and the per-table results, keyed by region id.
+ */
+export function settleTables(
+  content: WorksheetContent,
+  engine: TableEngine,
+): { sheet: SheetResult; tables: Map<string, TableResult> } {
+  const specs = tableRegions(content);
+  if (specs.length === 0) {
+    engine.setRegions(buildEngineInputs(content));
+    return { sheet: engine.getResult(), tables: new Map() };
+  }
+
+  let exportsBySource = new Map<string, Record<string, string>>();
+  let exportsRaw: Record<string, unknown> = {};
+  let sheet = engine.getResult();
+  let tables = new Map<string, TableResult>();
+  const seen = new Set<string>();
+
+  for (let iter = 0; iter < MAX_SETTLE_ITERS; iter += 1) {
+    engine.setRegions(buildEngineInputs(content, exportsBySource));
+    sheet = engine.getResult();
+    const scope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+
+    tables = new Map();
+    const nextRaw: Record<string, unknown> = {};
+    const nextBySource = new Map<string, Record<string, string>>();
+    for (const spec of specs) {
+      const result = evaluateTable(spec, scope, SI_SYSTEM);
+      tables.set(spec.id, result);
+      const sources: Record<string, string> = {};
+      for (const [name, value] of Object.entries(result.exports)) {
+        nextRaw[name] = value;
+        const serialized = serializeForScope(value);
+        if (serialized !== null) sources[name] = serialized;
+      }
+      if (Object.keys(sources).length > 0) nextBySource.set(spec.id, sources);
+    }
+
+    const snapshot = snapshotExports(nextBySource);
+    const settled = snapshot === snapshotExports(exportsBySource);
+    exportsBySource = nextBySource;
+    exportsRaw = nextRaw;
+    if (settled || seen.has(snapshot)) break; // fixpoint or oscillation guard
+    seen.add(snapshot);
+  }
+
+  return { sheet: stripSynthetic(sheet), tables };
 }
 
 /** All region ids in reading order (every type), e.g. for selection navigation. */

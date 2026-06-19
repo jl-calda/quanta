@@ -13,6 +13,7 @@ import {
   newRegion,
   singleColumnRow,
   type Cell,
+  type CellAlign,
   type CondRule,
   type DisplayFlags,
   type Region,
@@ -21,6 +22,7 @@ import {
   type Row,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
+import { colToLetter } from "@/lib/calc";
 import { findRegion, readingOrderIds } from "@/lib/worksheet/flatten";
 
 export type CalcMode = "auto" | "manual";
@@ -81,6 +83,17 @@ export interface RegionPatch {
   title?: string;
   collapsed?: boolean;
   disabled?: boolean;
+  /** Table named range (the chip + worksheet export). */
+  name?: string;
+}
+
+/** Inspector-editable table-column properties (Object.assigned onto the column). */
+export interface TableColumnPatch {
+  label?: string;
+  unit?: string;
+  align?: CellAlign;
+  format?: ResultFormat;
+  conditional?: CondRule[];
 }
 
 export type EditorAction =
@@ -93,6 +106,12 @@ export type EditorAction =
   | { type: "EDIT_SOURCE"; id: string; source: string }
   | { type: "EDIT_TEXT"; id: string; text: string }
   | { type: "SET_REGION_PROP"; id: string; patch: RegionPatch }
+  | { type: "EDIT_TABLE_CELL"; id: string; r: number; c: number; source: string }
+  | { type: "ADD_TABLE_ROW"; id: string }
+  | { type: "DELETE_TABLE_ROW"; id: string; r: number }
+  | { type: "ADD_TABLE_COLUMN"; id: string }
+  | { type: "DELETE_TABLE_COLUMN"; id: string; key: string }
+  | { type: "SET_TABLE_COLUMN"; id: string; key: string; patch: TableColumnPatch }
   | {
       type: "INSERT_REGION";
       regionType: RegionType;
@@ -363,6 +382,69 @@ export function editorReducer(
         if (!region) return;
         // The patch is keyed to the region's own props; assign the defined keys.
         const target = region as Record<string, unknown>;
+        for (const [key, value] of Object.entries(action.patch)) {
+          if (value !== undefined) target[key] = value;
+        }
+      });
+      return touched(state, content);
+    }
+
+    /* ---- table edits ---- */
+    case "EDIT_TABLE_CELL": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const width = Math.max(region.columns.length, 1);
+        while (region.rows.length <= action.r) region.rows.push(Array(width).fill(""));
+        const row = region.rows[action.r];
+        while (row.length <= action.c) row.push("");
+        row[action.c] = action.source;
+      });
+      return touched(state, content);
+    }
+    case "ADD_TABLE_ROW": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        region.rows.push(Array(Math.max(region.columns.length, 1)).fill(""));
+      });
+      return touched(state, content);
+    }
+    case "DELETE_TABLE_ROW": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (action.r >= 0 && action.r < region.rows.length) region.rows.splice(action.r, 1);
+      });
+      return touched(state, content);
+    }
+    case "ADD_TABLE_COLUMN": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        region.columns.push({ key: newId(), label: `Column ${colToLetter(region.columns.length)}` });
+        for (const row of region.rows) row.push("");
+      });
+      return touched(state, content);
+    }
+    case "DELETE_TABLE_COLUMN": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const ci = region.columns.findIndex((col) => col.key === action.key);
+        if (ci === -1) return;
+        region.columns.splice(ci, 1);
+        for (const row of region.rows) if (ci < row.length) row.splice(ci, 1);
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_COLUMN": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const column = region.columns.find((col) => col.key === action.key);
+        if (!column) return;
+        const target = column as Record<string, unknown>;
         for (const [key, value] of Object.entries(action.patch)) {
           if (value !== undefined) target[key] = value;
         }

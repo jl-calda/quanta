@@ -276,3 +276,16 @@
     box-shadow: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Table region — gutter row-delete affordance (reveal on row hover)
+ * ------------------------------------------------------------------ */
+
+.tbl-gutter-del {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.tbl-gutter:hover .tbl-gutter-del {
+  opacity: 1;
+  background: var(--surface-chrome);
+}

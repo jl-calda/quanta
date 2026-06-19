@@ -100,7 +100,43 @@ const textRegionSchema = z.object({
 const renderOnlyRegion = <T extends string>(type: T) =>
   z.object({ ...regionBase, type: z.literal(type) }).passthrough();
 
-const tableRegionSchema = renderOnlyRegion("table");
+/*
+ * Table / spreadsheet region — fully typed. Cells hold raw sources (`rows`);
+ * values are always derived by the engine, never persisted. `sort`/`filter` are
+ * typed-but-inert seams for the deferred follow-up. Field names deliberately
+ * avoid the old render-only `{header, cells, columnUnits}` payload, and
+ * `columns`/`rows` default to `[]`, so a legacy table still validates (its old
+ * keys pass through) instead of failing the union and wiping the document.
+ */
+const cellAlignSchema = z.enum(["left", "center", "right"]);
+const tableColumnSchema = z.object({
+  key: z.string(),
+  label: z.string().default(""),
+  unit: z.string().optional(),
+  align: cellAlignSchema.optional(),
+  width: z.number().optional(),
+  format: resultFormatSchema.optional(),
+  conditional: z.array(condRuleSchema).optional(),
+});
+const tableSortSchema = z.object({ key: z.string(), dir: z.enum(["asc", "desc"]) });
+const tableFilterSchema = z.object({
+  key: z.string(),
+  op: condOpSchema,
+  value: z.union([z.number(), z.string()]),
+});
+const tableRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("table"),
+    name: z.string().optional(),
+    eyebrow: z.string().optional(),
+    columns: z.array(tableColumnSchema).default([]),
+    rows: z.array(z.array(z.string())).default([]),
+    ranges: z.record(z.string()).optional(),
+    sort: tableSortSchema.optional(),
+    filter: tableFilterSchema.optional(),
+  })
+  .passthrough();
 const plotRegionSchema = renderOnlyRegion("plot");
 const imageRegionSchema = renderOnlyRegion("image");
 const controlRegionSchema = renderOnlyRegion("control");
@@ -153,7 +189,12 @@ export type Notation = z.infer<typeof notationSchema>;
 export type Radix = z.infer<typeof radixSchema>;
 export type ResultFormat = z.infer<typeof resultFormatSchema>;
 export type CondRule = z.infer<typeof condRuleSchema>;
+export type CondOp = z.infer<typeof condOpSchema>;
 export type DisplayFlags = z.infer<typeof displayFlagsSchema>;
+export type CellAlign = z.infer<typeof cellAlignSchema>;
+export type TableColumn = z.infer<typeof tableColumnSchema>;
+export type TableSort = z.infer<typeof tableSortSchema>;
+export type TableFilter = z.infer<typeof tableFilterSchema>;
 
 export interface RegionBase {
   id: string;
@@ -187,13 +228,30 @@ export interface AreaRegion extends RegionBase {
   [key: string]: unknown;
 }
 
-/** Render-only payloads keep an open shape so nothing is lost on round-trip. */
-export interface RenderOnlyRegion extends RegionBase {
-  type: "table" | "plot" | "image" | "control" | "include" | "solve";
+export interface TableRegion extends RegionBase {
+  type: "table";
+  /** Named range for the whole grid; exported to the worksheet scope. */
+  name?: string;
+  /** Present-mode title (defaults to `name`). */
+  eyebrow?: string;
+  columns: TableColumn[];
+  /** Row-major raw cell sources; `"=…"` is a formula, else a literal. */
+  rows: string[][];
+  /** Named A1 sub-ranges, e.g. `{ anchor_db: "A2:C5" }`. */
+  ranges?: Record<string, string>;
+  /** Typed-but-inert seams (sort/filter ship in the follow-up). */
+  sort?: TableSort;
+  filter?: TableFilter;
   [key: string]: unknown;
 }
 
-export type Region = MathRegion | TextRegion | AreaRegion | RenderOnlyRegion;
+/** Render-only payloads keep an open shape so nothing is lost on round-trip. */
+export interface RenderOnlyRegion extends RegionBase {
+  type: "plot" | "image" | "control" | "include" | "solve";
+  [key: string]: unknown;
+}
+
+export type Region = MathRegion | TextRegion | TableRegion | AreaRegion | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
 export interface Cell {
@@ -251,6 +309,20 @@ export function newRegion(type: RegionType): Region {
       return { ...base, type: "text", text: "" };
     case "area":
       return { ...base, type: "area", title: "Area", collapsed: false, regions: [] };
+    case "table":
+      return {
+        ...base,
+        type: "table",
+        columns: [
+          { key: newId(), label: "Column A" },
+          { key: newId(), label: "Column B" },
+        ],
+        rows: [
+          ["", ""],
+          ["", ""],
+          ["", ""],
+        ],
+      };
     default:
       return { ...base, type } as RenderOnlyRegion;
   }
@@ -274,12 +346,64 @@ function normalizeRow(row: Row): Row {
 }
 
 /**
+ * Migrate any legacy render-only table payload (`{header, cells, columnUnits,
+ * rows: <count>}`) to the typed shape by DERIVING `columns`/`rows`, while keeping
+ * the old keys via passthrough. Crucially this overwrites a numeric `rows` count
+ * with the string-grid `rows`, so the typed schema validates instead of failing
+ * the whole document. Defensive on untrusted JSON; typed tables pass through.
+ */
+function migrateLegacyTables(json: unknown): unknown {
+  if (!json || typeof json !== "object") return json;
+  const root = json as Record<string, unknown>;
+  if (!Array.isArray(root.rows)) return json;
+  return {
+    ...root,
+    rows: root.rows.map((row) => {
+      if (!row || typeof row !== "object") return row;
+      const rw = row as Record<string, unknown>;
+      if (!Array.isArray(rw.cells)) return row;
+      return {
+        ...rw,
+        cells: rw.cells.map((cell) => {
+          if (!cell || typeof cell !== "object") return cell;
+          const cl = cell as Record<string, unknown>;
+          if (!Array.isArray(cl.regions)) return cell;
+          return { ...cl, regions: cl.regions.map(migrateRegionTable) };
+        }),
+      };
+    }),
+  };
+}
+
+function migrateRegionTable(region: unknown): unknown {
+  if (!region || typeof region !== "object") return region;
+  const r = region as Record<string, unknown>;
+  if (r.type === "area" && Array.isArray(r.regions)) {
+    return { ...r, regions: r.regions.map(migrateRegionTable) };
+  }
+  if (r.type !== "table") return region;
+  // Already typed: `rows` is an array of arrays (or empty).
+  if (Array.isArray(r.rows) && (r.rows.length === 0 || Array.isArray(r.rows[0]))) return region;
+  const header = Array.isArray(r.header) ? r.header : [];
+  const units = Array.isArray(r.columnUnits) ? r.columnUnits : [];
+  const legacyCells = Array.isArray(r.cells) ? (r.cells as unknown[]) : [];
+  const width = Math.max(header.length, units.length, 0, ...legacyCells.map((row) => (Array.isArray(row) ? row.length : 0)));
+  const columns = Array.from({ length: width }, (_, i) => ({
+    key: `c${i}`,
+    label: header[i] != null ? String(header[i]) : "",
+    ...(units[i] != null && String(units[i]) ? { unit: String(units[i]) } : {}),
+  }));
+  const rows = legacyCells.map((row) => (Array.isArray(row) ? row.map((c) => String(c)) : []));
+  return { ...r, columns: Array.isArray(r.columns) ? r.columns : columns, rows };
+}
+
+/**
  * Parse untrusted JSON (from the DB) into a valid content tree. Never throws
  * into the UI — on any failure it falls back to an empty document so the editor
  * still mounts. Layout invariants (`cells.length === columns`) are repaired.
  */
 export function parseContent(json: unknown): WorksheetContent {
-  const result = contentSchema.safeParse(json);
+  const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return emptyContent();
   const data = result.data as WorksheetContent;
   return { version: 1, rows: data.rows.map(normalizeRow) };
@@ -287,7 +411,7 @@ export function parseContent(json: unknown): WorksheetContent {
 
 /** Validate a content tree before persisting; returns the parsed value or null. */
 export function validateContent(json: unknown): WorksheetContent | null {
-  const result = contentSchema.safeParse(json);
+  const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return null;
   const data = result.data as WorksheetContent;
   return { version: 1, rows: data.rows.map(normalizeRow) };
