@@ -15,12 +15,14 @@
  */
 import type { ReactNode } from "react";
 import katex from "katex";
-import type { RegionResult } from "@/lib/calc";
+import { evaluateTable, type RegionResult } from "@/lib/calc";
 import {
   DEFAULT_DISPLAY,
   type MathRegion,
   type Region,
   type RenderOnlyRegion,
+  type TableColumn,
+  type TableRegion,
   type TextRegion,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
@@ -259,13 +261,14 @@ function TextBlock({ region }: { region: TextRegion }): ReactNode {
   );
 }
 
-function TableBlock({ region }: { region: RenderOnlyRegion }): ReactNode {
+function TableBlock({ region }: { region: TableRegion }): ReactNode {
   if (region.disabled) return null;
-  const data = region as Record<string, unknown>;
-  const cells = Array.isArray(data.cells) ? (data.cells as unknown[][]) : null;
-  const header = Array.isArray(data.header) ? (data.header as string[]) : null;
-  if (!cells || cells.length === 0) return null;
-  const cols = header?.length ?? cells[0]?.length ?? 0;
+  const cols = region.columns;
+  if (cols.length === 0) return null;
+  // Pure, deterministic — same evaluator the editor uses; runs in Node for export.
+  const result = evaluateTable(region, {});
+  const ncols = cols.length;
+  const align = (col: TableColumn) => col.align ?? (col.unit || col.format ? "right" : "left");
 
   return (
     <div
@@ -279,47 +282,50 @@ function TableBlock({ region }: { region: RenderOnlyRegion }): ReactNode {
       }}
     >
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        {header && (
-          <thead>
-            <tr style={{ background: CHROME }}>
-              {header.map((h, i) => (
-                <th
-                  key={i}
-                  style={{
-                    padding: "5px 9px",
-                    font: "600 8px/1 var(--font-sans)",
-                    letterSpacing: "0.04em",
-                    textTransform: "uppercase",
-                    color: MUTED,
-                    textAlign: i ? "right" : "left",
-                    borderRight: i < cols - 1 ? `1px solid ${HAIRLINE}` : "none",
-                    borderBottom: `1px solid ${STRONG_RULE}`,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-        )}
+        <thead>
+          <tr style={{ background: CHROME }}>
+            {cols.map((col, i) => (
+              <th
+                key={col.key}
+                style={{
+                  padding: "5px 9px",
+                  font: "600 8px/1 var(--font-sans)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  color: MUTED,
+                  textAlign: align(col),
+                  borderRight: i < ncols - 1 ? `1px solid ${HAIRLINE}` : "none",
+                  borderBottom: `1px solid ${STRONG_RULE}`,
+                }}
+              >
+                {col.label}
+                {col.unit ? ` [${col.unit}]` : ""}
+              </th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
-          {cells.map((row, ri) => (
+          {region.rows.map((_, ri) => (
             <tr key={ri} style={{ borderTop: ri ? `1px solid ${ROW_RULE}` : "none" }}>
-              {row.map((c, ci) => (
-                <td
-                  key={ci}
-                  style={{
-                    padding: "5px 9px",
-                    font: "10.5px/1.2 var(--font-mono)",
-                    color: INK,
-                    textAlign: ci ? "right" : "left",
-                    fontWeight: ci === 0 ? 600 : 400,
-                    borderRight: ci < cols - 1 ? `1px solid ${ROW_RULE}` : "none",
-                  }}
-                >
-                  {String(c)}
-                </td>
-              ))}
+              {cols.map((col, ci) => {
+                const cell = result.cells[ri]?.[ci];
+                return (
+                  <td
+                    key={col.key}
+                    style={{
+                      padding: "5px 9px",
+                      font: "10.5px/1.2 var(--font-mono)",
+                      color: cell?.style?.color ?? INK,
+                      textAlign: align(col),
+                      fontWeight: ci === 0 ? 600 : 400,
+                      borderRight: ci < ncols - 1 ? `1px solid ${ROW_RULE}` : "none",
+                    }}
+                  >
+                    {cell?.error ? "#error" : cell?.formatted ?? ""}
+                    {cell?.style?.label ? ` ${cell.style.label}` : ""}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

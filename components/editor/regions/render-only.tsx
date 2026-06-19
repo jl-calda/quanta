@@ -1,7 +1,10 @@
 "use client";
 
-import type { RenderOnlyRegion } from "@/lib/worksheet/content";
+import { useMemo } from "react";
+import { evaluateTable, type TableSpec } from "@/lib/calc";
+import type { RenderOnlyRegion, TableRegion } from "@/lib/worksheet/content";
 import { Icon, type IconName } from "../icons";
+import { TablePresent } from "./table-present";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -32,59 +35,18 @@ function Placeholder({ icon, label, hint }: { icon: IconName; label: string; hin
   );
 }
 
-export function TableRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {
-  const data = region as Record<string, unknown>;
-  const cells = Array.isArray(data.cells) ? (data.cells as unknown[][]) : null;
-  const header = Array.isArray(data.header) ? (data.header as string[]) : null;
-  const units = Array.isArray(data.columnUnits) ? (data.columnUnits as string[]) : null;
-
-  if (!cells || cells.length === 0) {
-    return <Placeholder icon="table" label="Table" hint="Add rows and columns from the inspector." />;
+/**
+ * Read-only table for snapshots/history (no EditorProvider). Evaluates the typed
+ * table with the pure engine and renders the shared clean read mode. Worksheet
+ * cross-references aren't resolved here (no live scope), so such cells show their
+ * inline error — acceptable for a static snapshot; the live editor binds scope.
+ */
+export function TableRegionView({ region }: RegionRenderProps<TableRegion>) {
+  const result = useMemo(() => evaluateTable(region as TableSpec, {}), [region]);
+  if (region.columns.length === 0) {
+    return <Placeholder icon="table" label="Table" hint="Add columns and rows from the inspector." />;
   }
-
-  const cell: React.CSSProperties = {
-    padding: "5px 12px",
-    font: "12.5px/1.3 var(--font-mono)",
-    color: "var(--text-primary)",
-    borderRight: "1px solid var(--border-hairline)",
-    textAlign: "right",
-  };
-  return (
-    <div style={{ border: "1px solid var(--border-strong)", borderRadius: "var(--radius-sm)", overflow: "hidden", maxWidth: 560 }}>
-      <table style={{ borderCollapse: "collapse", width: "100%", background: "var(--surface-raised)" }}>
-        {header && (
-          <thead>
-            <tr style={{ background: "var(--surface-chrome)", borderBottom: "1px solid var(--border-strong)" }}>
-              {header.map((h, i) => (
-                <th
-                  key={i}
-                  style={{ ...cell, font: "600 11px/1 var(--font-sans)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-muted)", padding: "7px 12px" }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-            {units && (
-              <tr style={{ borderBottom: "1px solid var(--border-hairline)" }}>
-                {units.map((u, i) => (
-                  <td key={i} style={{ ...cell, font: "11px/1 var(--font-mono)", color: "var(--text-muted)", padding: "3px 12px" }}>{u}</td>
-                ))}
-              </tr>
-            )}
-          </thead>
-        )}
-        <tbody>
-          {cells.map((row, ri) => (
-            <tr key={ri} style={{ borderBottom: ri < cells.length - 1 ? "1px solid var(--border-hairline)" : "none" }}>
-              {row.map((v, ci) => (
-                <td key={ci} style={cell}>{String(v)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <TablePresent region={region} result={result} />;
 }
 
 export function PlotRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {

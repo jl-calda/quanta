@@ -1,12 +1,21 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode } from "react";
 import { Badge, IconButton, Input, Select, Switch } from "@/components/ds";
 import { findRegion } from "@/lib/worksheet/flatten";
-import type { MathRegion, Notation, Radix, Region, TextRegion } from "@/lib/worksheet/content";
+import type {
+  CellAlign,
+  MathRegion,
+  Notation,
+  Radix,
+  Region,
+  TableColumn,
+  TableRegion,
+  TextRegion,
+} from "@/lib/worksheet/content";
 import { DEFAULT_DISPLAY } from "@/lib/worksheet/content";
 import { useEditor } from "./state/editor-provider";
-import type { RegionPatch } from "./state/editor-reducer";
+import type { EditorAction, RegionPatch, TableColumnPatch } from "./state/editor-reducer";
 import { Icon } from "./icons";
 
 /**
@@ -49,6 +58,7 @@ export function Inspector() {
         <div className="scroll-y" style={{ flex: 1, minHeight: 0, pointerEvents: canEdit ? "auto" : "none", opacity: canEdit ? 1 : 0.7 }}>
           {region.type === "math" && <MathInspector region={region} set={set} />}
           {region.type === "text" && <TextInspector region={region} set={set} />}
+          {region.type === "table" && <TableInspector region={region} set={set} dispatch={dispatch} />}
           <Group eyebrow="Region">
             <Row label="Show border">
               <Switch checked={!!region.border} onChange={(e) => set({ border: e.target.checked })} />
@@ -154,6 +164,124 @@ function TextInspector({ region, set }: { region: TextRegion; set: (p: RegionPat
     </Group>
   );
 }
+
+function TableInspector({
+  region,
+  set,
+  dispatch,
+}: {
+  region: TableRegion;
+  set: (p: RegionPatch) => void;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const setCol = (key: string, patch: TableColumnPatch) =>
+    dispatch({ type: "SET_TABLE_COLUMN", id: region.id, key, patch });
+  return (
+    <>
+      <Group eyebrow="Table">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Named range</span>
+          <Input mono defaultValue={region.name ?? ""} placeholder="anchor_schedule" onBlur={(e) => set({ name: e.target.value || undefined })} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Read-mode title</span>
+          <Input defaultValue={region.eyebrow ?? ""} placeholder={region.name ?? "Optional title"} onBlur={(e) => set({ eyebrow: e.target.value || undefined })} />
+        </div>
+        <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          Cells hold values or <code style={{ fontFamily: "var(--font-mono)" }}>=formulas</code> with A1 (
+          <code style={{ fontFamily: "var(--font-mono)" }}>A2</code>), named-range, and worksheet references.
+        </div>
+      </Group>
+
+      <Group eyebrow="Columns">
+        {region.columns.map((col) => (
+          <ColumnEditor
+            key={col.key}
+            col={col}
+            setCol={setCol}
+            onDelete={() => dispatch({ type: "DELETE_TABLE_COLUMN", id: region.id, key: col.key })}
+            canDelete={region.columns.length > 1}
+          />
+        ))}
+        <button
+          onClick={() => dispatch({ type: "ADD_TABLE_COLUMN", id: region.id })}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, alignSelf: "flex-start", border: "none", background: "none", color: "var(--accent)", font: "500 12px/1 var(--font-sans)", cursor: "pointer", padding: 0 }}
+        >
+          <Icon name="plusSm" size={13} /> Add column
+        </button>
+      </Group>
+    </>
+  );
+}
+
+const FAIL_RULE = { op: ">" as const, value: 1, style: { color: "var(--status-error)", fill: "var(--status-error-bg)", label: "FAIL" } };
+const PASS_RULE = { op: "<=" as const, value: 1, style: { color: "var(--status-pass)", fill: "var(--status-pass-bg)", label: "OK" } };
+
+function ColumnEditor({
+  col,
+  setCol,
+  onDelete,
+  canDelete,
+}: {
+  col: TableColumn;
+  setCol: (key: string, patch: TableColumnPatch) => void;
+  onDelete: () => void;
+  canDelete: boolean;
+}) {
+  const fmt = col.format ?? {};
+  const rules = col.conditional ?? [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "9px 10px", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-md)", background: "var(--surface-raised)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Input defaultValue={col.label} placeholder="Label" onBlur={(e) => setCol(col.key, { label: e.target.value })} containerStyle={{ flex: 1 }} />
+        <div style={{ width: 66 }}>
+          <Input mono defaultValue={col.unit ?? ""} placeholder="unit" onBlur={(e) => setCol(col.key, { unit: e.target.value || undefined })} />
+        </div>
+        <IconButton label="Delete column" size="sm" disabled={!canDelete} onClick={onDelete}>
+          <Icon name="x" size={14} />
+        </IconButton>
+      </div>
+      <Row label="Align">
+        <Segmented options={["left", "center", "right"]} value={col.align ?? ""} set={(v) => setCol(col.key, { align: v as CellAlign })} />
+      </Row>
+      <Row label="Decimals">
+        <Stepper value={fmt.decimals ?? 2} set={(v) => setCol(col.key, { format: { ...fmt, decimals: v } })} />
+      </Row>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {rules.map((rule, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ font: "11.5px/1.3 var(--font-mono)", color: "var(--text-primary)", flex: 1 }}>
+              if {rule.op} {String(rule.value)} → {rule.style.label}
+            </span>
+            <IconButton label="Remove rule" size="sm" onClick={() => setCol(col.key, { conditional: rules.filter((_, j) => j !== i) })}>
+              <Icon name="varsX" size={14} />
+            </IconButton>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => setCol(col.key, { conditional: [...rules, FAIL_RULE] })} style={ruleBtn}>
+            <Icon name="plusSm" size={12} /> Fail &gt; rule
+          </button>
+          <button onClick={() => setCol(col.key, { conditional: [...rules, PASS_RULE] })} style={ruleBtn}>
+            <Icon name="plusSm" size={12} /> Pass ≤ rule
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ruleBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  border: "none",
+  background: "none",
+  color: "var(--accent)",
+  font: "500 11.5px/1 var(--font-sans)",
+  cursor: "pointer",
+  padding: 0,
+};
 
 /* ---- inspector primitives ---- */
 

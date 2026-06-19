@@ -19,8 +19,8 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import type { RegionResult } from "@/lib/calc";
-import type { Region, RenderOnlyRegion } from "@/lib/worksheet/content";
+import { evaluateTable, type RegionResult } from "@/lib/calc";
+import type { Region, TableRegion } from "@/lib/worksheet/content";
 import type { ExportDocumentProps } from "./document";
 import { selectInputs } from "./inputs";
 
@@ -44,38 +44,41 @@ function mathParagraph(region: Extract<Region, { type: "math" }>, result?: Regio
   return new Paragraph({ children, spacing: { after: 60 } });
 }
 
-function dataTable(region: RenderOnlyRegion): Table | null {
-  const data = region as Record<string, unknown>;
-  const cells = Array.isArray(data.cells) ? (data.cells as unknown[][]) : null;
-  const header = Array.isArray(data.header) ? (data.header as string[]) : null;
-  if (!cells || cells.length === 0) return null;
+function dataTable(region: TableRegion): Table | null {
+  const cols = region.columns;
+  if (cols.length === 0) return null;
+  // Same pure evaluator as the screen/PDF — values match the worksheet exactly.
+  const result = evaluateTable(region, {});
 
-  const rows: TableRow[] = [];
-  if (header) {
+  const rows: TableRow[] = [
+    new TableRow({
+      tableHeader: true,
+      children: cols.map(
+        (col) =>
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: col.unit ? `${col.label} [${col.unit}]` : col.label, bold: true })],
+              }),
+            ],
+          }),
+      ),
+    }),
+  ];
+  region.rows.forEach((_, ri) => {
     rows.push(
       new TableRow({
-        tableHeader: true,
-        children: header.map(
-          (h) =>
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
-            }),
-        ),
+        children: cols.map((col, ci) => {
+          const cell = result.cells[ri]?.[ci];
+          const text = cell?.error ? "#error" : cell?.formatted ?? "";
+          const label = cell?.style?.label ? ` ${cell.style.label}` : "";
+          return new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: text + label, font: "Consolas" })] })],
+          });
+        }),
       }),
     );
-  }
-  for (const row of cells) {
-    rows.push(
-      new TableRow({
-        children: row.map(
-          (c) =>
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: String(c), font: "Consolas" })] })],
-            }),
-        ),
-      }),
-    );
-  }
+  });
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows });
 }
 

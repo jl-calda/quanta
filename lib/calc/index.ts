@@ -34,6 +34,22 @@ export { buildSubstitutedTex } from "./show-steps";
 export { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 export { math } from "./math";
 
+// Table / spreadsheet region (pure, engine-native — see ./table, ./lookups).
+export {
+  evaluateTable,
+  serializeForScope,
+  colToLetter,
+  letterToCol,
+  parseA1,
+  cellAddress,
+  type TableSpec,
+  type TableColumnSpec,
+  type TableResult,
+  type TableCellResult,
+  type TableCellKind,
+} from "./table";
+export { Vlookup, Hlookup, Index, Match, Interp, LOOKUP_FUNCTIONS } from "./lookups";
+
 export type {
   CalcResult,
   CalcOk,

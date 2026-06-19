@@ -2,6 +2,68 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Table / spreadsheet region (Func §6.3 + Claude Design `table-region.html`)
+
+- **Engine connection = provider scope-bridge; `graph.ts`/`recalc.ts` untouched.** All
+  table math lives in a new pure, deterministic `lib/calc/table.ts` (`evaluateTable(table,
+  externalScope?)`) beside the engine. Tables READ worksheet names from the live
+  `state.results` (`worksheetScopeFromResults`), and their named outputs FOLD BACK as
+  *synthetic definitions* (`name := <serialized>`) the unmodified engine evaluates —
+  `buildEngineInputs(content, exportsByTable)` splices them in at each table's reading-order
+  position, so downstream regions resolve them through the engine's existing graph with **no
+  core change** (`git diff` shows zero lines in `graph.ts`/`recalc.ts`).
+- **The settle loop is a pure, bounded fixpoint (`settleTables` in `flatten.ts`).** It re-runs
+  engine→tables until the per-table export snapshot stops changing, bounded by a hard cap
+  (`MAX_SETTLE_ITERS = 8`) **and** an oscillation guard (a repeated snapshot breaks) so a
+  cross-boundary cycle can never spin. Extracted from the provider so it is unit-tested with a
+  real `CalcEngine` (fold-back ordering, worksheet-name read, bounded termination). The
+  provider just calls it; published results strip the synthetic `tbl:*` regions.
+- **Fold-back serialization is lossless for the cases that matter.** `serializeForScope`:
+  `String(number)` (IEEE round-trips exactly), a Unit → `"<magnitude> <unit>"`, arrays/matrices
+  nest; anything else → `null` and the provider skips that export (so a partial/errored grid
+  never injects a broken synthetic def). Other tables receive the *raw* export values via the
+  shared scope (no serialization round-trip); only the math engine needs the source form.
+- **Lookups are pure and injected as cell-scope functions** (`lib/calc/lookups.ts`:
+  Vlookup/Hlookup/Index/Match/Interp), unit-aware (compare by `equalBase` then convert into the
+  key's unit), raising typed `CalcError`s. Injecting them into each cell's `node.evaluate(scope)`
+  is exactly how the engine resolves callees, so the shared `math` instance stays untouched.
+- **`TableRegion` is fully typed (not render-only passthrough), with a legacy migration.** The
+  schema adds `columns`/`rows` (raw cell *sources*, never persisted values) + `name`/`eyebrow`/
+  `ranges`. Because the old render-only payload stored `rows` as a *count* (a number),
+  `parseContent`/`validateContent` run `migrateLegacyTables` first — deriving typed
+  `columns`/`rows` from `{header, cells, columnUnits}` and overwriting the numeric `rows` —
+  otherwise one bad table would fail the discriminated union and **null the whole document**.
+  New fields default to `[]`, and legacy keys still round-trip via `.passthrough()`.
+- **Spreadsheet semantics diverge from the worksheet deliberately.** Inside a table, cells may
+  reference each other in ANY direction (only a true cycle errors), unlike worksheet regions
+  which must be defined earlier in reading order; a small local Kahn sort + cycle naming lives
+  in `table.ts` (not a `graph.ts` change). A1 letters derive from **column order**, so moving a
+  column shifts its letter — standard spreadsheet behaviour, documented. A column unit attaches
+  to bare numeric literals (`120` in a `mm` column → `120 mm`) and is the display target for
+  results, but never fabricates dimensions on a dimensionless formula result.
+- **Cells show the magnitude only; the unit lives in the column header** (matching the mockup).
+  The raw unit-bearing value is kept for calc + exports; `displayCell` renders the magnitude in
+  the column's unit (full `formatValue` only for unit-less columns whose value carries its own
+  unit). Conditional formatting reuses `applyConditional` on the *display* value.
+- **Edit chrome shows while the region is the active selection; otherwise the clean read mode.**
+  `selected && canEdit` → the gridded editor (named-range chip, A1 reference box, Geist-Mono
+  formula bar, per-cell selection, conditional tints/tags, add row/column); else the banded
+  present table (eyebrow, 1.5px ink rule, no gridlines). The read view is a provider-free
+  `table-present.tsx` shared with the history/export renderers (which evaluate the table with
+  the pure engine; snapshots have no live worksheet scope, so cross-region refs there show an
+  inline error — acceptable for a static snapshot). The formula bar is a plain mono `<input>`,
+  **not** MathLive — the math-entry seams are left untouched.
+- **Sort/filter and true array/spill are deferred but typed-but-inert.** `TableSort`/
+  `TableFilter` types + `sort?`/`filter?` fields compile and round-trip, and A1 **range**
+  references (`B2:B5`, named ranges) already resolve to matrices for lookups, so the follow-up
+  adds only sort/filter UI + spill *output* with no refactor. No dead UI ships (the header
+  sort/filter glyphs are omitted this pass — they return with the feature).
+- **Table cell edits persist through the existing autosave path** (`SET_REGION_PROP`-style
+  dedicated `EDIT_TABLE_CELL`/`ADD_*`/`DELETE_*`/`SET_TABLE_COLUMN` reducer actions → `touched()`
+  → the Zod-validated, RLS-gated `saveWorksheet`). No new entity, table, action, or migration —
+  content stays in `worksheets.content` JSONB. Table-cell errors surface in-cell; the worksheet
+  error count stays math-only (a documented, minor fidelity choice).
+
 ## Canvas — structural editing (Func §5.4 + Claude Design `canvas.html`)
 
 - **`selectedId` stays the single primary selection; `selectedIds` is a parallel
