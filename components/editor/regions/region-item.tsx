@@ -12,6 +12,7 @@ import { TextRegionView } from "./text-region";
 import { TableRegionView } from "./table-region";
 import { PlotRegionView } from "./plot-region";
 import { ControlRegionView } from "./control-region";
+import { SolveRegionView } from "./solve-region";
 import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
@@ -145,6 +146,8 @@ function RegionBody(props: RegionRenderProps) {
       return <ImageRegionView {...props} region={region} />;
     case "control":
       return <ControlRegionView {...props} region={region} />;
+    case "solve":
+      return <SolveRegionView {...props} region={region} />;
     default:
       return <GenericRegionView {...props} region={region} />;
   }

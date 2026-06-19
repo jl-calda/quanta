@@ -11,7 +11,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from "react";
-import { CalcEngine, SI_SYSTEM, type PlotResult, type TableResult } from "@/lib/calc";
+import { CalcEngine, SI_SYSTEM, type PlotResult, type SolveResult, type TableResult } from "@/lib/calc";
 import { buildEngineInputs, settleTables } from "@/lib/worksheet/flatten";
 import type { WorksheetContent } from "@/lib/worksheet/content";
 import {
@@ -48,6 +48,8 @@ export interface EditorContextValue {
   tableResults: Map<string, TableResult>;
   /** Per-plot sampled series (read-only scope consumers), keyed by region id. */
   plotResults: Map<string, PlotResult>;
+  /** Per-solve-block results (unknowns + convergence), keyed by region id. */
+  solveResults: Map<string, SolveResult>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -94,6 +96,7 @@ export function EditorProvider({
 
   const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
   const [plotResults, setPlotResults] = useState<Map<string, PlotResult>>(() => new Map());
+  const [solveResults, setSolveResults] = useState<Map<string, SolveResult>>(() => new Map());
 
   // Run the engine + tables to a settled fixpoint (the scope-bridge); `settleTables`
   // is pure and unit-tested in `lib/worksheet/flatten`. Plots sample the settled
@@ -101,9 +104,10 @@ export function EditorProvider({
   const reconcile = (content: WorksheetContent) => settleTables(content, engineRef.current!);
 
   const publishReconcile = (content: WorksheetContent) => {
-    const { sheet, tables, plots } = reconcile(content);
+    const { sheet, tables, plots, solves } = reconcile(content);
     setTableResults(tables);
     setPlotResults(plots);
+    setSolveResults(solves);
     dispatch({ type: "SET_RESULTS", sheet });
   };
 
@@ -131,9 +135,10 @@ export function EditorProvider({
   const recalculate = () => publishReconcile(state.content);
 
   const recalculateToHere = (id: string) => {
-    const { sheet: fresh, tables, plots } = reconcile(state.content);
+    const { sheet: fresh, tables, plots, solves } = reconcile(state.content);
     setTableResults(tables);
     setPlotResults(plots);
+    setSolveResults(solves);
     const cut = fresh.regions.findIndex((r) => r.id === id);
     if (cut === -1) {
       dispatch({ type: "SET_RESULTS", sheet: fresh });
@@ -194,11 +199,13 @@ export function EditorProvider({
       saveVersion,
       tableResults,
       plotResults,
+      solveResults,
     }),
-    // `state`, `tableResults`, and `plotResults` are the changing dependencies
-    // consumers read; the callbacks close over them and are recreated each render.
+    // `state`, `tableResults`, `plotResults`, and `solveResults` are the changing
+    // dependencies consumers read; the callbacks close over them and are recreated
+    // each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId, tableResults, plotResults],
+    [state, canEdit, worksheetId, tableResults, plotResults, solveResults],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;

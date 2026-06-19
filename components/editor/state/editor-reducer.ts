@@ -19,6 +19,7 @@ import {
   type ControlOption,
   type ControlValueType,
   type DisplayFlags,
+  type OdeConfig,
   type PlotAxis,
   type PlotGrid,
   type PlotKind,
@@ -28,6 +29,8 @@ import {
   type RegionType,
   type ResultFormat,
   type Row,
+  type SolveAlgorithm,
+  type SolveGuess,
   type SurfaceOptions,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
@@ -115,6 +118,16 @@ export interface RegionPatch {
   step?: number;
   invert?: boolean;
   options?: ControlOption[];
+  /** Solve-block fields (Functional Brief §6.5) — whole-array commits, like plot `z`. */
+  algorithm?: SolveAlgorithm;
+  guesses?: SolveGuess[];
+  constraints?: string[];
+  objective?: string;
+  ctol?: number;
+  scaling?: number;
+  maxIter?: number;
+  onNonConverge?: "error" | "last";
+  ode?: OdeConfig;
 }
 
 /** Inspector-editable table-column properties (Object.assigned onto the column). */

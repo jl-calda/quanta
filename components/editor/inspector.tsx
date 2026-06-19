@@ -17,6 +17,9 @@ import type {
   PlotTrace,
   Radix,
   Region,
+  SolveAlgorithm,
+  SolveGuess,
+  SolveRegion,
   TableColumn,
   TableRegion,
   TextRegion,
@@ -70,6 +73,7 @@ export function Inspector() {
           {region.type === "table" && <TableInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "plot" && <PlotInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "control" && <ControlInspector region={region} set={set} />}
+          {region.type === "solve" && <SolveInspector region={region} set={set} />}
           <Group eyebrow="Region">
             <Row label="Show border">
               <Switch checked={!!region.border} onChange={(e) => set({ border: e.target.checked })} />
@@ -800,6 +804,229 @@ function OptionsEditor({ region, set }: { region: ControlRegion; set: (p: Region
         </Row>
       )}
     </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Solve-block inspector (Functional Brief §6.5) — guesses, constraints,
+ * algorithm + tolerances, and the deferred ODE/PDE config. Whole-array commits
+ * via SET_REGION_PROP, like the control options / plot z editors.
+ * ------------------------------------------------------------------ */
+
+const SOLVE_ALGOS: { value: SolveAlgorithm; label: string }[] = [
+  { value: "find", label: "find — solve equations" },
+  { value: "minimize", label: "minimize objective" },
+  { value: "maximize", label: "maximize objective" },
+  { value: "minerr", label: "minerr — least error" },
+  { value: "odesolve", label: "odesolve — ODE (ships next)" },
+  { value: "pdesolve", label: "pdesolve — PDE (ships next)" },
+  { value: "numol", label: "numol — method of lines (ships next)" },
+];
+const ODE_ALGOS = new Set<SolveAlgorithm>(["odesolve", "pdesolve", "numol"]);
+
+const fieldLabel: React.CSSProperties = { font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" };
+const addBtnStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  alignSelf: "flex-start",
+  border: "none",
+  background: "none",
+  color: "var(--accent)",
+  font: "500 12px/1 var(--font-sans)",
+  cursor: "pointer",
+  padding: 0,
+};
+const textareaStyle: React.CSSProperties = {
+  width: "100%",
+  resize: "vertical",
+  padding: "6px 8px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--border-strong)",
+  background: "var(--surface-raised)",
+  font: "12.5px/1.5 var(--font-mono)",
+  color: "var(--text-primary)",
+  outline: "none",
+};
+
+const numOrUndef = (raw: string): number | undefined => {
+  const t = raw.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : undefined;
+};
+const intOrUndef = (raw: string): number | undefined => {
+  const n = numOrUndef(raw);
+  return n === undefined ? undefined : Math.round(n);
+};
+const lines = (text: string): string[] => text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+
+function SolveInspector({ region, set }: { region: SolveRegion; set: (p: RegionPatch) => void }) {
+  const isOde = ODE_ALGOS.has(region.algorithm);
+  const isOpt = region.algorithm === "minimize" || region.algorithm === "maximize";
+
+  const updateGuess = (i: number, patch: Partial<SolveGuess>) =>
+    set({ guesses: region.guesses.map((g, j) => (j === i ? { ...g, ...patch } : g)) });
+
+  return (
+    <>
+      <Group eyebrow="Solver">
+        <Row label="Algorithm">
+          <div style={{ width: 160 }}>
+            <Select
+              value={region.algorithm}
+              onChange={(e) => set({ algorithm: e.target.value as SolveAlgorithm })}
+              options={SOLVE_ALGOS}
+            />
+          </div>
+        </Row>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>Name</span>
+          <Input defaultValue={region.name ?? ""} placeholder="plate thickness" onBlur={(e) => set({ name: e.target.value || undefined })} />
+        </div>
+      </Group>
+
+      {!isOde && (
+        <>
+          <Group eyebrow="Guesses">
+            {region.guesses.map((g, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 56 }}>
+                  <Input mono defaultValue={g.var} placeholder="x" onBlur={(e) => updateGuess(i, { var: e.target.value.trim() })} />
+                </div>
+                <span style={{ font: "12px/1 var(--font-mono)", color: "var(--text-muted)" }}>:=</span>
+                <Input mono defaultValue={g.value} placeholder="0" onBlur={(e) => updateGuess(i, { value: e.target.value })} containerStyle={{ flex: 1 }} />
+                <div style={{ width: 52 }}>
+                  <Input mono defaultValue={g.unit ?? ""} placeholder="unit" onBlur={(e) => updateGuess(i, { unit: e.target.value.trim() || undefined })} />
+                </div>
+                <IconButton label="Remove guess" size="sm" onClick={() => set({ guesses: region.guesses.filter((_, j) => j !== i) })}>
+                  <Icon name="x" size={14} />
+                </IconButton>
+              </div>
+            ))}
+            <button onClick={() => set({ guesses: [...region.guesses, { var: "", value: "0" }] })} style={addBtnStyle}>
+              <Icon name="plusSm" size={13} /> Add guess
+            </button>
+          </Group>
+
+          <Group eyebrow={isOpt ? "Constraints (bounds)" : "Constraints"}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={fieldLabel}>One equation / inequality per line</span>
+              <textarea
+                key={`${region.id}:constraints`}
+                defaultValue={region.constraints.join("\n")}
+                onBlur={(e) => set({ constraints: lines(e.target.value) })}
+                rows={Math.min(8, Math.max(3, region.constraints.length + 1))}
+                spellCheck={false}
+                placeholder={"x^2 = 9\nx >= 0"}
+                style={textareaStyle}
+              />
+              <span style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+                Use <code style={{ fontFamily: "var(--font-mono)" }}>=</code> for equations and{" "}
+                <code style={{ fontFamily: "var(--font-mono)" }}>{"<= >= < >"}</code> for inequalities.
+              </span>
+            </div>
+          </Group>
+
+          {isOpt && (
+            <Group eyebrow="Objective">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={fieldLabel}>Expression to {region.algorithm}</span>
+                <Input key={`${region.id}:objective`} mono defaultValue={region.objective ?? ""} placeholder="(x-3)^2" onBlur={(e) => set({ objective: e.target.value || undefined })} />
+              </div>
+            </Group>
+          )}
+
+          <Group eyebrow="Tolerances">
+            <Row label="Constraint tol (CTOL)">
+              <div style={{ width: 96 }}>
+                <Input mono defaultValue={region.ctol != null ? String(region.ctol) : ""} placeholder="1e-9" onBlur={(e) => set({ ctol: numOrUndef(e.target.value) })} />
+              </div>
+            </Row>
+            <Row label="Scaling">
+              <div style={{ width: 96 }}>
+                <Input mono defaultValue={region.scaling != null ? String(region.scaling) : ""} placeholder="1" onBlur={(e) => set({ scaling: numOrUndef(e.target.value) })} />
+              </div>
+            </Row>
+            <Row label="Max iterations">
+              <div style={{ width: 96 }}>
+                <Input mono defaultValue={region.maxIter != null ? String(region.maxIter) : ""} placeholder="auto" onBlur={(e) => set({ maxIter: intOrUndef(e.target.value) })} />
+              </div>
+            </Row>
+            <Row label="On non-convergence">
+              <Segmented options={["error", "last"]} value={region.onNonConverge ?? "error"} set={(v) => set({ onNonConverge: v as "error" | "last" })} />
+            </Row>
+          </Group>
+        </>
+      )}
+
+      {isOde && <OdeInspector region={region} set={set} />}
+    </>
+  );
+}
+
+function OdeInspector({ region, set }: { region: SolveRegion; set: (p: RegionPatch) => void }) {
+  const ode = region.ode ?? { system: [], indepVar: "x", range: {}, conditions: [] };
+  const setOde = (patch: Partial<NonNullable<SolveRegion["ode"]>>) => set({ ode: { ...ode, ...patch } });
+  return (
+    <>
+      <Group eyebrow="Differential system">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>Equations (one per line)</span>
+          <textarea
+            key={`${region.id}:ode-system`}
+            defaultValue={(ode.system ?? []).join("\n")}
+            onBlur={(e) => setOde({ system: lines(e.target.value) })}
+            rows={3}
+            spellCheck={false}
+            placeholder={"y'' + y = 0"}
+            style={textareaStyle}
+          />
+        </div>
+        <Row label="Independent variable">
+          <div style={{ width: 96 }}>
+            <Input key={`${region.id}:ode-var`} mono defaultValue={ode.indepVar ?? "x"} placeholder="x" onBlur={(e) => setOde({ indepVar: e.target.value.trim() || "x" })} />
+          </div>
+        </Row>
+        <Row label="Range">
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 60 }}>
+              <Input key={`${region.id}:ode-min`} mono defaultValue={ode.range?.min != null ? String(ode.range.min) : ""} placeholder="min" onBlur={(e) => setOde({ range: { ...ode.range, min: numOrUndef(e.target.value) } })} />
+            </div>
+            <span style={{ color: "var(--text-muted)" }}>–</span>
+            <div style={{ width: 60 }}>
+              <Input key={`${region.id}:ode-max`} mono defaultValue={ode.range?.max != null ? String(ode.range.max) : ""} placeholder="max" onBlur={(e) => setOde({ range: { ...ode.range, max: numOrUndef(e.target.value) } })} />
+            </div>
+          </div>
+        </Row>
+      </Group>
+      <Group eyebrow="Initial / boundary conditions">
+        <textarea
+          key={`${region.id}:ode-cond`}
+          defaultValue={(ode.conditions ?? []).join("\n")}
+          onBlur={(e) => setOde({ conditions: lines(e.target.value) })}
+          rows={3}
+          spellCheck={false}
+          placeholder={"y(0) = 1\ny'(0) = 0"}
+          style={textareaStyle}
+        />
+      </Group>
+      <Group eyebrow="Discretization">
+        <Row label="Step (ODE)">
+          <div style={{ width: 96 }}>
+            <Input key={`${region.id}:ode-step`} mono defaultValue={ode.step != null ? String(ode.step) : ""} placeholder="auto" onBlur={(e) => setOde({ step: numOrUndef(e.target.value) })} />
+          </div>
+        </Row>
+        <Row label="Mesh points (PDE)">
+          <div style={{ width: 96 }}>
+            <Input key={`${region.id}:ode-mesh`} mono defaultValue={ode.mesh != null ? String(ode.mesh) : ""} placeholder="auto" onBlur={(e) => setOde({ mesh: intOrUndef(e.target.value) })} />
+          </div>
+        </Row>
+        <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          Saved with the worksheet; the differential-equation integrator ships with the SciPy engine.
+        </div>
+      </Group>
+    </>
   );
 }
 

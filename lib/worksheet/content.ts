@@ -278,7 +278,66 @@ const areaRegionSchema = z
   })
   .passthrough();
 const includeRegionSchema = renderOnlyRegion("include");
-const solveRegionSchema = renderOnlyRegion("solve");
+/*
+ * Solve-block region — fully typed (Functional Brief §6.5, mockup
+ * `solve-block.html`). Guess values define the unknowns, constraints are
+ * equations/inequalities in math source, and the solver call (find / minimize /
+ * maximize / minerr) builds a residual/objective and binds the solution back to
+ * the unknown names (consumed by downstream regions + plots via the same
+ * scope-bridge tables use). `odesolve`/`pdesolve`/`numol` are selectable and
+ * round-trip their full `ode` config, but render a 'ships next' placeholder
+ * until the integrator lands. `.passthrough()` keeps any unknown payload
+ * non-lossy; the field defaults mean a legacy render-only `{type:"solve"}` still
+ * validates, so no migration is needed.
+ */
+const solveAlgoSchema = z.enum([
+  "find",
+  "minimize",
+  "maximize",
+  "minerr",
+  "odesolve",
+  "pdesolve",
+  "numol",
+]);
+const solveGuessSchema = z.object({
+  var: z.string().default(""),
+  /** Initial-guess magnitude / expression (e.g. "10", "L/2"). */
+  value: z.string().default(""),
+  /** Optional unit appended to the guess (e.g. "mm", "deg"). */
+  unit: z.string().optional(),
+});
+/** Typed-but-inert ODE/PDE config (round-trips now; the integrator ships next). */
+const odeConfigSchema = z.object({
+  system: z.array(z.string()).default([]),
+  indepVar: z.string().default("x"),
+  range: z.object({ min: z.number().optional(), max: z.number().optional() }).default({}),
+  conditions: z.array(z.string()).default([]),
+  step: z.number().optional(),
+  mesh: z.number().int().optional(),
+});
+const solveRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("solve"),
+    /** Chip label shown beside "Solve block" (e.g. "plate thickness"). */
+    name: z.string().optional(),
+    algorithm: solveAlgoSchema.default("find"),
+    /** Unknowns + their initial guesses (unit-bearing sources, e.g. "10 mm"). */
+    guesses: z.array(solveGuessSchema).default([]),
+    /** Equations / inequalities in math source (`=`, `<=`, `>=`, `<`, `>`). */
+    constraints: z.array(z.string()).default([]),
+    /** Expression to optimize (minimize / maximize). */
+    objective: z.string().optional(),
+    /** Constraint tolerance; engine default applies when unset. */
+    ctol: z.number().optional(),
+    /** Residual / objective scaling divisor. */
+    scaling: z.number().optional(),
+    maxIter: z.number().int().optional(),
+    /** On non-convergence: surface `no-solution` (default) or bind the last iterate. */
+    onNonConverge: z.enum(["error", "last"]).optional(),
+    ode: odeConfigSchema.optional(),
+  })
+  .passthrough();
 
 export const regionSchema: z.ZodType<Region> = z.discriminatedUnion("type", [
   mathRegionSchema,
@@ -333,6 +392,9 @@ export type SurfaceOptions = z.infer<typeof surfaceOptionsSchema>;
 export type ControlKind = z.infer<typeof controlKindSchema>;
 export type ControlValueType = z.infer<typeof controlValueTypeSchema>;
 export type ControlOption = z.infer<typeof controlOptionSchema>;
+export type SolveAlgorithm = z.infer<typeof solveAlgoSchema>;
+export type SolveGuess = z.infer<typeof solveGuessSchema>;
+export type OdeConfig = z.infer<typeof odeConfigSchema>;
 
 export interface RegionBase {
   id: string;
@@ -425,9 +487,30 @@ export interface ControlRegion extends RegionBase {
   [key: string]: unknown;
 }
 
+/** Solve block: guesses + constraints + a solver call (Functional Brief §6.5). */
+export interface SolveRegion extends RegionBase {
+  type: "solve";
+  /** Chip label beside "Solve block". */
+  name?: string;
+  algorithm: SolveAlgorithm;
+  /** Unknowns + their initial guesses (unit-bearing sources). */
+  guesses: SolveGuess[];
+  /** Equations / inequalities in math source. */
+  constraints: string[];
+  /** Expression to optimize (minimize / maximize). */
+  objective?: string;
+  ctol?: number;
+  scaling?: number;
+  maxIter?: number;
+  onNonConverge?: "error" | "last";
+  /** Round-tripped config for the deferred odesolve / pdesolve / numol. */
+  ode?: OdeConfig;
+  [key: string]: unknown;
+}
+
 /** Render-only payloads keep an open shape so nothing is lost on round-trip. */
 export interface RenderOnlyRegion extends RegionBase {
-  type: "image" | "include" | "solve";
+  type: "image" | "include";
   [key: string]: unknown;
 }
 
@@ -438,6 +521,7 @@ export type Region =
   | PlotRegion
   | AreaRegion
   | ControlRegion
+  | SolveRegion
   | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
@@ -537,6 +621,16 @@ export function newRegion(type: RegionType): Region {
         min: 0,
         max: 10,
         step: 1,
+      };
+    case "solve":
+      // A find-block seeded with one unknown + one constraint, so it opens on a
+      // usable example the inspector refines.
+      return {
+        ...base,
+        type: "solve",
+        algorithm: "find",
+        guesses: [{ var: "x", value: "1" }],
+        constraints: ["x^2 = 9"],
       };
     default:
       return { ...base, type } as RenderOnlyRegion;

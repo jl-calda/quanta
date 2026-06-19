@@ -81,7 +81,7 @@ export function ImageRegionView({ region }: RegionRenderProps<RenderOnlyRegion>)
 }
 
 export function GenericRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {
-  const icon: IconName = region.type === "solve" ? "solve" : "link";
-  const label = region.type === "solve" ? "Solve block" : "Included worksheet";
-  return <Placeholder icon={icon} label={label} hint="Configure in the inspector." />;
+  // Only `include` reaches here now (image and solve have dedicated views).
+  const label = region.type === "include" ? "Included worksheet" : "Region";
+  return <Placeholder icon="link" label={label} hint="Configure in the inspector." />;
 }

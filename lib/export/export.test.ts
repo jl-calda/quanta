@@ -122,6 +122,31 @@ describe("ExportDocument", () => {
     expect(render({ ...OPTS, inputsSummary: false })).not.toContain("Inputs summary");
   });
 
+  it("renders a solve block with its solved value computed in Node", () => {
+    const content = parseContent({
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      createElement(ExportDocument, { title: "Solve", content, results: evaluateForExport(content), options: OPTS }),
+    );
+    expect(html).toContain("Solve block");
+    expect(html).toContain("converged");
+    expect(html).toMatch(/\b3\b/); // x = 3
+  });
+
   it("adds region outlines when borders are on", () => {
     const off = render({ ...OPTS, borders: false });
     const on = render({ ...OPTS, borders: true });

@@ -2,6 +2,45 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Solve block (Func §6.5 + Claude Design `solve-block.html`)
+
+- **Pure JS solver, not SciPy.** The numeric core is a new pure, synchronous, deterministic
+  `lib/calc/solve.ts` (Newton / Levenberg–Marquardt least-squares / Nelder–Mead), NOT the
+  Pyodide/SciPy worker. The Functional Brief mandates `/lib/calc` stay pure/synchronous/Node-safe and
+  deterministic (server-side PDF export re-runs the engine in Node, where the browser-only Pyodide
+  worker can't run). `evaluateSolve(spec, scope, system, backend?)` reuses the engine's own mathjs
+  value model, `toDisplayUnit`/`formatValue`, and typed errors; it never throws into the UI
+  (non-convergence is a typed `no-solution` `CalcError`). The user confirmed this over "via SciPy".
+- **`SolverBackend` seam for a future SciPy offload.** The numeric methods sit behind a synchronous
+  `SolverBackend { run(NumericProblem): SolveRun }`; a future heavy/Pyodide backend implements the
+  same contract without changing solve-block semantics. The pure `jsSolverBackend` is the default.
+- **Algorithms this pass: `find` / `minimize` / `maximize` / `minerr`.** `find` → Newton (square
+  system) or LM (over/under-determined); `minerr` → LM on the residual vector (inequalities folded in
+  as `√penalty·max(0,violation)` residuals); `minimize`/`maximize` → Nelder–Mead on the objective
+  (+penalties), maximize = minimize of the negated objective. Equality constraints (`=`) build
+  residuals; inequalities (`<= >= < >`, incl. chained `lo ≤ x ≤ hi`) become a box bound when they are
+  the simple `var ⋛ const` form, else a penalty. Determinism: a fixed Nelder–Mead simplex seed, no
+  `Math.random` — identical on client = worker = Node.
+- **`odesolve`/`pdesolve`/`numol` are typed-but-deferred** (like contour/3D plots): selectable in the
+  menu, returning `status:"deferred"` and a faithful 'ships next' placeholder, while their full ODE/PDE
+  config (`system`, `indepVar`, `range`, `conditions`, `step`, `mesh`) round-trips through the Zod
+  schema. The SciPy milestone fills only the integrator, behind the same `SolverBackend` seam.
+- **A solve block is an EXPORTER like a table — zero engine-core changes.** `solve` is promoted from
+  render-only to a fully-typed `.passthrough()` region (defaults mean a legacy `{type:"solve"}` still
+  validates). `lib/worksheet/flatten.ts`'s `settleTables` now evaluates solves alongside tables in the
+  same synchronous fixpoint: each solve reads the settled worksheet scope and folds its solved
+  unknowns back as synthetic `name := value` definitions (`slv:` prefix) at its reading-order
+  position, so the UNMODIFIED engine resolves them for downstream regions + plots. `graph.ts`/
+  `recalc.ts` are untouched; the existing snapshot/oscillation guard bounds the loop.
+- **Editing is structured Inspector fields; the block body is a read view.** Guess rows
+  (`var` + `value` + `unit`), a one-per-line constraints editor, objective, algorithm + tolerances
+  (CTOL/scaling/max-iter/non-convergence), and the deferred ODE/PDE config live in `SolveInspector`
+  (whole-array commits via `SET_REGION_PROP`, like control options / plot `z`). The block renders
+  committed STIX math via `KatexMath` + `sourceToLatex`; only the algorithm has an inline quick-switch
+  (mirrors the plot's inline title/axis vs. its full inspector). Results bind back with units in the
+  blue result pill; non-convergence shows the app-voice red box. `solveResults` rides the provider
+  next to `tableResults`/`plotResults`; one provider-free `StaticSolveRegionView` serves history.
+
 ## Plot region (Func §6.4 + Claude Design `plot-region.html`)
 
 - **Plot is now fully typed (was render-only), with no migration needed.** The schema adds

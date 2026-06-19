@@ -14,6 +14,7 @@ import { KatexMath } from "../katex-math";
 import { Icon } from "../icons";
 import type { EditorAction } from "../state/editor-reducer";
 import { ControlRegionView } from "../regions/control-region";
+import { StaticSolveRegionView } from "../regions/solve-region";
 import {
   GenericRegionView,
   ImageRegionView,
@@ -184,6 +185,8 @@ export function LeafRegion({ region, result }: { region: Region; result?: Region
       return <ImageRegionView {...passthrough} region={region} />;
     case "control":
       return <ControlRegionView {...passthrough} region={region} />;
+    case "solve":
+      return <StaticSolveRegionView {...passthrough} region={region} />;
     default:
       // Areas render via RegionNode (recursing children); never reached here.
       if (region.type === "area") return null;
