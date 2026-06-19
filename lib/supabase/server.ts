@@ -1,11 +1,17 @@
 import "server-only";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import {
+  createServerClient,
+  combineChunks,
+  stringFromBase64URL,
+  type CookieOptions,
+} from "@supabase/ssr";
 import { createClient as createTokenClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { getSupabaseEnv } from "./env";
 import type { Database } from "./types";
 
 type CookiesToSet = { name: string; value: string; options: CookieOptions }[];
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 /**
  * Server-side Supabase client for Server Components, Server Actions, and Route
@@ -40,6 +46,45 @@ export async function createClient() {
 }
 
 /**
+ * Read the access token straight from the auth cookie, the same way
+ * `@supabase/ssr`'s own storage does: combine any chunked `sb-*-auth-token`
+ * cookies, strip the `base64-` prefix, base64url-decode, then JSON-parse the
+ * session. This is deterministic — it never calls `auth.getSession()`.
+ *
+ * We need that because `getSession()` races inside a Server Action: a first
+ * call can return the session while the next returns null, which is exactly
+ * what let an earlier read authenticate while the following write went out as
+ * `anon`. The cookie itself is stable for the whole request, so reading it
+ * directly always yields the signed-in user's token. Returns null if absent.
+ */
+async function readAccessTokenFromCookies(
+  cookieStore: CookieStore,
+): Promise<string | null> {
+  // Find the auth-token cookie (or its first chunk) and recover the base key.
+  const authCookie = cookieStore
+    .getAll()
+    .find((c) => /^sb-.+-auth-token(\.\d+)?$/.test(c.name));
+  if (!authCookie) return null;
+  const storageKey = authCookie.name.replace(/\.\d+$/, "");
+
+  const combined = await combineChunks(
+    storageKey,
+    (name) => cookieStore.get(name)?.value ?? null,
+  );
+  if (!combined) return null;
+
+  const decoded = combined.startsWith("base64-")
+    ? stringFromBase64URL(combined.slice("base64-".length))
+    : combined;
+  try {
+    const session = JSON.parse(decoded) as { access_token?: string } | null;
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Client for **mutations** in Server Actions, with the caller's access token
  * pinned into the Authorization header.
  *
@@ -50,10 +95,12 @@ export async function createClient() {
  * authenticated, but a following write reaches PostgREST as `anon`, so RLS
  * rejects it (e.g. `worksheets_insert` → 42501) even for an owner/admin.
  *
- * Reading the session **once** and pinning `access_token` onto a plain client
- * makes every data call deterministically carry the user's JWT. The pinned
- * client is stateless (no cookie storage, no refresh) — auth stays the cookie
- * client's job; this one only talks to the database as the signed-in user.
+ * Pinning a single, deterministically-read token onto a plain client makes
+ * every data call carry the user's JWT. The token is read straight from the
+ * auth cookie (`readAccessTokenFromCookies`) precisely to avoid the racy
+ * `getSession()`; `getSession()` remains only as a last-resort fallback. The
+ * pinned client is stateless (no cookie storage, no refresh) — auth stays the
+ * cookie client's job; this one only talks to the database as the user.
  *
  * Returns `{ user: null }` when there is no session — callers treat that as
  * signed out, exactly as they did with `getUser()`.
@@ -65,14 +112,27 @@ export async function createActionClient() {
   } = await cookieClient.auth.getUser();
   if (!user) return { db: cookieClient, user: null };
 
-  const {
-    data: { session },
-  } = await cookieClient.auth.getSession();
-  if (!session?.access_token) return { db: cookieClient, user };
+  const cookieStore = await cookies();
+  let token = await readAccessTokenFromCookies(cookieStore);
+  if (!token) {
+    // Last resort: getSession() may still race, but try it before giving up.
+    const {
+      data: { session },
+    } = await cookieClient.auth.getSession();
+    token = session?.access_token ?? null;
+  }
+  // TEMP DIAGNOSTIC (remove with the createWorksheet probes): confirms the
+  // cookie read recovered a token on a real deploy.
+  console.error("[createActionClient]", {
+    userId: user.id,
+    tokenFound: !!token,
+    tokenLength: token?.length ?? 0,
+  });
+  if (!token) return { db: cookieClient, user };
 
   const { url, anonKey } = getSupabaseEnv();
   const db = createTokenClient<Database>(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+    global: { headers: { Authorization: `Bearer ${token}` } },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
