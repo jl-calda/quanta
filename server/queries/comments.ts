@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { avatarColor, initialsOf } from "@/components/editor/use-presence";
+import { avatarColor, initialsOf } from "@/components/editor/presence";
 import { sortCommentsAsc, type CommentItem } from "@/lib/worksheet/comments";
 
 /**
