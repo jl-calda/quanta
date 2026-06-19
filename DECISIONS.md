@@ -2,6 +2,37 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Empty states board (Mockup 4.12 + Claude Design `empty-states.html`)
+
+- **Public root-level route `app/empty-states/page.tsx`, not under `(app)`.** The mockup is a
+  standalone catalogue board with its own header and no nav rail (a sibling of `/design`), and it must
+  render signed-out — so the page does NOT `redirect("/onboarding")` like the dashboard. It resolves
+  `getActiveWorkspace()` only to decide where the actions point. The `/design` screens index now links
+  its previously-"Planned" empty-states card to this route.
+- **Each card's one action is wired to real behavior — never a dead end.** Cards 1 & 2 call the real
+  `createWorksheet` Server Action then open the new sheet (mirroring `dashboard/new-worksheet-button`);
+  signed-out → `/sign-in`; a non-creating role renders disabled with the dashboard's guidance tooltip.
+  The remaining actions navigate to their real homes (`/templates`, `/worksheets`, `/admin`).
+- **Contextless actions resolve the most-recent worksheet.** Versions / "Ask Quanta" / Recalculate
+  need a worksheet the board itself lacks, so the page derives `recentWorksheetId` via
+  `getRecentWorksheets(workspaceId, 1)` and deep-links there (`/w/[id]`, `/w/[id]/history`), falling
+  back to `/worksheets`. The AI assistant has no standalone route — "Ask Quanta" opens the editor
+  where `components/editor/ai-panel.tsx` lives.
+- **The connection card (#7) is genuinely live, with an online variant.** `useOnlineStatus` combines
+  `navigator.onLine` + window online/offline events with a Supabase Realtime channel's subscription
+  status (modeled on `editor/use-presence.ts`, incl. the try/catch so a missing env degrades to the
+  navigator-only signal). Precedence: navigator-offline wins → "offline"; channel SUBSCRIBED (or
+  Realtime unavailable) → "online"; otherwise "reconnecting". SSR-safe: state starts at an optimistic
+  `"online"` and the real status syncs in `useEffect`, so server HTML and first client render match
+  (no hydration mismatch). The card swaps tone/icon/headline/copy per state; "Retry now" re-probes.
+- **1.4px spot-icon stroke to match the mockup**, versus the canonical 1.5px UI line-icon standard in
+  CLAUDE.md — a deliberate, mockup-faithful deviation for the medallion spot icons only.
+- **Board structure ported as inline styles on semantic CSS vars** (header, grid, card shell,
+  medallion, eyebrow, headline, body), reusing the DS `Button` for actions — the same mix `/design`
+  uses. The dot-grid is applied inline at 22px (the mockup's cell size) rather than the shared `.q-grid`
+  utility (16px). `EmptyStateCard`/`spot-icons` carry no server-only or client-only code, so they are
+  shared between the server board and the client connection card.
+
 ## Solve block (Func §6.5 + Claude Design `solve-block.html`)
 
 - **Pure JS solver, not SciPy.** The numeric core is a new pure, synchronous, deterministic
