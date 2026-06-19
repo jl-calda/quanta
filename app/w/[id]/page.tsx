@@ -6,7 +6,7 @@ import { parseLayoutSettings, parsePageSettings } from "@/lib/schema/page";
 import { getWorksheetComments } from "@/server/queries/comments";
 import { getEditorProjectTree } from "@/server/queries/editor";
 import { EditorApp } from "@/components/editor/editor-app";
-import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/use-presence";
+import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/presence";
 
 export const metadata = { title: "Worksheet · Quanta" };
 

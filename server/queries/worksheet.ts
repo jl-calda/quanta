@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { parseContent, type WorksheetContent } from "@/lib/worksheet/content";
-import { avatarColor, initialsOf } from "@/components/editor/use-presence";
+import { avatarColor, initialsOf } from "@/components/editor/presence";
 
 /**
  * Worksheet reads for the editor's Version history screen (Func §4.9). RLS

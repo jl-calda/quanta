@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseContent } from "@/lib/worksheet/content";
 import { getWorksheetVersionHistory } from "@/server/queries/worksheet";
-import { avatarColor, initialsOf } from "@/components/editor/use-presence";
+import { avatarColor, initialsOf } from "@/components/editor/presence";
 import { HistoryApp } from "@/components/editor/history/history-app";
 import { CURRENT_ID, type TimelineEntry } from "@/components/editor/history/types";
 

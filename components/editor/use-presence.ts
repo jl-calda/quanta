@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { PresenceUser } from "./presence";
 
-/** A peer present on the worksheet (for the app-bar avatars). */
-export interface PresenceUser {
-  userId: string;
-  name: string;
-  initials: string;
-  color: string;
-}
+// Re-export the type and server-safe helpers so existing client imports from
+// this module keep working. Server code must import them from "./presence"
+// directly — they cannot be pulled through this "use client" module.
+export type { PresenceUser } from "./presence";
+export { avatarColor, initialsOf } from "./presence";
 
 /**
  * Join the worksheet's Realtime presence channel and return the *other* peers
@@ -61,29 +60,4 @@ export function usePresence(worksheetId: string, me: PresenceUser): PresenceUser
   }, [worksheetId, me.userId]);
 
   return others;
-}
-
-const AVATAR_COLORS = [
-  "#1F5FBF",
-  "#1E8E5A",
-  "#C6890B",
-  "#8B5CF6",
-  "#C2392B",
-  "#0E7490",
-];
-
-/** Stable avatar colour from a user id. */
-export function avatarColor(userId: string): string {
-  let sum = 0;
-  for (let i = 0; i < userId.length; i += 1) sum += userId.charCodeAt(i);
-  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
-}
-
-/** Up-to-two-letter initials from a display name / email. */
-export function initialsOf(name: string): string {
-  const clean = name.trim();
-  if (!clean) return "?";
-  const parts = clean.split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return clean.slice(0, 2).toUpperCase();
 }
