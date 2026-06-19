@@ -208,7 +208,7 @@ const GROUPS: ScreenGroup[] = [
     group: "Component catalogues",
     note: "Cross-cutting pattern boards.",
     items: [
-      { file: "empty-states", label: "Empty states", glyph: G.empty, desc: "Eight consistent empty-state cards — icon, headline, supporting line, one action." },
+      { file: "empty-states", label: "Empty states", glyph: G.empty, href: "/empty-states", desc: "Eight consistent empty-state cards — icon, headline, supporting line, one action." },
       { file: "keyboard-shortcuts", label: "Keyboard shortcuts", glyph: G.keyboard, desc: "Mathcad-style shortcuts reference, keymap preference, and math input bar with key hints." },
     ],
   },
