@@ -16,10 +16,16 @@ import {
   type CellAlign,
   type CondRule,
   type DisplayFlags,
+  type PlotAxis,
+  type PlotGrid,
+  type PlotKind,
+  type PlotTrace,
+  type PlotZ,
   type Region,
   type RegionType,
   type ResultFormat,
   type Row,
+  type SurfaceOptions,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
@@ -85,6 +91,17 @@ export interface RegionPatch {
   disabled?: boolean;
   /** Table named range (the chip + worksheet export). */
   name?: string;
+  /** Plot scalar/object fields (structured axis/trace edits use dedicated actions). */
+  kind?: PlotKind;
+  xVar?: string;
+  yVar?: string;
+  xData?: string;
+  samples?: number;
+  legend?: boolean;
+  frame?: boolean;
+  z?: PlotZ;
+  grid?: PlotGrid;
+  surface?: SurfaceOptions;
 }
 
 /** Inspector-editable table-column properties (Object.assigned onto the column). */
@@ -112,6 +129,11 @@ export type EditorAction =
   | { type: "ADD_TABLE_COLUMN"; id: string }
   | { type: "DELETE_TABLE_COLUMN"; id: string; key: string }
   | { type: "SET_TABLE_COLUMN"; id: string; key: string; patch: TableColumnPatch }
+  | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
+  | { type: "ADD_PLOT_TRACE"; id: string }
+  | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
+  | { type: "SET_PLOT_TRACE"; id: string; traceId: string; patch: Partial<PlotTrace> }
+  | { type: "TOGGLE_PLOT_TRACE"; id: string; traceId: string }
   | {
       type: "INSERT_REGION";
       regionType: RegionType;
@@ -127,6 +149,7 @@ export type EditorAction =
       where: "above" | "below";
     }
   | { type: "INSERT_HEADING"; anchorId: string | null; where: "above" | "below" }
+  | { type: "INSERT_PLOT"; kind: PlotKind; anchorId: string | null; where: "above" | "below" }
   | { type: "DELETE_REGION"; id: string }
   | { type: "DELETE_SELECTED" }
   | { type: "DUPLICATE_REGION"; id: string }
@@ -452,6 +475,51 @@ export function editorReducer(
       return touched(state, content);
     }
 
+    /* ---- plot edits ---- */
+    case "SET_PLOT_AXIS": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        // Spread the patch (which may carry `min: undefined` to clear a pin to auto).
+        region[action.axis] = { ...region[action.axis], ...action.patch };
+      });
+      return touched(state, content);
+    }
+    case "ADD_PLOT_TRACE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        region.traces.push({ id: newId(), expr: "", style: "line" });
+      });
+      return touched(state, content);
+    }
+    case "DELETE_PLOT_TRACE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        region.traces = region.traces.filter((t) => t.id !== action.traceId);
+      });
+      return touched(state, content);
+    }
+    case "SET_PLOT_TRACE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        const trace = region.traces.find((t) => t.id === action.traceId);
+        if (trace) Object.assign(trace, action.patch);
+      });
+      return touched(state, content);
+    }
+    case "TOGGLE_PLOT_TRACE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        const trace = region.traces.find((t) => t.id === action.traceId);
+        if (trace) trace.hidden = !trace.hidden;
+      });
+      return touched(state, content);
+    }
+
     /* ---- structural ops ---- */
     case "INSERT_REGION": {
       const region = newRegion(action.regionType);
@@ -524,6 +592,31 @@ export function editorReducer(
         selectedId: region.id,
         selectedIds: [region.id],
         editingId: region.id,
+      });
+    }
+    case "INSERT_PLOT": {
+      // Like INSERT_REGION but with the chart kind set in the same mutation, so a
+      // Polar / Contour / 3D ribbon button is a single dispatch (the new id isn't
+      // returned to the caller otherwise).
+      const region = newRegion("plot");
+      if (region.type === "plot") region.kind = action.kind;
+      const content = mutate(state.content, (next) => {
+        if (!action.anchorId) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const loc = locate(next, action.anchorId);
+        if (!loc) {
+          next.rows.push(singleColumnRow([region]));
+          return;
+        }
+        const at = loc.index + (action.where === "below" ? 1 : 0);
+        loc.container.splice(at, 0, region);
+      });
+      return touched(state, content, {
+        selectedId: region.id,
+        selectedIds: [region.id],
+        editingId: null,
       });
     }
     case "INSERT_INTO_CELL": {

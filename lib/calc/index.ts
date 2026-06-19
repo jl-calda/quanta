@@ -50,6 +50,22 @@ export {
 } from "./table";
 export { Vlookup, Hlookup, Index, Match, Interp, LOOKUP_FUNCTIONS } from "./lookups";
 
+// Plot region (pure, engine-native — see ./plot).
+export {
+  evaluatePlot,
+  niceBounds,
+  niceNum,
+  type PlotSpec,
+  type PlotAxisSpec,
+  type PlotTraceSpec,
+  type PlotKind,
+  type PlotTraceStyle,
+  type PlotPoint,
+  type PlotResult,
+  type TraceResult,
+  type PlotBounds,
+} from "./plot";
+
 export type {
   CalcResult,
   CalcOk,

@@ -137,7 +137,94 @@ const tableRegionSchema = z
     filter: tableFilterSchema.optional(),
   })
   .passthrough();
-const plotRegionSchema = renderOnlyRegion("plot");
+/*
+ * Plot region — fully typed (Functional Brief §6.4, mockup `plot-region.html`).
+ *
+ * A plot binds traces to expressions / ranges / table columns; the pure engine
+ * (`lib/calc/plot`) samples them and the view renders. XY (line/scatter/marker/
+ * column/bar/stem/area) + polar render this pass; `contour`/`surface` are typed
+ * and fully config-round-tripped (z-expression, x/y ranges, grid resolution,
+ * display options) but render a 'configure' placeholder until the 2D renderer
+ * ships — so that milestone needs no schema or picker change. `.passthrough()`
+ * keeps any unknown payload non-lossy on a load→save round-trip; the field
+ * defaults mean a legacy render-only plot (`{type:"plot", title?}`) still
+ * validates with sensible values, so no dedicated migration is required.
+ */
+const plotKindSchema = z.enum(["xy", "polar", "contour", "surface"]);
+const traceStyleSchema = z.enum([
+  "line",
+  "scatter",
+  "line-marker",
+  "column",
+  "bar",
+  "stem",
+  "area",
+  "error",
+  "waterfall",
+  "box",
+]);
+const plotAxisSchema = z.object({
+  label: z.string().optional(),
+  unit: z.string().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  log: z.boolean().optional(),
+});
+const plotTraceSchema = z.object({
+  id: z.string(),
+  label: z.string().optional(),
+  /** y expression sampled over `xVar` (sweep) or a vector expression (data). */
+  expr: z.string().default(""),
+  style: traceStyleSchema.default("line"),
+  color: z.string().optional(),
+  dash: z.boolean().optional(),
+  hidden: z.boolean().optional(),
+});
+/** z = f(x, y) surface, for contour/3D (typed-but-inert until the renderer ships). */
+const plotZSchema = z.object({
+  expr: z.string().default(""),
+  label: z.string().optional(),
+  unit: z.string().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+});
+/** Sampling resolution for contour/3D grids. */
+const plotGridSchema = z.object({
+  x: z.number().int().min(2).max(200).default(24),
+  y: z.number().int().min(2).max(200).default(24),
+});
+/** Display options for contour/3D (round-tripped now; consumed by the future renderer). */
+const surfaceOptionsSchema = z.object({
+  levels: z.number().int().min(1).max(64).optional(),
+  filled: z.boolean().optional(),
+  colormap: z.string().optional(),
+  wireframe: z.boolean().optional(),
+  showScale: z.boolean().optional(),
+});
+const plotRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("plot"),
+    kind: plotKindSchema.default("xy"),
+    title: z.string().optional(),
+    /** Independent variable swept across the x-axis (plot-by-formula). */
+    xVar: z.string().default("x"),
+    /** Second independent variable for contour/surface (z = f(x, y)). */
+    yVar: z.string().default("y"),
+    /** Optional explicit x data expression (a vector) for data-bound traces. */
+    xData: z.string().optional(),
+    x: plotAxisSchema.default({}),
+    y: plotAxisSchema.default({}),
+    z: plotZSchema.optional(),
+    grid: plotGridSchema.optional(),
+    surface: surfaceOptionsSchema.optional(),
+    traces: z.array(plotTraceSchema).default([]),
+    /** Sweep sample count (plot-by-formula); engine clamps to 2–400. */
+    samples: z.number().int().min(2).max(400).optional(),
+    legend: z.boolean().default(true),
+    frame: z.boolean().optional(),
+  })
+  .passthrough();
 const imageRegionSchema = renderOnlyRegion("image");
 const controlRegionSchema = renderOnlyRegion("control");
 const areaRegionSchema = z
@@ -195,6 +282,13 @@ export type CellAlign = z.infer<typeof cellAlignSchema>;
 export type TableColumn = z.infer<typeof tableColumnSchema>;
 export type TableSort = z.infer<typeof tableSortSchema>;
 export type TableFilter = z.infer<typeof tableFilterSchema>;
+export type PlotKind = z.infer<typeof plotKindSchema>;
+export type TraceStyle = z.infer<typeof traceStyleSchema>;
+export type PlotAxis = z.infer<typeof plotAxisSchema>;
+export type PlotTrace = z.infer<typeof plotTraceSchema>;
+export type PlotZ = z.infer<typeof plotZSchema>;
+export type PlotGrid = z.infer<typeof plotGridSchema>;
+export type SurfaceOptions = z.infer<typeof surfaceOptionsSchema>;
 
 export interface RegionBase {
   id: string;
@@ -245,13 +339,42 @@ export interface TableRegion extends RegionBase {
   [key: string]: unknown;
 }
 
-/** Render-only payloads keep an open shape so nothing is lost on round-trip. */
-export interface RenderOnlyRegion extends RegionBase {
-  type: "plot" | "image" | "control" | "include" | "solve";
+export interface PlotRegion extends RegionBase {
+  type: "plot";
+  /** xy + polar render this pass; contour/surface are typed config placeholders. */
+  kind: PlotKind;
+  title?: string;
+  /** Independent variable swept across the x-axis (plot-by-formula). */
+  xVar: string;
+  /** Second independent variable for contour/surface (z = f(x, y)). */
+  yVar: string;
+  /** Optional explicit x data expression (a vector) for data-bound traces. */
+  xData?: string;
+  x: PlotAxis;
+  y: PlotAxis;
+  z?: PlotZ;
+  grid?: PlotGrid;
+  surface?: SurfaceOptions;
+  traces: PlotTrace[];
+  samples?: number;
+  legend: boolean;
+  frame?: boolean;
   [key: string]: unknown;
 }
 
-export type Region = MathRegion | TextRegion | TableRegion | AreaRegion | RenderOnlyRegion;
+/** Render-only payloads keep an open shape so nothing is lost on round-trip. */
+export interface RenderOnlyRegion extends RegionBase {
+  type: "image" | "control" | "include" | "solve";
+  [key: string]: unknown;
+}
+
+export type Region =
+  | MathRegion
+  | TextRegion
+  | TableRegion
+  | PlotRegion
+  | AreaRegion
+  | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
 export interface Cell {
@@ -322,6 +445,20 @@ export function newRegion(type: RegionType): Region {
           ["", ""],
           ["", ""],
         ],
+      };
+    case "plot":
+      // Empty traces ⇒ the region opens on its empty state ("Pick variables to plot").
+      return {
+        ...base,
+        type: "plot",
+        kind: "xy",
+        xVar: "x",
+        yVar: "y",
+        x: {},
+        y: {},
+        traces: [],
+        samples: 80,
+        legend: true,
       };
     default:
       return { ...base, type } as RenderOnlyRegion;

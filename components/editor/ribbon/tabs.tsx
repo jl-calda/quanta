@@ -281,11 +281,11 @@ function PlotTab({ cmd, sel }: TabProps) {
       <Group caption="Insert plot">
         <BigBtn icon="plot" label="2D plot" onClick={() => cmd.insertRegion("plot")} disabled={d} />
         <SmStack w={104}>
-          <SmBtn icon="polar" label="Polar" disabled />
-          <SmBtn icon="contour" label="Contour" disabled />
+          <SmBtn icon="polar" label="Polar" onClick={() => cmd.insertPlot("polar")} disabled={d} />
+          <SmBtn icon="contour" label="Contour" onClick={() => cmd.insertPlot("contour")} disabled={d} />
         </SmStack>
         <SmStack w={96}>
-          <SmBtn icon="plot3d" label="3D" disabled />
+          <SmBtn icon="plot3d" label="3D" onClick={() => cmd.insertPlot("surface")} disabled={d} />
           <SmBtn icon="chart" label="Chart" disabled />
         </SmStack>
       </Group>
@@ -293,9 +293,9 @@ function PlotTab({ cmd, sel }: TabProps) {
         <>
           <ContextGroup caption="Traces · selected">
             <SmStack w={132}>
-              <SmBtn icon="plot" label="Add trace" disabled />
+              <SmBtn icon="plot" label="Add trace" onClick={cmd.addPlotTrace} disabled={d} />
               <SmBtn icon="color" label="Trace style" dropdown disabled />
-              <SmBtn icon="label" label="Legend" toggle on disabled />
+              <SmBtn icon="label" label="Legend" toggle on={sel.plotLegend} onClick={cmd.togglePlotLegend} disabled={d} />
             </SmStack>
           </ContextGroup>
           <ContextGroup caption="Axes · selected">
