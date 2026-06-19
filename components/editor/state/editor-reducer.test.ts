@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SheetResult } from "@/lib/calc";
-import { parseContent, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
+import { parseContent, type ControlRegion, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
 import { findRegion, flattenToRegionInputs, readingOrderIds } from "@/lib/worksheet/flatten";
 import {
   editorReducer,
@@ -710,5 +710,63 @@ describe("contour / 3D config round-trips through the content schema", () => {
     expect(region.surface).toEqual({ wireframe: true, showScale: true });
     // And a re-parse (save→load) is stable.
     expect(parseContent(parsed)).toEqual(parsed);
+  });
+});
+
+describe("input controls", () => {
+  const controlDoc: WorksheetContent = {
+    version: 1,
+    rows: [
+      {
+        id: "r1",
+        columns: 1,
+        cells: [
+          {
+            regions: [
+              { id: "C", type: "control", indent: 0, kind: "slider", bind: "L", valueType: "number", value: 5 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const getControl = (s: EditorState) => findRegion(s.content, "C") as ControlRegion;
+
+  it("inserts a control selected but not in inline edit (configured via inspector)", () => {
+    const s = editorReducer(freshState(), {
+      type: "INSERT_REGION",
+      regionType: "control",
+      anchorId: null,
+      where: "below",
+    });
+    const region = s.content.rows[0].cells[0].regions[0] as ControlRegion;
+    expect(region.type).toBe("control");
+    expect(region.kind).toBe("slider");
+    expect(s.selectedId).toBe(region.id);
+    expect(s.editingId).toBeNull();
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("SET_REGION_PROP updates the control value and marks the doc unsaved", () => {
+    const s = editorReducer(freshState(controlDoc), { type: "SET_REGION_PROP", id: "C", patch: { value: 8 } });
+    expect(getControl(s).value).toBe(8);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("SET_REGION_PROP assigns a falsy value (checkbox unchecked / zero)", () => {
+    const s = editorReducer(freshState(controlDoc), { type: "SET_REGION_PROP", id: "C", patch: { value: false } });
+    expect(getControl(s).value).toBe(false);
+  });
+
+  it("SET_REGION_PROP replaces the options list (combo paste)", () => {
+    const s = editorReducer(freshState(controlDoc), {
+      type: "SET_REGION_PROP",
+      id: "C",
+      patch: { kind: "combo", options: [{ value: "S275" }, { value: "S355" }], value: "S275" },
+    });
+    const c = getControl(s);
+    expect(c.kind).toBe("combo");
+    expect(c.options).toEqual([{ value: "S275" }, { value: "S355" }]);
+    expect(c.value).toBe("S275");
   });
 });

@@ -15,6 +15,9 @@ import {
   type Cell,
   type CellAlign,
   type CondRule,
+  type ControlKind,
+  type ControlOption,
+  type ControlValueType,
   type DisplayFlags,
   type PlotAxis,
   type PlotGrid,
@@ -91,8 +94,8 @@ export interface RegionPatch {
   disabled?: boolean;
   /** Table named range (the chip + worksheet export). */
   name?: string;
-  /** Plot scalar/object fields (structured axis/trace edits use dedicated actions). */
-  kind?: PlotKind;
+  /** Plot/control scalar fields (structured axis/trace edits use dedicated actions). */
+  kind?: PlotKind | ControlKind;
   xVar?: string;
   yVar?: string;
   xData?: string;
@@ -102,6 +105,16 @@ export interface RegionPatch {
   z?: PlotZ;
   grid?: PlotGrid;
   surface?: SurfaceOptions;
+  /** Input-control fields (Mockup §6.7). `kind`/`unit`/`label` shared above. */
+  bind?: string;
+  label?: string;
+  value?: string | number | boolean;
+  valueType?: ControlValueType;
+  min?: number;
+  max?: number;
+  step?: number;
+  invert?: boolean;
+  options?: ControlOption[];
 }
 
 /** Inspector-editable table-column properties (Object.assigned onto the column). */

@@ -5,6 +5,10 @@ import { Badge, IconButton, Input, Select, Switch } from "@/components/ds";
 import { findRegion } from "@/lib/worksheet/flatten";
 import type {
   CellAlign,
+  ControlKind,
+  ControlOption,
+  ControlRegion,
+  ControlValueType,
   MathRegion,
   Notation,
   PlotAxis,
@@ -65,6 +69,7 @@ export function Inspector() {
           {region.type === "text" && <TextInspector region={region} set={set} />}
           {region.type === "table" && <TableInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "plot" && <PlotInspector region={region} set={set} dispatch={dispatch} />}
+          {region.type === "control" && <ControlInspector region={region} set={set} />}
           <Group eyebrow="Region">
             <Row label="Show border">
               <Switch checked={!!region.border} onChange={(e) => set({ border: e.target.checked })} />
@@ -646,6 +651,157 @@ function clampGrid(raw: string, fallback: number): number {
 }
 
 /* ---- inspector primitives ---- */
+
+/* ------------------------------------------------------------------ *
+ * Control inspector (Mockup §6.7) — configure the bound variable and the
+ * kind-specific options that shape the `bind := value` definition.
+ * ------------------------------------------------------------------ */
+const CONTROL_KINDS: ControlKind[] = ["slider", "dropdown", "combo", "radio", "checkbox", "button", "textbox", "listbox"];
+const OPTION_KINDS = new Set<ControlKind>(["dropdown", "combo", "radio", "listbox"]);
+
+function ControlInspector({ region, set }: { region: ControlRegion; set: (p: RegionPatch) => void }) {
+  const kind = region.kind;
+  const numberLike = kind === "slider" || ((kind === "textbox" || OPTION_KINDS.has(kind)) && (region.valueType ?? "number") === "number");
+  return (
+    <>
+      <Group eyebrow="Control">
+        <Row label="Type">
+          <div style={{ width: 130 }}>
+            <Select
+              value={kind}
+              onChange={(e) => set({ kind: e.target.value as ControlKind })}
+              options={CONTROL_KINDS.map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))}
+            />
+          </div>
+        </Row>
+        <Row label="Bound variable">
+          <div style={{ width: 110 }}>
+            <Input mono defaultValue={region.bind} placeholder="L" onBlur={(e) => set({ bind: e.target.value.trim() })} />
+          </div>
+        </Row>
+        {kind !== "checkbox" && (
+          <Row label="Label">
+            <div style={{ width: 130 }}>
+              <Input defaultValue={region.label ?? ""} placeholder="Caption" onBlur={(e) => set({ label: e.target.value || "" })} />
+            </div>
+          </Row>
+        )}
+        {(kind === "textbox" || OPTION_KINDS.has(kind)) && (
+          <Row label="Value type">
+            <Segmented
+              options={["text", "number", "expr"]}
+              value={region.valueType ?? "number"}
+              set={(v) => set({ valueType: v as ControlValueType })}
+            />
+          </Row>
+        )}
+        {numberLike && (
+          <Row label="Unit">
+            <div style={{ width: 90 }}>
+              <Input mono defaultValue={region.unit ?? ""} placeholder="m" onBlur={(e) => set({ unit: e.target.value || "" })} />
+            </div>
+          </Row>
+        )}
+      </Group>
+
+      {kind === "slider" && (
+        <Group eyebrow="Slider">
+          <Row label="Minimum">
+            <NumberField value={region.min ?? 0} onCommit={(v) => set({ min: v })} />
+          </Row>
+          <Row label="Maximum">
+            <NumberField value={region.max ?? 10} onCommit={(v) => set({ max: v })} />
+          </Row>
+          <Row label="Step">
+            <NumberField value={region.step ?? 1} onCommit={(v) => set({ step: v })} />
+          </Row>
+          <Row label="Invert">
+            <Switch checked={!!region.invert} onChange={(e) => set({ invert: e.target.checked })} />
+          </Row>
+        </Group>
+      )}
+
+      {kind === "checkbox" && (
+        <Group eyebrow="Checkbox">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Label</span>
+            <Input defaultValue={region.label ?? ""} placeholder="Allow redistribution" onBlur={(e) => set({ label: e.target.value || "" })} />
+          </div>
+          <Row label="Checked by default">
+            <Switch checked={region.value === true} onChange={(e) => set({ value: e.target.checked })} />
+          </Row>
+        </Group>
+      )}
+
+      {OPTION_KINDS.has(kind) && <OptionsEditor region={region} set={set} />}
+    </>
+  );
+}
+
+/** Number input that commits a finite value on blur (min/max/step). */
+function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  return (
+    <div style={{ width: 90 }}>
+      <Input
+        mono
+        defaultValue={String(value)}
+        onBlur={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) onCommit(v);
+        }}
+      />
+    </div>
+  );
+}
+
+/** One-option-per-line editor (supports paste-multiple) + default-selection. */
+function OptionsEditor({ region, set }: { region: ControlRegion; set: (p: RegionPatch) => void }) {
+  const options = region.options ?? [];
+  const commit = (text: string) => {
+    const parsed = text
+      .split(/\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((value): ControlOption => ({ value }));
+    const value = parsed.some((o) => o.value === String(region.value)) ? region.value : parsed[0]?.value;
+    set({ options: parsed, value });
+  };
+  return (
+    <Group eyebrow="Options">
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>One per line — paste a list to fill</span>
+        <textarea
+          defaultValue={options.map((o) => o.value).join("\n")}
+          onBlur={(e) => commit(e.target.value)}
+          rows={Math.min(8, Math.max(3, options.length + 1))}
+          spellCheck={false}
+          style={{
+            width: "100%",
+            resize: "vertical",
+            padding: "6px 8px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--border-strong)",
+            background: "var(--surface-raised)",
+            font: "12.5px/1.5 var(--font-mono)",
+            color: "var(--text-primary)",
+            outline: "none",
+          }}
+        />
+      </div>
+      {options.length > 0 && (
+        <Row label="Selected">
+          <div style={{ width: 130 }}>
+            <Select
+              value={region.value === undefined ? "" : String(region.value)}
+              onChange={(e) => set({ value: e.target.value })}
+              options={options.map((o) => ({ value: o.value, label: o.label ?? o.value }))}
+            />
+          </div>
+        </Row>
+      )}
+    </Group>
+  );
+}
 
 function Group({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return (

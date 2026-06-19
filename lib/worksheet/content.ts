@@ -226,7 +226,48 @@ const plotRegionSchema = z
   })
   .passthrough();
 const imageRegionSchema = renderOnlyRegion("image");
-const controlRegionSchema = renderOnlyRegion("control");
+/*
+ * Input-control region — typed but `.passthrough()` (non-lossy round-trip, like
+ * table/plot). Each control writes its bound variable into the engine scope as a
+ * definition (`bind := value`) via `./flatten`, so moving it drives live recompute
+ * (Functional Brief / Mockup §6.7). `valueType` decides how `value` is serialized
+ * into that definition. `bind` defaults to "" so an unconfigured control emits no
+ * engine input (and shows an empty-state hint) until it's named in the inspector.
+ */
+const controlKindSchema = z.enum([
+  "slider",
+  "dropdown",
+  "combo",
+  "radio",
+  "checkbox",
+  "button",
+  "textbox",
+  "listbox",
+]);
+const controlValueTypeSchema = z.enum(["text", "number", "boolean", "expr"]);
+const controlOptionSchema = z.object({ value: z.string(), label: z.string().optional() });
+const controlRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("control"),
+    kind: controlKindSchema.default("slider"),
+    /** Variable name this control defines in worksheet scope. */
+    bind: z.string().default(""),
+    /** Human caption shown beside the widget. */
+    label: z.string().optional(),
+    /** Current control value — serialized into `bind := value` per `valueType`. */
+    value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    valueType: controlValueTypeSchema.default("number"),
+    /** Unit appended to a numeric value (e.g. `m`, `kN`). */
+    unit: z.string().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    step: z.number().optional(),
+    invert: z.boolean().optional(),
+    /** Choices for dropdown / combo / radio / listbox. */
+    options: z.array(controlOptionSchema).optional(),
+  })
+  .passthrough();
 const areaRegionSchema = z
   .object({
     ...regionBase,
@@ -289,6 +330,9 @@ export type PlotTrace = z.infer<typeof plotTraceSchema>;
 export type PlotZ = z.infer<typeof plotZSchema>;
 export type PlotGrid = z.infer<typeof plotGridSchema>;
 export type SurfaceOptions = z.infer<typeof surfaceOptionsSchema>;
+export type ControlKind = z.infer<typeof controlKindSchema>;
+export type ControlValueType = z.infer<typeof controlValueTypeSchema>;
+export type ControlOption = z.infer<typeof controlOptionSchema>;
 
 export interface RegionBase {
   id: string;
@@ -362,9 +406,28 @@ export interface PlotRegion extends RegionBase {
   [key: string]: unknown;
 }
 
+/** Input control that defines a bound variable in scope (Mockup §6.7). */
+export interface ControlRegion extends RegionBase {
+  type: "control";
+  kind: ControlKind;
+  /** Variable name this control defines in worksheet scope. */
+  bind: string;
+  label?: string;
+  /** Current value — serialized into `bind := value` per `valueType`. */
+  value?: string | number | boolean;
+  valueType: ControlValueType;
+  unit?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  invert?: boolean;
+  options?: ControlOption[];
+  [key: string]: unknown;
+}
+
 /** Render-only payloads keep an open shape so nothing is lost on round-trip. */
 export interface RenderOnlyRegion extends RegionBase {
-  type: "image" | "control" | "include" | "solve";
+  type: "image" | "include" | "solve";
   [key: string]: unknown;
 }
 
@@ -374,6 +437,7 @@ export type Region =
   | TableRegion
   | PlotRegion
   | AreaRegion
+  | ControlRegion
   | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
@@ -459,6 +523,20 @@ export function newRegion(type: RegionType): Region {
         traces: [],
         samples: 80,
         legend: true,
+      };
+    case "control":
+      // A slider bound to nothing yet — the inspector names it; `bind:""` keeps
+      // it out of engine scope (and shows an empty-state hint) until configured.
+      return {
+        ...base,
+        type: "control",
+        kind: "slider",
+        bind: "",
+        valueType: "number",
+        value: 5,
+        min: 0,
+        max: 10,
+        step: 1,
       };
     default:
       return { ...base, type } as RenderOnlyRegion;
