@@ -131,13 +131,20 @@ export async function createActionClient() {
   if (!token) return { db: cookieClient, user };
 
   const { url, anonKey } = getSupabaseEnv();
+  const jwt = token; // narrowed to string after the guard above
   const db = createTokenClient<Database>(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
+    // Pin the user's JWT via supabase-js's official `accessToken` hook so it is
+    // attached to EVERY PostgREST request — reads AND writes.
+    //
+    // A global `Authorization` header is NOT enough: supabase-js wraps fetch so
+    // it only sets Authorization when the request doesn't already carry one,
+    // otherwise falling back to `accessToken() ?? anonKey`. In practice the
+    // header reached SELECTs but not the INSERT's request, so the write fell
+    // back to the anon key and RLS rejected it (42501) — exactly what we saw
+    // with `tokenFound: true` yet the insert still failing. Routing the token
+    // through `accessToken` makes the fallback resolve to the user's JWT, so it
+    // lands on the insert too. (`.auth` is unused on this client.)
+    accessToken: async () => jwt,
   });
   return { db, user };
 }
