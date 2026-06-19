@@ -82,31 +82,54 @@ export async function createWorksheet(input: {
     probeError: probe.error?.code ?? null,
   });
 
-  const { data: worksheet, error: insertError } = await supabase
-    .from("worksheets")
-    .insert({
-      workspace_id: workspaceId,
-      project_id: projectId ?? null,
-      title,
-      content,
-      owner_id: user.id,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
+  // Create via the SECURITY DEFINER RPC (migration: create_worksheet_rpc). The
+  // direct `.insert()` reached Postgres without the user's JWT — reads carried
+  // it, but the insert POST did not — so RLS rejected it (42501) even for an
+  // owner/admin. The RPC runs as definer; it authorizes auth.uid() + workspace
+  // role itself, then inserts. The generated Database types don't include this
+  // function yet, so call it through a narrow typed cast.
+  const callCreate = supabase.rpc as unknown as (
+    fn: "create_worksheet",
+    args: {
+      p_workspace_id: string;
+      p_project_id: string | null;
+      p_title: string;
+      p_content: Json;
+    },
+  ) => Promise<{
+    data: string | null;
+    error: {
+      code?: string;
+      message?: string;
+      details?: string;
+      hint?: string;
+    } | null;
+  }>;
+  const { data: worksheetId, error: rpcError } = await callCreate(
+    "create_worksheet",
+    {
+      p_workspace_id: workspaceId,
+      p_project_id: projectId ?? null,
+      p_title: title,
+      p_content: content,
+    },
+  );
 
-  if (insertError || !worksheet) {
-    // TEMP DIAGNOSTIC (remove with the probe above): full Postgres error so the
-    // exact failure (RLS WITH CHECK vs. grant vs. constraint) is visible in logs.
-    console.error("[createWorksheet] insert failed", {
-      code: insertError?.code ?? null,
-      message: insertError?.message ?? null,
-      details: insertError?.details ?? null,
-      hint: insertError?.hint ?? null,
+  if (rpcError || !worksheetId) {
+    console.error("[createWorksheet] rpc failed", {
+      code: rpcError?.code ?? null,
+      message: rpcError?.message ?? null,
+      details: rpcError?.details ?? null,
+      hint: rpcError?.hint ?? null,
     });
-    // 42501 = insufficient privilege (RLS check failed) — the member's role is
-    // below engineer, so they may not create worksheets here.
-    if (insertError?.code === "42501") {
+    if (rpcError?.code === "28000") {
+      // auth.uid() was null inside the RPC — the request reached Postgres
+      // unauthenticated. Surface a session error, not a permission one.
+      return err(
+        "Your session didn't reach the server. Refresh the page and try again.",
+      );
+    }
+    if (rpcError?.code === "42501") {
       return err(
         "You don't have permission to create worksheets in this workspace. Ask an admin for engineer access.",
       );
@@ -115,7 +138,7 @@ export async function createWorksheet(input: {
   }
 
   revalidatePath("/app");
-  return ok({ id: worksheet.id });
+  return ok({ id: worksheetId });
 }
 
 export type SearchHit = {
