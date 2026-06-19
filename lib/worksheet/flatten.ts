@@ -5,9 +5,9 @@
  * maps `RegionResult`s back onto region ids for O(1) render lookup. Reading order
  * is what enforces "a name must be defined earlier than it is used".
  */
-import { evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
-import type { RegionInput, RegionResult, SheetResult, TableResult } from "@/lib/calc";
-import type { Region, Row, TableRegion, WorksheetContent } from "./content";
+import { evaluatePlot, evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
+import type { PlotResult, RegionInput, RegionResult, SheetResult, TableResult } from "@/lib/calc";
+import type { PlotRegion, Region, Row, TableRegion, WorksheetContent } from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -60,6 +60,28 @@ export function tableRegions(content: WorksheetContent): TableRegion[] {
   for (const region of walkRegions(content)) {
     if (region.type === "table") out.push(region);
   }
+  return out;
+}
+
+/** Every plot region, in reading order — drives the provider's plot evaluation. */
+export function plotRegions(content: WorksheetContent): PlotRegion[] {
+  const out: PlotRegion[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "plot") out.push(region);
+  }
+  return out;
+}
+
+/**
+ * Sample every plot against a settled worksheet scope (pure — plots are read-only
+ * consumers that export nothing, so they evaluate once after tables settle).
+ */
+export function evaluatePlotsWith(
+  specs: PlotRegion[],
+  scope: Record<string, unknown>,
+): Map<string, PlotResult> {
+  const out = new Map<string, PlotResult>();
+  for (const spec of specs) out.set(spec.id, evaluatePlot(spec, scope, SI_SYSTEM));
   return out;
 }
 
@@ -164,11 +186,18 @@ function stripSynthetic(sheet: SheetResult): SheetResult {
 export function settleTables(
   content: WorksheetContent,
   engine: TableEngine,
-): { sheet: SheetResult; tables: Map<string, TableResult> } {
+): {
+  sheet: SheetResult;
+  tables: Map<string, TableResult>;
+  plots: Map<string, PlotResult>;
+} {
+  const plotSpecs = plotRegions(content);
   const specs = tableRegions(content);
   if (specs.length === 0) {
     engine.setRegions(buildEngineInputs(content));
-    return { sheet: engine.getResult(), tables: new Map() };
+    const sheet = engine.getResult();
+    const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions));
+    return { sheet, tables: new Map(), plots };
   }
 
   let exportsBySource = new Map<string, Record<string, string>>();
@@ -205,7 +234,11 @@ export function settleTables(
     seen.add(snapshot);
   }
 
-  return { sheet: stripSynthetic(sheet), tables };
+  // Plots read the final settled scope (worksheet names + table exports).
+  const plotScope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+  const plots = evaluatePlotsWith(plotSpecs, plotScope);
+
+  return { sheet: stripSynthetic(sheet), tables, plots };
 }
 
 /** All region ids in reading order (every type), e.g. for selection navigation. */

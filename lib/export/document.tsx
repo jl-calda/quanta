@@ -15,10 +15,11 @@
  */
 import type { ReactNode } from "react";
 import katex from "katex";
-import { evaluateTable, type RegionResult } from "@/lib/calc";
+import { evaluatePlot, evaluateTable, type RegionResult } from "@/lib/calc";
 import {
   DEFAULT_DISPLAY,
   type MathRegion,
+  type PlotRegion,
   type Region,
   type RenderOnlyRegion,
   type TableColumn,
@@ -338,13 +339,12 @@ function PlotBlock({
   region,
   borders,
 }: {
-  region: RenderOnlyRegion;
+  region: PlotRegion;
   borders: boolean;
 }): ReactNode {
   if (region.disabled) return null;
-  const data = region as Record<string, unknown>;
-  const title = typeof data.title === "string" ? data.title : null;
-  return (
+  const title = region.title || null;
+  const wrap = (inner: ReactNode) => (
     <div
       style={{
         border: borders ? `1px solid ${HAIRLINE}` : "none",
@@ -356,22 +356,54 @@ function PlotBlock({
       }}
     >
       {title && <div style={{ font: "600 11px/1.2 var(--font-sans)", marginBottom: 6, color: INK }}>{title}</div>}
-      <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Plot">
-        <line x1="46" y1="166" x2="454" y2="166" stroke={STRONG_RULE} strokeWidth="1.2" />
-        <line x1="46" y1="166" x2="46" y2="14" stroke={STRONG_RULE} strokeWidth="1.2" />
-        {[40, 80, 120].map((y) => (
-          <line key={y} x1="46" y1={y} x2="454" y2={y} stroke={HAIRLINE} strokeWidth="1" />
-        ))}
-        <path
-          d="M46 150 L160 90 L260 60 L360 44 L454 40"
-          fill="none"
-          stroke="#1F5FBF"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      {inner}
     </div>
+  );
+
+  // contour/3D (config-only this pass) and unconfigured plots: a compact print note.
+  if (region.kind === "contour" || region.kind === "surface") {
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{region.kind === "surface" ? "3D surface" : "Contour"} plot — configured.</div>);
+  }
+  if (region.traces.length === 0) {
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>No traces yet.</div>);
+  }
+
+  // Same pure sampler the editor uses; runs in Node for export (no live scope, so
+  // plot-by-formula traces draw and worksheet-name-bound ones simply stay empty).
+  const result = evaluatePlot(region, {});
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const X0 = 46;
+  const X1 = 454;
+  const Y0 = 166;
+  const Y1 = 14;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const drawable = result.traces.filter((t) => !t.hidden && !t.error && t.points.length > 0);
+  const lineColor = ["#1F5FBF", "#1E8E5A", "#C6890B"];
+
+  return wrap(
+    <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Plot">
+      {[0.25, 0.5, 0.75].map((f, i) => (
+        <line key={i} x1={X0} y1={Y1 + (Y0 - Y1) * f} x2={X1} y2={Y1 + (Y0 - Y1) * f} stroke={HAIRLINE} strokeWidth="1" />
+      ))}
+      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke={STRONG_RULE} strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke={STRONG_RULE} strokeWidth="1.2" />
+      {drawable.map((t, i) => {
+        const d = t.points.map((p, j) => `${j ? "L" : "M"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
+        return (
+          <path
+            key={t.id}
+            d={d}
+            fill="none"
+            stroke={t.color || lineColor[i % lineColor.length]}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={t.dash ? "5 3" : undefined}
+          />
+        );
+      })}
+    </svg>,
   );
 }
 

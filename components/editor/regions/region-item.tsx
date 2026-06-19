@@ -10,11 +10,11 @@ import { regionDomId } from "../scroll-to-region";
 import { MathRegionView } from "./math-region";
 import { TextRegionView } from "./text-region";
 import { TableRegionView } from "./table-region";
+import { PlotRegionView } from "./plot-region";
 import {
   ControlRegionView,
   GenericRegionView,
   ImageRegionView,
-  PlotRegionView,
 } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";

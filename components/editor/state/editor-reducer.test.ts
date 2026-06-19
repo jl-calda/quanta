@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SheetResult } from "@/lib/calc";
-import type { WorksheetContent } from "@/lib/worksheet/content";
-import { flattenToRegionInputs, readingOrderIds } from "@/lib/worksheet/flatten";
+import { parseContent, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
+import { findRegion, flattenToRegionInputs, readingOrderIds } from "@/lib/worksheet/flatten";
 import {
   editorReducer,
   initEditorState,
@@ -614,5 +614,101 @@ describe("engine bridge contract", () => {
     const inputs = flattenToRegionInputs(s.content);
     expect(inputs).toHaveLength(1);
     expect(inputs[0].id).toBe(s.selectedId);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Plot region edits
+ * ------------------------------------------------------------------ */
+
+const plotDoc: WorksheetContent = {
+  version: 1,
+  rows: [{ id: "r1", columns: 1, cells: [{ regions: [{ id: "P", type: "plot", indent: 0, kind: "xy", xVar: "x", yVar: "y", x: {}, y: {}, traces: [{ id: "t1", expr: "2*x", style: "line" }], legend: true }] }] }],
+};
+
+function getPlot(content: WorksheetContent, id = "P"): PlotRegion {
+  return findRegion(content, id) as PlotRegion;
+}
+
+describe("INSERT_PLOT", () => {
+  it("inserts a plot of the requested kind and selects it", () => {
+    const s = editorReducer(freshState(), { type: "INSERT_PLOT", kind: "polar", anchorId: null, where: "below" });
+    const region = getPlot(s.content, s.selectedId!);
+    expect(region.type).toBe("plot");
+    expect(region.kind).toBe("polar");
+    expect(s.editingId).toBeNull(); // plots open to their inspector, not inline edit
+    expect(s.saveState).toBe("unsaved");
+  });
+});
+
+describe("SET_PLOT_AXIS", () => {
+  it("merges an axis patch and can clear a pin back to auto", () => {
+    let s = editorReducer(freshState(plotDoc), { type: "SET_PLOT_AXIS", id: "P", axis: "x", patch: { min: 0, max: 6, unit: "m" } });
+    expect(getPlot(s.content).x).toEqual({ min: 0, max: 6, unit: "m" });
+    s = editorReducer(s, { type: "SET_PLOT_AXIS", id: "P", axis: "x", patch: { min: undefined } });
+    expect(getPlot(s.content).x.min).toBeUndefined();
+    expect(getPlot(s.content).x.max).toBe(6); // other keys preserved
+  });
+});
+
+describe("plot trace edits", () => {
+  it("adds, edits, toggles, and deletes traces", () => {
+    let s = editorReducer(freshState(plotDoc), { type: "ADD_PLOT_TRACE", id: "P" });
+    expect(getPlot(s.content).traces).toHaveLength(2);
+    const newId = getPlot(s.content).traces[1].id;
+
+    s = editorReducer(s, { type: "SET_PLOT_TRACE", id: "P", traceId: newId, patch: { expr: "x^2", style: "scatter" } });
+    expect(getPlot(s.content).traces[1]).toMatchObject({ expr: "x^2", style: "scatter" });
+
+    s = editorReducer(s, { type: "TOGGLE_PLOT_TRACE", id: "P", traceId: "t1" });
+    expect(getPlot(s.content).traces[0].hidden).toBe(true);
+
+    s = editorReducer(s, { type: "DELETE_PLOT_TRACE", id: "P", traceId: "t1" });
+    expect(getPlot(s.content).traces.map((t) => t.id)).toEqual([newId]);
+  });
+});
+
+describe("contour / 3D config round-trips through the content schema", () => {
+  it("preserves z-expr, x/y ranges, grid resolution, and options across a load→save cycle", () => {
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "S",
+                  type: "plot",
+                  indent: 0,
+                  kind: "surface",
+                  xVar: "x",
+                  yVar: "y",
+                  x: { min: -2, max: 2 },
+                  y: { min: -2, max: 2 },
+                  z: { expr: "sin(x)*cos(y)", unit: "mm" },
+                  grid: { x: 40, y: 30 },
+                  surface: { wireframe: true, showScale: true },
+                  traces: [],
+                  legend: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    // A full parse (the load path) must keep every contour/3D config field.
+    const parsed = parseContent(doc);
+    const region = getPlot(parsed, "S");
+    expect(region.kind).toBe("surface");
+    expect(region.z).toEqual({ expr: "sin(x)*cos(y)", unit: "mm" });
+    expect(region.x).toEqual({ min: -2, max: 2 });
+    expect(region.grid).toEqual({ x: 40, y: 30 });
+    expect(region.surface).toEqual({ wireframe: true, showScale: true });
+    // And a re-parse (save→load) is stable.
+    expect(parseContent(parsed)).toEqual(parsed);
   });
 });

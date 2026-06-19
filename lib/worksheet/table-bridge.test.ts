@@ -128,4 +128,43 @@ describe("settleTables (scope-bridge)", () => {
     expect(() => settleTables(content, engine)).not.toThrow();
     expect(passes()).toBeLessThanOrEqual(9);
   });
+
+  it("samples a plot against table-exported ranges + a math definition", () => {
+    // A table exports `ids` and `forces`; a plot binds x→ids, y→forces·gamma — so
+    // the plot reads both a table export and a worksheet name from the settled scope.
+    const content = doc([
+      { id: "g", type: "math", indent: 0, source: "gamma := 2" },
+      {
+        id: "t1",
+        type: "table",
+        indent: 0,
+        ranges: { ids: "A2:A4", forces: "B2:B4" },
+        columns: [
+          { key: "a", label: "Id" },
+          { key: "b", label: "Force", unit: "kN" },
+        ],
+        rows: [["1", "10"], ["2", "20"], ["3", "30"]],
+      },
+      {
+        id: "p1",
+        type: "plot",
+        indent: 0,
+        kind: "xy",
+        xVar: "x",
+        yVar: "y",
+        x: {},
+        y: { unit: "kN" },
+        xData: "ids",
+        traces: [{ id: "tr", expr: "forces * gamma", style: "line" }],
+        legend: true,
+      },
+    ]);
+    const { engine } = countingEngine();
+    const { plots } = settleTables(content, engine);
+    const plot = plots.get("p1")!;
+    expect(plot.empty).toBe(false);
+    expect(plot.traces[0].error).toBeUndefined();
+    expect(plot.traces[0].points.map((p) => p.x)).toEqual([1, 2, 3]);
+    expect(plot.traces[0].points.map((p) => p.y)).toEqual([20, 40, 60]); // forces · gamma
+  });
 });

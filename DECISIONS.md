@@ -2,6 +2,63 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Plot region (Func §6.4 + Claude Design `plot-region.html`)
+
+- **Plot is now fully typed (was render-only), with no migration needed.** The schema adds
+  `kind` (`xy|polar|contour|surface`), `xVar`/`yVar`/`xData`, `x`/`y` axes
+  (`{label,unit,min,max,log}`), a full `traces[]` (`{id,expr,style,color,dash,hidden}`), plus the
+  contour/3D config (`z`, `grid`, `surface`) and `samples`/`legend`/`frame`. Unlike the table
+  migration (whose legacy `rows` *count* conflicted with the new shape), the old render-only plot
+  payload only ever held `title`, and every new field has a sensible default — so a legacy
+  `{type:"plot"}` validates as a default xy plot with no `migrateRegionPlot` step. `.passthrough()`
+  keeps any unknown payload non-lossy.
+- **Engine = a new pure `lib/calc/plot.ts`; `graph.ts`/`recalc.ts` untouched.** `evaluatePlot(spec,
+  externalScope?, system?)` samples each trace and is deterministic (client = worker = Node),
+  reusing the engine's own `toDisplayUnit`/`formatValue`/typed errors. It never throws into the UI
+  — every trace is wrapped, a bad trace errors locally (typed `CalcError`) and the rest still plot.
+  `git diff` shows zero lines in the engine core.
+- **Plots are read-only scope consumers, evaluated in the same settle pass as tables.** A plot
+  exports nothing, so `settleTables` (now returning `{sheet, tables, plots}`) samples every plot
+  once against the *final* settled scope (worksheet names + table exports) — so a plot bound to a
+  table column or a worksheet variable stays reactive on recalc, with no fold-back/fixpoint of its
+  own. The provider publishes `plotResults` beside `tableResults`; the renderer is a pure consumer
+  of the sampled series.
+- **Two binding modes, unified.** *Sweep* (plot-by-formula): sample `xVar` across `[x.min, x.max]`
+  (polar sweeps θ over a full turn by default), attach the x-axis unit, and evaluate each trace's
+  `expr` per sample — so `y = f(x)` / `r = f(θ)` are unit-aware (a constant expr ⇒ the mockup's
+  flat "capacity" line). *Data*: an `xData` expression resolves to a vector zipped with each trace
+  vector (a scalar broadcasts). Per-sample throws are gaps; a throw on **every** sample (e.g. an
+  undefined name or a unit mismatch) errors the trace — siblings keep rendering.
+- **XY + polar render fully; contour/3D ship typed-but-inert.** `evaluatePlot` returns
+  contour/surface as `empty`, and the view shows a faithful 'configure' placeholder that prints the
+  live, round-tripped config (z-expr, x/y ranges, grid resolution, options) — never a dead tile.
+  The full config (`z`/`grid`/`surface`) persists through the Zod schema and survives reload (tested
+  via `parseContent`), so the deferred 2D-sampling renderer adds **only** the renderer — no schema
+  or picker change. The trace-style enum carries the whole named set
+  (`line/scatter/line-marker/column/bar/stem/area/error/waterfall/box`); the SVG renders the common
+  subset and maps stragglers to a near neighbour (error→markers, waterfall→column, box→stem), so all
+  named types round-trip. `log` axes persist but render linearly this pass.
+- **Presentation is a pure, hook-free `plot-present.tsx` shared three ways.** `PlotFigure`/
+  `PlotLegend`/`PlotEmptyState`/`PlotPlaceholder` have no `"use client"` and no hooks, so the SAME
+  figure renders in the live editor (interactive), the read-only history snapshot, and the
+  server-side export/print path (`lib/export/document.tsx` now draws real sampled traces). Geometry,
+  ticks (`niceTicks`/`niceBounds`), STIX axis labels, hover read-out, and legend are derived from
+  the `PlotResult`; interactivity (hover, drag-pan) is opt-in via callbacks — with none passed the
+  figure is fully static and SSR-safe.
+- **Interactions match the mockup; drag pans, inputs pin.** Axis ranges are editable `rng` inputs
+  **and** draggable — dragging the x/y tick strip pans that axis (pointer delta → axis units via
+  `SET_PLOT_AXIS`), pinning an auto range to fixed on first drag. Hover snaps to the nearest sample
+  of the primary trace and shows the ink read-out chip; legend chips toggle `hidden`
+  (`TOGGLE_PLOT_TRACE`). All edits flow through dedicated reducer actions (`SET_PLOT_AXIS`,
+  `ADD/DELETE/SET/TOGGLE_PLOT_TRACE`, `INSERT_PLOT`) + `SET_REGION_PROP` for scalars → `touched()`
+  → the existing Zod-validated, RLS-gated autosave. No new entity/table/migration — config stays in
+  `worksheets.content` JSONB.
+- **Honest ribbon wiring.** The Plot tab's Polar/Contour/3D inserts now fire `INSERT_PLOT kind`, and
+  the contextual Traces "Add trace" + Legend toggle are wired to the selected plot (Legend reflects
+  `sel.plotLegend`). Controls with no backing field yet (trace-style dropdown, gridlines, scale,
+  axis-labels, title, frame, "Chart") stay `disabled` with the existing "coming soon" treatment
+  rather than faking behaviour.
+
 ## Table / spreadsheet region (Func §6.3 + Claude Design `table-region.html`)
 
 - **Engine connection = provider scope-bridge; `graph.ts`/`recalc.ts` untouched.** All

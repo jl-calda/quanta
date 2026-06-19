@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { evaluateTable, type TableSpec } from "@/lib/calc";
-import type { RenderOnlyRegion, TableRegion } from "@/lib/worksheet/content";
+import { evaluatePlot, evaluateTable, type PlotSpec, type TableSpec } from "@/lib/calc";
+import type { PlotRegion, RenderOnlyRegion, TableRegion } from "@/lib/worksheet/content";
 import { Icon, type IconName } from "../icons";
 import { TablePresent } from "./table-present";
+import { PlotEmptyState, PlotFigure, PlotLegend, PlotPlaceholder } from "./plot-present";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -49,23 +50,23 @@ export function TableRegionView({ region }: RegionRenderProps<TableRegion>) {
   return <TablePresent region={region} result={result} />;
 }
 
-export function PlotRegionView({ region }: RegionRenderProps<RenderOnlyRegion>) {
-  const data = region as Record<string, unknown>;
-  const title = typeof data.title === "string" ? data.title : null;
+/**
+ * Static (provider-free) plot for read-only contexts — history snapshots and any
+ * non-editor render. Samples through the same pure `evaluatePlot`; with no live
+ * worksheet scope here, plot-by-formula traces (`2·x²`) still draw, while traces
+ * bound to worksheet names show their inline error (acceptable for a snapshot).
+ */
+export function PlotRegionView({ region }: RegionRenderProps<PlotRegion>) {
+  const result = useMemo(() => evaluatePlot(region as PlotSpec, {}), [region]);
+  if (region.kind === "contour" || region.kind === "surface") return <PlotPlaceholder region={region} />;
+  if (region.traces.length === 0) return <PlotEmptyState />;
   return (
-    <div style={{ ...cardStyle, maxWidth: 560 }}>
-      {title && <div style={{ font: "600 12.5px/1.2 var(--font-sans)", marginBottom: 8 }}>{title}</div>}
-      <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Plot">
-        <line x1="46" y1="166" x2="454" y2="166" stroke="var(--border-strong)" strokeWidth="1.2" />
-        <line x1="46" y1="166" x2="46" y2="14" stroke="var(--border-strong)" strokeWidth="1.2" />
-        {[40, 80, 120].map((y) => (
-          <line key={y} x1="46" y1={y} x2="454" y2={y} stroke="var(--border-hairline)" strokeWidth="1" />
-        ))}
-        <path d="M46 150 L160 90 L260 60 L360 44 L454 40" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <div style={{ font: "11.5px/1.3 var(--font-sans)", color: "var(--text-muted)", marginTop: 6 }}>
-        Configure traces and axes in the inspector.
+    <div style={{ maxWidth: 560 }}>
+      {region.title && <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 8 }}>{region.title}</div>}
+      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+        <PlotFigure result={result} region={region} />
       </div>
+      <PlotLegend traces={result.traces} boundLabel={region.traces[0]?.expr ?? null} />
     </div>
   );
 }

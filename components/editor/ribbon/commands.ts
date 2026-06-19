@@ -1,7 +1,7 @@
 "use client";
 
 import { findRegion, findRowOf } from "@/lib/worksheet/flatten";
-import type { MathRegion, RegionType } from "@/lib/worksheet/content";
+import type { MathRegion, PlotKind, PlotRegion, RegionType } from "@/lib/worksheet/content";
 import { useEditor } from "../state/editor-provider";
 import type { CalcMode, UnitsSystem } from "../state/editor-reducer";
 import { useComments } from "../comments/comments-provider";
@@ -25,6 +25,8 @@ export interface RibbonSelection {
   regionType: RegionType | null;
   isMath: boolean;
   isPlot: boolean;
+  /** The selected plot's legend is shown (drives the contextual Legend toggle). */
+  plotLegend: boolean;
   /** A math region is open for editing (its field is the natural-entry target). */
   isEditingMath: boolean;
   decimals: number;
@@ -49,6 +51,12 @@ export interface RibbonSelection {
  */
 export interface RibbonCommands {
   insertRegion: (type: RegionType) => void;
+  /** Insert a plot of a specific kind (Polar / Contour / 3D ribbon buttons). */
+  insertPlot: (kind: PlotKind) => void;
+  /** Add a trace to the selected plot (contextual Plot tab). */
+  addPlotTrace: () => void;
+  /** Toggle the selected plot's legend (contextual Plot tab). */
+  togglePlotLegend: () => void;
   insertOp: (key: OperatorKey) => void;
   insertMatrixOp: (key: MatrixOpKey) => void;
   insertMatrix: (rows: number, cols: number) => void;
@@ -86,6 +94,8 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
   const selected = state.selectedId ? findRegion(state.content, state.selectedId) : undefined;
   const selectedMath: MathRegion | undefined =
     selected?.type === "math" ? selected : undefined;
+  const selectedPlot: PlotRegion | undefined =
+    selected?.type === "plot" ? selected : undefined;
   const editing = state.editingId ? findRegion(state.content, state.editingId) : undefined;
   const row = state.selectedId ? findRowOf(state.content, state.selectedId) : null;
   const isTopLevel =
@@ -95,7 +105,8 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
     hasSelection: !!selected,
     regionType: selected?.type ?? null,
     isMath: !!selectedMath,
-    isPlot: selected?.type === "plot",
+    isPlot: !!selectedPlot,
+    plotLegend: selectedPlot?.legend ?? false,
     isEditingMath: editing?.type === "math",
     decimals: selectedMath?.format?.decimals ?? 2,
     showSteps: selectedMath?.display?.substituted ?? false,
@@ -112,6 +123,21 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
   const insertRegion = (type: RegionType) => {
     if (!canEdit) return;
     dispatch({ type: "INSERT_REGION", regionType: type, anchorId: state.selectedId, where: "below" });
+  };
+
+  const insertPlot = (kind: PlotKind) => {
+    if (!canEdit) return;
+    dispatch({ type: "INSERT_PLOT", kind, anchorId: state.selectedId, where: "below" });
+  };
+
+  const addPlotTrace = () => {
+    if (!canEdit || !selectedPlot) return;
+    dispatch({ type: "ADD_PLOT_TRACE", id: selectedPlot.id });
+  };
+
+  const togglePlotLegend = () => {
+    if (!canEdit || !selectedPlot) return;
+    dispatch({ type: "SET_REGION_PROP", id: selectedPlot.id, patch: { legend: !selectedPlot.legend } });
   };
 
   const insertOp = (key: OperatorKey) => {
@@ -190,6 +216,9 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
 
   const cmd: RibbonCommands = {
     insertRegion,
+    insertPlot,
+    addPlotTrace,
+    togglePlotLegend,
     insertOp,
     insertMatrixOp,
     insertMatrix,
