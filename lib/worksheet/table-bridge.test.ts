@@ -32,6 +32,17 @@ describe("buildEngineInputs", () => {
     expect(inputs.map((i) => i.id)).toEqual(["m1", "tbl:t1:anchor", "m2"]);
     expect(inputs[1].source).toBe("anchor := [1, 2, 3]");
   });
+
+  it("splices a solve block's exports as synthetic defs at its position", () => {
+    const content = doc([
+      { id: "m1", type: "math", indent: 0, source: "a := 1" },
+      { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"] },
+      { id: "m2", type: "math", indent: 0, source: "b := 2" },
+    ]);
+    const inputs = buildEngineInputs(content, undefined, new Map([["s1", { x: "3" }]]));
+    expect(inputs.map((i) => i.id)).toEqual(["m1", "slv:s1:x", "m2"]);
+    expect(inputs[1].source).toBe("x := 3");
+  });
 });
 
 describe("worksheetScopeFromResults", () => {
@@ -166,5 +177,59 @@ describe("settleTables (scope-bridge)", () => {
     expect(plot.traces[0].error).toBeUndefined();
     expect(plot.traces[0].points.map((p) => p.x)).toEqual([1, 2, 3]);
     expect(plot.traces[0].points.map((p) => p.y)).toEqual([20, 40, 60]); // forces · gamma
+  });
+});
+
+describe("settleTables — solve blocks (scope-bridge)", () => {
+  it("folds a solved unknown back so a downstream region resolves it", () => {
+    const content = doc([
+      { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"] },
+      { id: "y", type: "math", indent: 0, source: "y := x + 1" },
+    ]);
+    const { engine, passes } = countingEngine();
+    const { sheet, solves } = settleTables(content, engine);
+
+    expect(solves.get("s1")?.status).toBe("solved");
+    const y = sheet.regions.find((r) => r.name === "y");
+    expect(y?.error).toBeUndefined();
+    expect(y?.formatted).toMatch(/^4\b/); // x = 3 ⇒ y = 4
+    expect(sheet.regions.some((r) => r.id.startsWith("slv:"))).toBe(false); // synthetic stripped
+    expect(passes()).toBeLessThanOrEqual(9);
+  });
+
+  it("reads a worksheet name defined above the block", () => {
+    const content = doc([
+      { id: "a", type: "math", indent: 0, source: "a := 9" },
+      { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = a"] },
+      { id: "y", type: "math", indent: 0, source: "y := x" },
+    ]);
+    const { engine } = countingEngine();
+    const { sheet, solves } = settleTables(content, engine);
+    expect(solves.get("s1")?.status).toBe("solved");
+    expect(sheet.regions.find((r) => r.name === "y")?.formatted).toMatch(/^3\b/);
+  });
+
+  it("exports nothing (and never throws) when the solve has no solution", () => {
+    const content = doc([
+      { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "x", value: "0" }], constraints: ["x = 1", "x = 2"] },
+    ]);
+    const { engine, passes } = countingEngine();
+    let result!: ReturnType<typeof settleTables>;
+    expect(() => {
+      result = settleTables(content, engine);
+    }).not.toThrow();
+    expect(result.solves.get("s1")?.status).toBe("no-solution");
+    expect(passes()).toBeLessThanOrEqual(9);
+  });
+
+  it("is unit-aware end-to-end (guess in mm², downstream reads the result)", () => {
+    const content = doc([
+      { id: "s1", type: "solve", indent: 0, algorithm: "find", guesses: [{ var: "A", value: "100", unit: "mm^2" }], constraints: ["100 kN / A = 200 MPa"] },
+      { id: "d", type: "math", indent: 0, source: "d := A", unit: "mm^2" },
+    ]);
+    const { engine } = countingEngine();
+    const { sheet, solves } = settleTables(content, engine);
+    expect(solves.get("s1")?.status).toBe("solved");
+    expect(sheet.regions.find((r) => r.name === "d")?.formatted).toMatch(/^500\b/); // 500 mm²
   });
 });

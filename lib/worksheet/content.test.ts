@@ -153,6 +153,88 @@ describe("typed table region", () => {
   });
 });
 
+describe("typed solve region", () => {
+  const solveDoc = (region: Record<string, unknown>) => ({
+    version: 1,
+    rows: [{ id: "r1", columns: 1, cells: [{ regions: [region] }] }],
+  });
+
+  it("round-trips guesses (with units), constraints, algorithm + tolerances", () => {
+    const input = solveDoc({
+      id: "s1",
+      type: "solve",
+      indent: 0,
+      name: "plate thickness",
+      algorithm: "find",
+      guesses: [
+        { var: "t", value: "10", unit: "mm" },
+        { var: "theta", value: "30", unit: "deg" },
+      ],
+      constraints: ["sigma_vm(t) = f_y", "t >= 6 mm"],
+      ctol: 1e-8,
+      onNonConverge: "last",
+    });
+    const out = validateContent(input) as WorksheetContent;
+    const s = out.rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(s.algorithm).toBe("find");
+    expect(s.guesses).toEqual([
+      { var: "t", value: "10", unit: "mm" },
+      { var: "theta", value: "30", unit: "deg" },
+    ]);
+    expect(s.constraints).toEqual(["sigma_vm(t) = f_y", "t >= 6 mm"]);
+    expect(s.ctol).toBe(1e-8);
+    expect(s.onNonConverge).toBe("last");
+  });
+
+  it("round-trips the full ODE/PDE config for a deferred algorithm", () => {
+    const input = solveDoc({
+      id: "s1",
+      type: "solve",
+      indent: 0,
+      algorithm: "odesolve",
+      guesses: [{ var: "y", value: "0" }],
+      constraints: [],
+      ode: {
+        system: ["y'' + y = 0"],
+        indepVar: "t",
+        range: { min: 0, max: 10 },
+        conditions: ["y(0) = 1", "y'(0) = 0"],
+        step: 0.01,
+        mesh: 50,
+      },
+    });
+    const out = validateContent(input) as WorksheetContent;
+    const ode = (out.rows[0].cells[0].regions[0] as Record<string, unknown>).ode as Record<string, unknown>;
+    expect(ode).toEqual({
+      system: ["y'' + y = 0"],
+      indepVar: "t",
+      range: { min: 0, max: 10 },
+      conditions: ["y(0) = 1", "y'(0) = 0"],
+      step: 0.01,
+      mesh: 50,
+    });
+  });
+
+  it("validates a legacy bare {type:'solve'} (defaults applied, never wiped)", () => {
+    const out = validateContent(solveDoc({ id: "s1", type: "solve", indent: 0 }));
+    expect(out).not.toBeNull();
+    const s = (out as WorksheetContent).rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(s.algorithm).toBe("find");
+    expect(s.guesses).toEqual([]);
+    expect(s.constraints).toEqual([]);
+  });
+
+  it("seeds newRegion('solve') with a usable find block", () => {
+    const r = newRegion("solve");
+    expect(r.type).toBe("solve");
+    if (r.type === "solve") {
+      expect(r.algorithm).toBe("find");
+      expect(r.guesses.length).toBeGreaterThan(0);
+      expect(r.constraints.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("newRegion", () => {
   it("creates a math region with show-steps defaults", () => {
     const r = newRegion("math");

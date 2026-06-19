@@ -26,7 +26,7 @@ export {
   filterUnitLiterals,
   normalizeSource,
 } from "./parse";
-export { latexToSource, sourceToLatex } from "./latex";
+export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex } from "./latex";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";
 export { applyConditional } from "./conditional";
@@ -65,6 +65,23 @@ export {
   type TraceResult,
   type PlotBounds,
 } from "./plot";
+
+// Solve block (pure, engine-native — see ./solve).
+export {
+  evaluateSolve,
+  jsSolverBackend,
+  guessSource,
+  type SolveSpec,
+  type SolveResult,
+  type SolveStatus,
+  type SolveAlgorithm,
+  type SolveOutput,
+  type SolveGuessSpec,
+  type SolveOdeConfig,
+  type SolverBackend,
+  type NumericProblem,
+  type SolveRun,
+} from "./solve";
 
 export type {
   CalcResult,

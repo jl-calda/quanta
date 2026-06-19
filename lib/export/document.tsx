@@ -15,13 +15,23 @@
  */
 import type { ReactNode } from "react";
 import katex from "katex";
-import { evaluatePlot, evaluateTable, type RegionResult } from "@/lib/calc";
+import {
+  constraintToLatex,
+  evaluatePlot,
+  evaluateSolve,
+  evaluateTable,
+  exprToLatex,
+  guessSource,
+  sourceToLatex,
+  type RegionResult,
+} from "@/lib/calc";
 import {
   DEFAULT_DISPLAY,
   type MathRegion,
   type PlotRegion,
   type Region,
   type RenderOnlyRegion,
+  type SolveRegion,
   type TableColumn,
   type TableRegion,
   type TextRegion,
@@ -465,6 +475,106 @@ function InputsSummary({ rows }: { rows: { id: string; name: string; value: stri
   );
 }
 
+/**
+ * Solve block (print). Runs the SAME pure `evaluateSolve` in Node — so the PDF
+ * carries the solved values deterministically. Self-contained solves compute
+ * fully; worksheet-name-bound ones stay empty here (the export path has no live
+ * scope, exactly like tables/plots).
+ */
+function SolveBlock({ region }: { region: SolveRegion }): ReactNode {
+  if (region.disabled) return null;
+  const result = evaluateSolve(region, {});
+  const guesses = region.guesses.filter((g) => g.var.trim());
+  const constraints = region.constraints.filter((c) => c.trim());
+  const vars = (result.unknowns.length ? result.unknowns : guesses.map((g) => g.var)).join(", ");
+
+  const eyebrow = (label: string): ReactNode => (
+    <div style={{ font: "600 7.5px/1 var(--font-sans)", letterSpacing: "0.08em", textTransform: "uppercase", color: FAINT, margin: "7px 0 4px" }}>
+      {label}
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${STRONG_RULE}`,
+        borderLeft: "2.5px solid #1F5FBF",
+        borderRadius: 3,
+        background: "#fff",
+        padding: "8px 11px 9px",
+        marginBottom: 8,
+        marginLeft: (region.indent || 0) * 22,
+        breakInside: "avoid",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginBottom: 2 }}>
+        <span style={{ font: "600 10px/1 var(--font-sans)", color: INK }}>Solve block</span>
+        {region.name && <span style={{ font: "8.5px/1 var(--font-mono)", color: MUTED }}>{region.name}</span>}
+        <span style={{ marginLeft: "auto", font: "8px/1 var(--font-sans)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: result.status === "solved" ? "#1E8E5A" : result.status === "no-solution" || result.status === "error" ? "#C2392B" : MUTED }}>
+          {result.status === "solved" ? "converged" : result.status === "no-solution" || result.status === "error" ? "no solution" : result.status === "deferred" ? "ships next" : ""}
+        </span>
+      </div>
+
+      {guesses.length > 0 && (
+        <>
+          {eyebrow("Given — guess values")}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: 3 }}>
+            {guesses.map((g, i) => (
+              <Tex key={i} tex={sourceToLatex(`${g.var} := ${guessSource(g)}`)} size={12} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {constraints.length > 0 && (
+        <>
+          {eyebrow("Constraints")}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: 3 }}>
+            {constraints.map((c, i) => (
+              <Tex key={i} tex={constraintToLatex(c)} size={12} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {(region.algorithm === "minimize" || region.algorithm === "maximize") && region.objective?.trim() && (
+        <>
+          {eyebrow("Objective")}
+          <div style={{ paddingLeft: 3 }}>
+            <Tex tex={exprToLatex(region.objective)} size={12} />
+          </div>
+        </>
+      )}
+
+      {eyebrow("Solve")}
+      <div style={{ paddingLeft: 3 }}>
+        <Tex tex={`\\left(${vars || "\\;"}\\right) := \\operatorname{${region.algorithm}}\\left(${vars || "\\;"}\\right)`} size={12} />
+      </div>
+
+      <div style={{ marginTop: 7, paddingTop: 6, borderTop: `1px solid ${HAIRLINE}` }}>
+        {result.status === "solved" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {result.outputs.map((out) => (
+              <div key={out.name} style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                <Tex tex={`${exprToLatex(out.name)} =`} size={12} />
+                <span style={{ font: "600 11px/1.2 var(--font-math)", color: "#1F5FBF" }}>{out.formatted}</span>
+              </div>
+            ))}
+          </div>
+        ) : result.status === "deferred" ? (
+          <div style={{ font: "9.5px/1.4 var(--font-sans)", color: MUTED }}>
+            {region.algorithm} — differential-equation integrator ships with the SciPy engine; configuration saved.
+          </div>
+        ) : (
+          <div style={{ font: "9.5px/1.4 var(--font-sans)", color: "#C2392B" }}>
+            {result.error?.message ?? "No solution found."} {result.error?.fixHint ?? ""}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RegionBlock({
   region,
   results,
@@ -483,6 +593,8 @@ function RegionBlock({
       return <TableBlock region={region} />;
     case "plot":
       return <PlotBlock region={region} borders={options.borders || region.border === true} />;
+    case "solve":
+      return <SolveBlock region={region} />;
     case "image":
       return <ImageBlock region={region} />;
     case "area":

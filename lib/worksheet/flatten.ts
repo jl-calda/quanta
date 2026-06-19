@@ -5,9 +5,9 @@
  * maps `RegionResult`s back onto region ids for O(1) render lookup. Reading order
  * is what enforces "a name must be defined earlier than it is used".
  */
-import { evaluatePlot, evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
-import type { PlotResult, RegionInput, RegionResult, SheetResult, TableResult } from "@/lib/calc";
-import type { ControlRegion, PlotRegion, Region, Row, TableRegion, WorksheetContent } from "./content";
+import { evaluatePlot, evaluateSolve, evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
+import type { PlotResult, RegionInput, RegionResult, SheetResult, SolveResult, TableResult } from "@/lib/calc";
+import type { ControlRegion, PlotRegion, Region, Row, SolveRegion, TableRegion, WorksheetContent } from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -100,6 +100,15 @@ export function plotRegions(content: WorksheetContent): PlotRegion[] {
   return out;
 }
 
+/** Every solve block, in reading order — drives the provider's solve evaluation. */
+export function solveRegions(content: WorksheetContent): SolveRegion[] {
+  const out: SolveRegion[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "solve") out.push(region);
+  }
+  return out;
+}
+
 /**
  * Sample every plot against a settled worksheet scope (pure — plots are read-only
  * consumers that export nothing, so they evaluate once after tables settle).
@@ -139,6 +148,7 @@ export function worksheetScopeFromResults(
 export function buildEngineInputs(
   content: WorksheetContent,
   tableExports?: Map<string, Record<string, string>>,
+  solveExports?: Map<string, Record<string, string>>,
 ): RegionInput[] {
   const inputs: RegionInput[] = [];
   for (const region of walkRegions(content)) {
@@ -162,6 +172,16 @@ export function buildEngineInputs(
           inputs.push({ id: `${SYNTHETIC_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
         }
       }
+    } else if (region.type === "solve") {
+      // A solve block is an exporter like a table: its solved unknowns are folded
+      // back as synthetic definitions at its reading-order position so the
+      // UNMODIFIED engine resolves them for downstream regions.
+      const exp = solveExports?.get(region.id);
+      if (exp) {
+        for (const [name, source] of Object.entries(exp)) {
+          inputs.push({ id: `${SOLVE_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
+        }
+      }
     }
   }
   return inputs;
@@ -179,6 +199,12 @@ export function buildEngineInputs(
 
 const MAX_SETTLE_ITERS = 8;
 const SYNTHETIC_PREFIX = "tbl:";
+const SOLVE_PREFIX = "slv:";
+
+/** True for an engine input id that is a folded-back table/solve export. */
+function isSynthetic(id: string): boolean {
+  return id.startsWith(SYNTHETIC_PREFIX) || id.startsWith(SOLVE_PREFIX);
+}
 
 /** The minimal slice of `CalcEngine` the settle loop drives. */
 export interface TableEngine {
@@ -198,9 +224,9 @@ function snapshotExports(map: Map<string, Record<string, string>>): string {
   return JSON.stringify(obj);
 }
 
-/** Drop synthetic table-export regions so results reflect real regions only. */
+/** Drop synthetic table/solve export regions so results reflect real regions only. */
 function stripSynthetic(sheet: SheetResult): SheetResult {
-  const regions = sheet.regions.filter((r) => !r.id.startsWith(SYNTHETIC_PREFIX));
+  const regions = sheet.regions.filter((r) => !isSynthetic(r.id));
   if (regions.length === sheet.regions.length) return sheet;
   const errorCount = regions.filter((r) => r.status === "error").length;
   const hasStale = regions.some((r) => r.status === "stale");
@@ -208,11 +234,15 @@ function stripSynthetic(sheet: SheetResult): SheetResult {
 }
 
 /**
- * Run the engine + tables to a settled fixpoint. Tables read the worksheet scope
- * from the engine's results; their serialized named exports are folded back as
- * synthetic definitions and the engine re-runs, until the export snapshot stops
- * changing (or the cap / oscillation guard trips). Returns the real-region sheet
- * (synthetic defs stripped) and the per-table results, keyed by region id.
+ * Run the engine + its exporters (tables AND solve blocks) to a settled fixpoint.
+ * Both read the worksheet scope from the engine's results; their serialized named
+ * outputs are folded back as synthetic definitions and the engine re-runs, until
+ * the combined export snapshot stops changing (or the cap / oscillation guard
+ * trips). Solve blocks are unit-aware exporters just like tables — the pure,
+ * synchronous `evaluateSolve` runs here, so the whole loop stays deterministic
+ * and Node-safe (the solve recomputes during server-side PDF export). Returns the
+ * real-region sheet (synthetic defs stripped) plus the per-table, per-plot, and
+ * per-solve results, keyed by region id.
  */
 export function settleTables(
   content: WorksheetContent,
@@ -221,31 +251,40 @@ export function settleTables(
   sheet: SheetResult;
   tables: Map<string, TableResult>;
   plots: Map<string, PlotResult>;
+  solves: Map<string, SolveResult>;
 } {
   const plotSpecs = plotRegions(content);
-  const specs = tableRegions(content);
-  if (specs.length === 0) {
+  const tableSpecs = tableRegions(content);
+  const solveSpecs = solveRegions(content);
+
+  // No exporters ⇒ a single engine pass, then sample plots against its scope.
+  if (tableSpecs.length === 0 && solveSpecs.length === 0) {
     engine.setRegions(buildEngineInputs(content));
     const sheet = engine.getResult();
     const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions));
-    return { sheet, tables: new Map(), plots };
+    return { sheet, tables: new Map(), plots, solves: new Map() };
   }
 
+  // One combined export map keyed by region id (ids are unique, so it can serve
+  // as both the table- and solve-export source for `buildEngineInputs`).
   let exportsBySource = new Map<string, Record<string, string>>();
   let exportsRaw: Record<string, unknown> = {};
   let sheet = engine.getResult();
   let tables = new Map<string, TableResult>();
+  let solves = new Map<string, SolveResult>();
   const seen = new Set<string>();
 
   for (let iter = 0; iter < MAX_SETTLE_ITERS; iter += 1) {
-    engine.setRegions(buildEngineInputs(content, exportsBySource));
+    engine.setRegions(buildEngineInputs(content, exportsBySource, exportsBySource));
     sheet = engine.getResult();
     const scope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
 
     tables = new Map();
+    solves = new Map();
     const nextRaw: Record<string, unknown> = {};
     const nextBySource = new Map<string, Record<string, string>>();
-    for (const spec of specs) {
+
+    for (const spec of tableSpecs) {
       const result = evaluateTable(spec, scope, SI_SYSTEM);
       tables.set(spec.id, result);
       const sources: Record<string, string> = {};
@@ -253,6 +292,18 @@ export function settleTables(
         nextRaw[name] = value;
         const serialized = serializeForScope(value);
         if (serialized !== null) sources[name] = serialized;
+      }
+      if (Object.keys(sources).length > 0) nextBySource.set(spec.id, sources);
+    }
+
+    for (const spec of solveSpecs) {
+      const result = evaluateSolve(spec, scope, SI_SYSTEM);
+      solves.set(spec.id, result);
+      const sources: Record<string, string> = {};
+      for (const out of result.outputs) {
+        nextRaw[out.name] = out.value;
+        const serialized = serializeForScope(out.value);
+        if (serialized !== null) sources[out.name] = serialized;
       }
       if (Object.keys(sources).length > 0) nextBySource.set(spec.id, sources);
     }
@@ -265,11 +316,11 @@ export function settleTables(
     seen.add(snapshot);
   }
 
-  // Plots read the final settled scope (worksheet names + table exports).
+  // Plots read the final settled scope (worksheet names + table + solve exports).
   const plotScope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
   const plots = evaluatePlotsWith(plotSpecs, plotScope);
 
-  return { sheet: stripSynthetic(sheet), tables, plots };
+  return { sheet: stripSynthetic(sheet), tables, plots, solves };
 }
 
 /** All region ids in reading order (every type), e.g. for selection navigation. */

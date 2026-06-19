@@ -234,3 +234,61 @@ export function sourceToLatex(source: string): string {
   }
   return name ? `${nameToLatex(name)} := ${rhs}` : rhs;
 }
+
+/** Render a single expression to LaTeX (degrades to raw text on a parse error). */
+export function exprToLatex(src: string): string {
+  const t = src.trim();
+  if (!t) return "";
+  try {
+    return math.parse(t).toTex();
+  } catch {
+    return t;
+  }
+}
+
+const REL_LATEX: Record<string, string> = {
+  "<=": "\\le",
+  ">=": "\\ge",
+  "==": "=",
+  "!=": "\\ne",
+  "<": "<",
+  ">": ">",
+  "=": "=",
+};
+
+/**
+ * Render a solve-block constraint (`a = b`, `a <= b`, or a chained `lo <= x <= hi`)
+ * to LaTeX by splitting at top-level relational operators and rendering each side.
+ * Shared by the solve-block read view and the print/export renderer.
+ */
+export function constraintToLatex(src: string): string {
+  const sides: string[] = [];
+  const ops: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+    else if (ch === ")" || ch === "]" || ch === "}") depth -= 1;
+    else if (depth === 0) {
+      const two = src.slice(i, i + 2);
+      if (two === "<=" || two === ">=" || two === "==" || two === "!=") {
+        sides.push(src.slice(start, i));
+        ops.push(two);
+        i += 1;
+        start = i + 1;
+        continue;
+      }
+      if ((ch === "<" || ch === ">" || ch === "=") && src[i + 1] !== "=" && src[i - 1] !== ":") {
+        sides.push(src.slice(start, i));
+        ops.push(ch);
+        start = i + 1;
+      }
+    }
+  }
+  sides.push(src.slice(start));
+  if (ops.length === 0) return exprToLatex(src);
+  let out = exprToLatex(sides[0]);
+  for (let k = 0; k < ops.length; k += 1) out += ` ${REL_LATEX[ops[k]] ?? "="} ${exprToLatex(sides[k + 1])}`;
+  return out;
+}
