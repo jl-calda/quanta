@@ -5,7 +5,6 @@ import {
   stringFromBase64URL,
   type CookieOptions,
 } from "@supabase/ssr";
-import { createClient as createTokenClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { getSupabaseEnv } from "./env";
 import type { Database } from "./types";
@@ -26,7 +25,34 @@ export async function createClient() {
   const { url, anonKey } = getSupabaseEnv();
   const cookieStore = await cookies();
 
+  // Pin the user's access token onto every PostgREST data request. supabase-js
+  // and @supabase/ssr attach the session token to reads, but in this Next.js
+  // Server Action runtime they do NOT attach it to write POSTs — confirmed in
+  // production, where inserts/updates reached Postgres as `anon` and RLS rejected
+  // them (42501) even for owners/admins. Overriding the Authorization header at
+  // the outermost fetch layer is verb-agnostic and deterministic, so reads AND
+  // writes go out authenticated. Scoped to `/rest/` so auth calls (`/auth/v1`,
+  // getUser/refresh) keep using the cookie session untouched; reads are
+  // unaffected because the pinned token equals the session's own.
+  const accessToken = await readAccessTokenFromCookies(cookieStore);
+  const authedFetch: typeof fetch = (input, init) => {
+    const target =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (accessToken && target.includes("/rest/")) {
+      const headers = new Headers(init?.headers);
+      headers.set("Authorization", `Bearer ${accessToken}`);
+      headers.set("apikey", anonKey);
+      return fetch(input, { ...init, headers });
+    }
+    return fetch(input, init);
+  };
+
   return createServerClient<Database>(url, anonKey, {
+    global: { fetch: authedFetch },
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -85,58 +111,18 @@ async function readAccessTokenFromCookies(
 }
 
 /**
- * Client for **mutations** in Server Actions, with the caller's access token
- * pinned into the Authorization header.
- *
- * Why this exists: the cookie-session client (`createClient`) resolves the
- * user's JWT lazily, once per PostgREST request, via `auth.getSession()` —
- * falling back to the anon key when that resolve comes back empty. Inside a
- * single Server Action that per-request resolve can race: an earlier read is
- * authenticated, but a following write reaches PostgREST as `anon`, so RLS
- * rejects it (e.g. `worksheets_insert` → 42501) even for an owner/admin.
- *
- * Pinning a single, deterministically-read token onto a plain client makes
- * every data call carry the user's JWT. The token is read straight from the
- * auth cookie (`readAccessTokenFromCookies`) precisely to avoid the racy
- * `getSession()`; `getSession()` remains only as a last-resort fallback. The
- * pinned client is stateless (no cookie storage, no refresh) — auth stays the
- * cookie client's job; this one only talks to the database as the user.
- *
- * Returns `{ user: null }` when there is no session — callers treat that as
- * signed out, exactly as they did with `getUser()`.
+ * Convenience for Server Action mutations: the standard cookie client — which
+ * now pins the user's JWT onto every PostgREST request, reads AND writes (see
+ * `createClient`) — together with the authenticated user, in one call. Returns
+ * `{ user: null }` when signed out, so callers bail exactly as they did with a
+ * bare `getUser()`.
  */
 export async function createActionClient() {
-  const cookieClient = await createClient();
+  const db = await createClient();
   const {
     data: { user },
-  } = await cookieClient.auth.getUser();
-  if (!user) return { db: cookieClient, user: null };
-
-  const cookieStore = await cookies();
-  let token = await readAccessTokenFromCookies(cookieStore);
-  if (!token) {
-    // Last resort: getSession() may still race, but try it before giving up.
-    const {
-      data: { session },
-    } = await cookieClient.auth.getSession();
-    token = session?.access_token ?? null;
-  }
-  if (!token) return { db: cookieClient, user };
-
-  const { url, anonKey } = getSupabaseEnv();
-  const jwt = token; // narrowed to string after the guard above
-  const db = createTokenClient<Database>(url, anonKey, {
-    // Pin the user's JWT via supabase-js's `accessToken` hook. This reliably
-    // authenticates READ requests (SELECTs). It does NOT, in this Next.js
-    // runtime, attach the token to write POSTs: production logs showed the same
-    // client running its read probe as the signed-in user (auth.uid() set) while
-    // the worksheet INSERT still reached Postgres as `anon` (auth.uid() null) and
-    // tripped `worksheets_insert` (42501). So treat this client as read-capable
-    // and route mutations through `rpcAsUser`, which pins the JWT onto the POST
-    // itself. (`.auth` is unused on this client.)
-    accessToken: async () => jwt,
-  });
-  return { db, user };
+  } = await db.auth.getUser();
+  return { db, user: user ?? null };
 }
 
 /**
