@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createActionClient, createClient } from "@/lib/supabase/server";
+import {
+  createActionClient,
+  createClient,
+  rpcAsUser,
+} from "@/lib/supabase/server";
 import {
   createWorksheetSchema,
   nameWorksheetVersionSchema,
@@ -55,57 +59,20 @@ export async function createWorksheet(input: {
       content = template.content;
       // Bump the template's usage_count. A SECURITY DEFINER RPC handles this
       // because `templates_update` RLS would block a member from updating a
-      // public template they don't own. Best-effort — never fail the create.
-      await supabase.rpc("increment_template_usage", { tpl: templateId });
+      // public template they don't own. Routed through `rpcAsUser` for the same
+      // reason as the create below — supabase-js doesn't authenticate the write
+      // POST here. Best-effort: never fail the create on it.
+      await rpcAsUser("increment_template_usage", { tpl: templateId });
     }
   }
 
-  // TEMP DIAGNOSTIC (remove after root-causing worksheet-create 403s):
-  // Probe whether THIS request's DB client is authenticated. `getUser()` above
-  // talks to the auth server, but the PostgREST insert relies on the access
-  // token being attached to data requests. This read is RLS-gated by
-  // `user_id = auth.uid()`, so it returns the role only when the client is
-  // authenticated at the DB; a null role means data calls are hitting Postgres
-  // as `anon`, which is exactly what makes `worksheets_insert` fail with 42501.
-  const probe = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
-  console.error("[createWorksheet] auth probe", {
-    userId: user.id,
-    workspaceId,
-    dbAuthenticated: probe.data?.role != null,
-    probedRole: probe.data?.role ?? null,
-    probeError: probe.error?.code ?? null,
-  });
-
-  // Create via the SECURITY DEFINER RPC (migration: create_worksheet_rpc). The
-  // direct `.insert()` reached Postgres without the user's JWT — reads carried
-  // it, but the insert POST did not — so RLS rejected it (42501) even for an
-  // owner/admin. The RPC runs as definer; it authorizes auth.uid() + workspace
-  // role itself, then inserts. The generated Database types don't include this
-  // function yet, so call it through a narrow typed cast.
-  const callCreate = supabase.rpc as unknown as (
-    fn: "create_worksheet",
-    args: {
-      p_workspace_id: string;
-      p_project_id: string | null;
-      p_title: string;
-      p_content: Json;
-    },
-  ) => Promise<{
-    data: string | null;
-    error: {
-      code?: string;
-      message?: string;
-      details?: string;
-      hint?: string;
-    } | null;
-  }>;
-  const { data: worksheetId, error: rpcError } = await callCreate(
+  // Create via the SECURITY DEFINER RPC (migration 0009_create_worksheet_rpc).
+  // A direct `.insert()` — and even `supabase.rpc()` — reached Postgres without
+  // the user's JWT here: reads carried it, but the write POST did not, so RLS
+  // rejected the insert (42501) for owners/admins alike. `rpcAsUser` pins the
+  // token onto the POST itself; the RPC then authorizes auth.uid() + workspace
+  // role as definer and inserts.
+  const { data: worksheetId, error: rpcError } = await rpcAsUser<string>(
     "create_worksheet",
     {
       p_workspace_id: workspaceId,
