@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createActionClient, createClient } from "@/lib/supabase/server";
+import {
+  createActionClient,
+  createClient,
+  rpcAsUser,
+} from "@/lib/supabase/server";
 import {
   createWorksheetSchema,
   nameWorksheetVersionSchema,
@@ -55,58 +59,44 @@ export async function createWorksheet(input: {
       content = template.content;
       // Bump the template's usage_count. A SECURITY DEFINER RPC handles this
       // because `templates_update` RLS would block a member from updating a
-      // public template they don't own. Best-effort — never fail the create.
-      await supabase.rpc("increment_template_usage", { tpl: templateId });
+      // public template they don't own. Routed through `rpcAsUser` for the same
+      // reason as the create below — supabase-js doesn't authenticate the write
+      // POST here. Best-effort: never fail the create on it.
+      await rpcAsUser("increment_template_usage", { tpl: templateId });
     }
   }
 
-  // TEMP DIAGNOSTIC (remove after root-causing worksheet-create 403s):
-  // Probe whether THIS request's DB client is authenticated. `getUser()` above
-  // talks to the auth server, but the PostgREST insert relies on the access
-  // token being attached to data requests. This read is RLS-gated by
-  // `user_id = auth.uid()`, so it returns the role only when the client is
-  // authenticated at the DB; a null role means data calls are hitting Postgres
-  // as `anon`, which is exactly what makes `worksheets_insert` fail with 42501.
-  const probe = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
-  console.error("[createWorksheet] auth probe", {
-    userId: user.id,
-    workspaceId,
-    dbAuthenticated: probe.data?.role != null,
-    probedRole: probe.data?.role ?? null,
-    probeError: probe.error?.code ?? null,
-  });
+  // Create via the SECURITY DEFINER RPC (migration 0009_create_worksheet_rpc).
+  // A direct `.insert()` — and even `supabase.rpc()` — reached Postgres without
+  // the user's JWT here: reads carried it, but the write POST did not, so RLS
+  // rejected the insert (42501) for owners/admins alike. `rpcAsUser` pins the
+  // token onto the POST itself; the RPC then authorizes auth.uid() + workspace
+  // role as definer and inserts.
+  const { data: worksheetId, error: rpcError } = await rpcAsUser<string>(
+    "create_worksheet",
+    {
+      p_workspace_id: workspaceId,
+      p_project_id: projectId ?? null,
+      p_title: title,
+      p_content: content,
+    },
+  );
 
-  const { data: worksheet, error: insertError } = await supabase
-    .from("worksheets")
-    .insert({
-      workspace_id: workspaceId,
-      project_id: projectId ?? null,
-      title,
-      content,
-      owner_id: user.id,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !worksheet) {
-    // TEMP DIAGNOSTIC (remove with the probe above): full Postgres error so the
-    // exact failure (RLS WITH CHECK vs. grant vs. constraint) is visible in logs.
-    console.error("[createWorksheet] insert failed", {
-      code: insertError?.code ?? null,
-      message: insertError?.message ?? null,
-      details: insertError?.details ?? null,
-      hint: insertError?.hint ?? null,
+  if (rpcError || !worksheetId) {
+    console.error("[createWorksheet] rpc failed", {
+      code: rpcError?.code ?? null,
+      message: rpcError?.message ?? null,
+      details: rpcError?.details ?? null,
+      hint: rpcError?.hint ?? null,
     });
-    // 42501 = insufficient privilege (RLS check failed) — the member's role is
-    // below engineer, so they may not create worksheets here.
-    if (insertError?.code === "42501") {
+    if (rpcError?.code === "28000") {
+      // auth.uid() was null inside the RPC — the request reached Postgres
+      // unauthenticated. Surface a session error, not a permission one.
+      return err(
+        "Your session didn't reach the server. Refresh the page and try again.",
+      );
+    }
+    if (rpcError?.code === "42501") {
       return err(
         "You don't have permission to create worksheets in this workspace. Ask an admin for engineer access.",
       );
@@ -115,7 +105,7 @@ export async function createWorksheet(input: {
   }
 
   revalidatePath("/app");
-  return ok({ id: worksheet.id });
+  return ok({ id: worksheetId });
 }
 
 export type SearchHit = {

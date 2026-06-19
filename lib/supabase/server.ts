@@ -121,30 +121,99 @@ export async function createActionClient() {
     } = await cookieClient.auth.getSession();
     token = session?.access_token ?? null;
   }
-  // TEMP DIAGNOSTIC (remove with the createWorksheet probes): confirms the
-  // cookie read recovered a token on a real deploy.
-  console.error("[createActionClient]", {
-    userId: user.id,
-    tokenFound: !!token,
-    tokenLength: token?.length ?? 0,
-  });
   if (!token) return { db: cookieClient, user };
 
   const { url, anonKey } = getSupabaseEnv();
   const jwt = token; // narrowed to string after the guard above
   const db = createTokenClient<Database>(url, anonKey, {
-    // Pin the user's JWT via supabase-js's official `accessToken` hook so it is
-    // attached to EVERY PostgREST request — reads AND writes.
-    //
-    // A global `Authorization` header is NOT enough: supabase-js wraps fetch so
-    // it only sets Authorization when the request doesn't already carry one,
-    // otherwise falling back to `accessToken() ?? anonKey`. In practice the
-    // header reached SELECTs but not the INSERT's request, so the write fell
-    // back to the anon key and RLS rejected it (42501) — exactly what we saw
-    // with `tokenFound: true` yet the insert still failing. Routing the token
-    // through `accessToken` makes the fallback resolve to the user's JWT, so it
-    // lands on the insert too. (`.auth` is unused on this client.)
+    // Pin the user's JWT via supabase-js's `accessToken` hook. This reliably
+    // authenticates READ requests (SELECTs). It does NOT, in this Next.js
+    // runtime, attach the token to write POSTs: production logs showed the same
+    // client running its read probe as the signed-in user (auth.uid() set) while
+    // the worksheet INSERT still reached Postgres as `anon` (auth.uid() null) and
+    // tripped `worksheets_insert` (42501). So treat this client as read-capable
+    // and route mutations through `rpcAsUser`, which pins the JWT onto the POST
+    // itself. (`.auth` is unused on this client.)
     accessToken: async () => jwt,
   });
   return { db, user };
+}
+
+/**
+ * Call a Postgres function (RPC) as the signed-in user over a raw `fetch`, with
+ * the user's access token pinned explicitly onto the POST.
+ *
+ * This exists because supabase-js's own write path does not attach the recovered
+ * token to its POST in this runtime — confirmed in production, where worksheet
+ * creation's INSERT reached Postgres as `anon` (auth.uid() null → 42501) even
+ * though the same client's reads ran authenticated. Issuing the POST ourselves,
+ * with `Authorization: Bearer <jwt>`, guarantees the token lands on the write;
+ * paired with a SECURITY DEFINER function that re-checks auth.uid() + role, it is
+ * a safe, deterministic mutation path.
+ *
+ * Returns a Supabase-style `{ data, error }`. `error.code` carries the Postgres
+ * SQLSTATE (e.g. `28000` unauthenticated, `42501` insufficient role) so callers
+ * branch exactly as they did on a `supabase.rpc()` result. A scalar-returning
+ * function (e.g. `returns uuid`) yields that value directly in `data`.
+ */
+export async function rpcAsUser<T = unknown>(
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<{
+  data: T | null;
+  error: {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  } | null;
+}> {
+  const { url, anonKey } = getSupabaseEnv();
+  const cookieStore = await cookies();
+  const token = await readAccessTokenFromCookies(cookieStore);
+  if (!token) {
+    return {
+      data: null,
+      error: { code: "28000", message: "No access token in request cookies." },
+    };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${url}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(args),
+    });
+  } catch (e) {
+    return {
+      data: null,
+      error: { message: e instanceof Error ? e.message : "Network error." },
+    };
+  }
+
+  const raw = await res.text();
+  if (!res.ok) {
+    // PostgREST error bodies are JSON: { code, message, details, hint }.
+    try {
+      return { data: null, error: JSON.parse(raw) };
+    } catch {
+      return {
+        data: null,
+        error: { code: String(res.status), message: raw || res.statusText },
+      };
+    }
+  }
+
+  try {
+    return { data: (raw ? JSON.parse(raw) : null) as T, error: null };
+  } catch {
+    return { data: raw as unknown as T, error: null };
+  }
 }
