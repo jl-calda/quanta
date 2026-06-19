@@ -60,6 +60,28 @@ export async function createWorksheet(input: {
     }
   }
 
+  // TEMP DIAGNOSTIC (remove after root-causing worksheet-create 403s):
+  // Probe whether THIS request's DB client is authenticated. `getUser()` above
+  // talks to the auth server, but the PostgREST insert relies on the access
+  // token being attached to data requests. This read is RLS-gated by
+  // `user_id = auth.uid()`, so it returns the role only when the client is
+  // authenticated at the DB; a null role means data calls are hitting Postgres
+  // as `anon`, which is exactly what makes `worksheets_insert` fail with 42501.
+  const probe = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+  console.error("[createWorksheet] auth probe", {
+    userId: user.id,
+    workspaceId,
+    dbAuthenticated: probe.data?.role != null,
+    probedRole: probe.data?.role ?? null,
+    probeError: probe.error?.code ?? null,
+  });
+
   const { data: worksheet, error: insertError } = await supabase
     .from("worksheets")
     .insert({
@@ -74,6 +96,14 @@ export async function createWorksheet(input: {
     .single();
 
   if (insertError || !worksheet) {
+    // TEMP DIAGNOSTIC (remove with the probe above): full Postgres error so the
+    // exact failure (RLS WITH CHECK vs. grant vs. constraint) is visible in logs.
+    console.error("[createWorksheet] insert failed", {
+      code: insertError?.code ?? null,
+      message: insertError?.message ?? null,
+      details: insertError?.details ?? null,
+      hint: insertError?.hint ?? null,
+    });
     // 42501 = insufficient privilege (RLS check failed) — the member's role is
     // below engineer, so they may not create worksheets here.
     if (insertError?.code === "42501") {
