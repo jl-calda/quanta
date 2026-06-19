@@ -20,6 +20,17 @@ export function EditorKeyboard() {
         recalculate();
         return;
       }
+      // Global launchers — work everywhere, including inside a field.
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        dispatch({ type: "OPEN_DIALOG", dialog: { kind: "commandPalette" } });
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        dispatch({ type: "OPEN_DIALOG", dialog: { kind: "findReplace" } });
+        return;
+      }
       const t = e.target as HTMLElement | null;
       const inField = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
       if (inField) return;

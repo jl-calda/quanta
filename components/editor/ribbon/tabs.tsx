@@ -98,7 +98,7 @@ function HomeTab({ cmd, sel }: TabProps) {
         </div>
       </Group>
       <Group caption="Math format">
-        <BigBtn icon="fmt" label="Result format" dropdown disabled />
+        <BigBtn icon="fmt" label="Result format" dropdown onClick={() => cmd.openDialog("resultFormat")} />
         <SmStack w={150}>
           <SmBtn icon="units" label="Units display" dropdown onClick={cmd.openUnits} />
           <Stepper
@@ -112,10 +112,10 @@ function HomeTab({ cmd, sel }: TabProps) {
         </SmStack>
       </Group>
       <Group caption="Text styles">
-        <DropField label="Body" w={130} disabled />
+        <DropField label="Body" w={130} onClick={() => cmd.openDialog("textStyles")} />
       </Group>
       <Group caption="Editing">
-        <BigBtn icon="find" label="Find" disabled />
+        <BigBtn icon="find" label="Find" onClick={() => cmd.openDialog("findReplace")} />
       </Group>
     </>
   );
@@ -146,7 +146,7 @@ function InsertTab({ cmd, sel }: TabProps) {
       <Group caption="Reference">
         <SmStack w={150}>
           <SmBtn icon="include" label="Include worksheet" onClick={() => cmd.insertRegion("include")} disabled={d} />
-          <SmBtn glyph={<Big s={15}>Σ</Big>} label="Symbol" onClick={cmd.openConstants} />
+          <SmBtn glyph={<Big s={15}>Σ</Big>} label="Symbol" onClick={() => cmd.openDialog("insertSymbol")} />
           <SmBtn icon="link" label="Link / tag" disabled />
         </SmStack>
       </Group>
@@ -164,7 +164,7 @@ function MathTab({ cmd, sel }: TabProps) {
         <BigBtn glyph={<Big s={18}>ƒ(x)</Big>} label="Functions" dropdown onClick={cmd.openFunctions} />
       </Group>
       <Group caption="Result">
-        <BigBtn icon="fmt" label="Result format" dropdown disabled />
+        <BigBtn icon="fmt" label="Result format" dropdown onClick={() => cmd.openDialog("resultFormat")} />
         <SmStack w={132}>
           <SmBtn icon="units" label="Units" dropdown onClick={cmd.openUnits} />
           <Stepper
@@ -322,7 +322,7 @@ function FormatTab({ cmd, sel }: TabProps) {
   return (
     <>
       <Group caption="Text">
-        <DropField label="Body" w={108} disabled />
+        <DropField label="Body" w={108} onClick={() => cmd.openDialog("textStyles")} />
         <Stepper value="13" disabled />
         <div style={{ display: "flex", gap: 1 }}>
           <SmBtn icon="bold" tip="Bold" disabled />
@@ -351,21 +351,22 @@ function FormatTab({ cmd, sel }: TabProps) {
       <Group caption="Region">
         <SmStack w={132}>
           <SmBtn icon="border" label="Region border" toggle on={sel.border} onClick={cmd.toggleBorder} disabled={regionDisabled} />
-          <SmBtn icon="condfmt" label="Conditional format" disabled />
+          <SmBtn icon="condfmt" label="Conditional format" onClick={() => cmd.openDialog("conditionalFormat")} disabled={!sel.canEdit} />
         </SmStack>
       </Group>
     </>
   );
 }
 
-function DocumentTab() {
+function DocumentTab({ cmd, sel }: TabProps) {
+  const d = !sel.canEdit;
   return (
     <>
       <Group caption="Setup">
-        <BigBtn icon="pagesetup" label="Page setup" dropdown disabled />
+        <BigBtn icon="pagesetup" label="Page setup" dropdown onClick={() => cmd.openDialog("pageSetup")} disabled={d} />
         <SmStack w={120}>
-          <SmBtn icon="margins" label="Margins" dropdown disabled />
-          <SmBtn icon="header" label="Headers / footers" disabled />
+          <SmBtn icon="margins" label="Margins" dropdown onClick={() => cmd.openDialog("pageSetup")} disabled={d} />
+          <SmBtn icon="header" label="Headers / footers" onClick={() => cmd.openDialog("headersFooters")} disabled={d} />
         </SmStack>
       </Group>
       <Group caption="Columns">
@@ -373,15 +374,15 @@ function DocumentTab() {
       </Group>
       <Group caption="Show">
         <SmStack w={150}>
-          <SmBtn icon="gridlines" label="Gridlines" toggle on disabled />
-          <SmBtn icon="frameToggle" label="Page-body frame" toggle disabled />
-          <SmBtn icon="header" label="Header / footer frame" toggle disabled />
+          <SmBtn icon="gridlines" label="Gridlines" onClick={() => cmd.openDialog("pageSetup")} disabled={d} />
+          <SmBtn icon="frameToggle" label="Page-body frame" onClick={() => cmd.openDialog("pageSetup")} disabled={d} />
+          <SmBtn icon="header" label="Header / footer frame" onClick={() => cmd.openDialog("headersFooters")} disabled={d} />
         </SmStack>
       </Group>
       <Group caption="Navigate">
         <SmStack w={120}>
           <SmBtn icon="toc" label="Table of contents" disabled />
-          <SmBtn icon="gotopage" label="Go to page…" disabled />
+          <SmBtn icon="gotopage" label="Go to page…" onClick={() => cmd.openDialog("goToPage")} />
         </SmStack>
       </Group>
     </>

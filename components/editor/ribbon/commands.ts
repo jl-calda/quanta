@@ -3,7 +3,7 @@
 import { findRegion, findRowOf } from "@/lib/worksheet/flatten";
 import type { MathRegion, PlotKind, PlotRegion, RegionType } from "@/lib/worksheet/content";
 import { useEditor } from "../state/editor-provider";
-import type { CalcMode, UnitsSystem } from "../state/editor-reducer";
+import type { CalcMode, EditorDialogKind, UnitsSystem } from "../state/editor-reducer";
 import { useComments } from "../comments/comments-provider";
 import {
   insertIntoActiveField,
@@ -73,6 +73,8 @@ export interface RibbonCommands {
   openFunctions: () => void;
   openUnits: () => void;
   openConstants: () => void;
+  /** Open a centrally-hosted editor dialog (formatting / insert symbol / utility). */
+  openDialog: (kind: EditorDialogKind) => void;
   openComments: () => void;
   toggleComments: () => void;
   newComment: () => void;
@@ -210,6 +212,9 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
   const openReference = (kind: "FUNCTIONS" | "UNITS" | "CONSTANTS") =>
     dispatch({ type: "OPEN_REFERENCE", kind });
 
+  const openDialog = (kind: EditorDialogKind) =>
+    dispatch({ type: "OPEN_DIALOG", dialog: { kind, regionId: state.selectedId } });
+
   const openComments = () => {
     if (state.ui.rightPanel !== "comments") dispatch({ type: "TOGGLE_RIGHT_PANEL", panel: "comments" });
   };
@@ -235,6 +240,7 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
     openFunctions: () => openReference("FUNCTIONS"),
     openUnits: () => openReference("UNITS"),
     openConstants: () => openReference("CONSTANTS"),
+    openDialog,
     openComments,
     toggleComments: () => dispatch({ type: "TOGGLE_RIGHT_PANEL", panel: "comments" }),
     newComment: () => {

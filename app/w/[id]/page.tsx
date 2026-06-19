@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { parseContent } from "@/lib/worksheet/content";
 import { parseWorkspaceSettings } from "@/lib/schema/settings";
+import { parseLayoutSettings, parsePageSettings } from "@/lib/schema/page";
 import { getWorksheetComments } from "@/server/queries/comments";
 import { getEditorProjectTree } from "@/server/queries/editor";
 import { EditorApp } from "@/components/editor/editor-app";
@@ -29,7 +30,7 @@ export default async function WorksheetEditorPage({
 
   const { data: worksheet } = await supabase
     .from("worksheets")
-    .select("id, title, content, calc_mode, units_system, workspace_id, project_id")
+    .select("id, title, content, calc_mode, units_system, workspace_id, project_id, page_settings, layout_settings")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -91,6 +92,9 @@ export default async function WorksheetEditorPage({
         calcMode: worksheet.calc_mode,
         unitsSystem: worksheet.units_system,
         projectId: worksheet.project_id,
+        workspaceId: worksheet.workspace_id,
+        pageSettings: parsePageSettings(worksheet.page_settings),
+        layoutSettings: parseLayoutSettings(worksheet.layout_settings),
       }}
       projectTree={projectTree}
       canEdit={canEdit}

@@ -1076,3 +1076,37 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   misuse errors the consumer region — both via the engine's normal error model.
   A control below its consumer errors `defined-later` (same reading-order rule as
   math regions).
+
+## Editor dialogs (core-editor-first) — formatting, insert symbol, utility, confirmations
+
+- **One canonical symbol/operator table in `/lib/keymap`.** The operator/matrix
+  insert templates moved from `components/editor/math-entry.ts` into
+  `lib/keymap/symbols.ts` (which also adds Greek/relational/arrows/misc). The
+  editor bridge re-exports them, so the ribbon operator palette, the Insert-symbol
+  dialog, the shortcuts panel, and the command palette all read ONE table — no
+  second symbol list.
+- **All editor dialogs are reducer-hosted.** `EditorUiState.activeDialog` +
+  `OPEN_DIALOG`/`CLOSE_DIALOG` drive a single `<DialogHost/>`. Confirmations are
+  deliberately separate: a promise-based `useConfirm()` (`ConfirmProvider` mounted
+  in the root layout) rendering one reusable `ConfirmDialog`. Files (bulk delete,
+  folder delete), version restore, and share revoke all route through it; the
+  bespoke per-call confirm dialogs were removed.
+- **Formatting scope = region | worksheet, both write content.** Result/conditional
+  format persist `region.format` / `region.conditional` via the existing content
+  autosave Server Action (region scope = `SET_REGION_PROP`; worksheet scope =
+  `REPLACE_CONTENT` over all math regions). Live preview reuses the canvas's own
+  `formatValue` / `applyConditional`, so preview == committed. The *workspace
+  default* (new-worksheet seed) stays in the existing `/settings` page
+  (`workspaces.settings.format`); the dialog links there rather than duplicating
+  that owner/admin CRUD (settings-CRUD is deferred this pass).
+- **Page setup / headers-footers / text styles** persist to
+  `worksheets.page_settings` / `layout_settings` via new RLS-gated Server Actions
+  (`updatePageSettings` / `updateLayoutSettings`, Zod-validated in
+  `lib/schema/page.ts`). No new tables — those columns already existed.
+- **Go to page** is proportional (a viewport ≈ a page) since the editor renders
+  one continuous page; it smooth-scrolls the canvas field.
+- **Deferred seams compile but are inert.** Worksheet settings-CRUD + custom unit
+  systems = a gated `WorksheetSettingsDialog` shell (disabled inputs, points at
+  workspace settings). The AI proxy is untouched; `lib/schema/ai-region.ts` ships
+  the Zod region-JSON validator the future key-gated route will use (tested, not
+  wired). No diffs to `graph.ts` / `recalc.ts`; `/lib/calc` stays pure.

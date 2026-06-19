@@ -12,7 +12,8 @@ import { CURRENT_ID, type TimelineEntry } from "./types";
 import { HistoryTimeline, type CompareSel } from "./history-timeline";
 import { HistoryPageView } from "./history-page-view";
 import { SyncPanes } from "./sync-panes";
-import { NameDialog, RestoreDialog } from "./dialogs";
+import { NameDialog } from "./dialogs";
+import { useConfirm } from "@/components/shared/confirm-provider";
 import { BackIcon, CompareIcon, RestoreIcon, TagIcon } from "./icons";
 
 /**
@@ -42,9 +43,9 @@ export function HistoryApp({
     b: entries[1]?.id ?? entries[0]?.id ?? CURRENT_ID,
   });
   const [nameOpen, setNameOpen] = useState(false);
-  const [restoreEntry, setRestoreEntry] = useState<TimelineEntry | null>(null);
   const [pending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
   const indexOf = (id: string) => entries.findIndex((e) => e.id === id);
@@ -79,11 +80,17 @@ export function HistoryApp({
   const nameTarget = compareMode ? newVer : selVer;
   const restoreTarget = compareMode ? oldVer : selVer;
 
-  const doRestore = () => {
-    if (!restoreEntry || restoreEntry.isCurrent) return;
+  const doRestore = async (entry: TimelineEntry) => {
+    if (entry.isCurrent) return;
+    const ok = await confirm({
+      title: "Restore this version?",
+      confirmLabel: "Restore version",
+      body: `This makes ${entry.label || entry.rel} · ${entry.timeLabel} the current worksheet. Your present draft is kept in history, so nothing is lost.`,
+    });
+    if (!ok) return;
     setActionError(null);
     startTransition(async () => {
-      const res = await restoreWorksheetVersion({ id: worksheetId, versionId: restoreEntry.id });
+      const res = await restoreWorksheetVersion({ id: worksheetId, versionId: entry.id });
       if (res.ok) router.push(`/w/${worksheetId}`);
       else setActionError(res.error);
     });
@@ -180,10 +187,7 @@ export function HistoryApp({
             variant="primary"
             iconLeft={RestoreIcon(15)}
             disabled={!canEdit || restoreTarget.isCurrent}
-            onClick={() => {
-              setActionError(null);
-              setRestoreEntry(restoreTarget);
-            }}
+            onClick={() => void doRestore(restoreTarget)}
           >
             Restore this version
           </Button>
@@ -243,13 +247,6 @@ export function HistoryApp({
         error={actionError}
         onClose={() => setNameOpen(false)}
         onSubmit={doName}
-      />
-      <RestoreDialog
-        entry={restoreEntry}
-        busy={pending}
-        error={actionError}
-        onClose={() => setRestoreEntry(null)}
-        onConfirm={doRestore}
       />
     </div>
   );

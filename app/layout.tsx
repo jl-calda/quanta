@@ -6,6 +6,7 @@ import "./globals.css";
 import { readPreferences } from "@/lib/preferences/server";
 import { PreferencesProvider } from "@/lib/preferences/provider";
 import { ConditionalAppBar } from "@/components/conditional-app-bar";
+import { ConfirmProvider } from "@/components/shared/confirm-provider";
 
 // Rendered math notation — the product's voice (true textbook math glyphs).
 const stixTwoText = STIX_Two_Text({
@@ -37,10 +38,12 @@ export default async function RootLayout({
     >
       <body>
         <PreferencesProvider initialDensity={density} initialTheme={theme}>
-          <div className="flex min-h-screen flex-col">
-            <ConditionalAppBar />
-            {children}
-          </div>
+          <ConfirmProvider>
+            <div className="flex min-h-screen flex-col">
+              <ConditionalAppBar />
+              {children}
+            </div>
+          </ConfirmProvider>
         </PreferencesProvider>
       </body>
     </html>
