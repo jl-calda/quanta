@@ -45,6 +45,26 @@ export type LeftTab = "outline" | "variables" | "files";
 /** The auxiliary right-edge drawer opened from the app bar (mutually exclusive). */
 export type RightPanel = "none" | "comments" | "ai";
 
+/** Every centrally-hosted editor dialog (rendered by `<DialogHost />`). */
+export type EditorDialogKind =
+  | "insertSymbol"
+  | "resultFormat"
+  | "conditionalFormat"
+  | "pageSetup"
+  | "headersFooters"
+  | "textStyles"
+  | "findReplace"
+  | "goToPage"
+  | "shortcuts"
+  | "commandPalette"
+  | "worksheetSettings";
+
+/** The open dialog + its optional target region (result/conditional format). */
+export interface EditorDialog {
+  kind: EditorDialogKind;
+  regionId?: string | null;
+}
+
 export interface EditorUiState {
   leftOpen: boolean;
   leftTab: LeftTab;
@@ -59,6 +79,8 @@ export interface EditorUiState {
   exportOpen: boolean;
   /** Which app-bar drawer is docked on the right (comments / AI / none). */
   rightPanel: RightPanel;
+  /** The centrally-hosted dialog that is open, or null. */
+  activeDialog: EditorDialog | null;
 }
 
 export interface EditorState {
@@ -149,6 +171,7 @@ export type EditorAction =
   | { type: "EDIT_SOURCE"; id: string; source: string }
   | { type: "EDIT_TEXT"; id: string; text: string }
   | { type: "SET_REGION_PROP"; id: string; patch: RegionPatch }
+  | { type: "REPLACE_CONTENT"; content: WorksheetContent }
   | { type: "EDIT_TABLE_CELL"; id: string; r: number; c: number; source: string }
   | { type: "ADD_TABLE_ROW"; id: string }
   | { type: "DELETE_TABLE_ROW"; id: string; r: number }
@@ -204,7 +227,9 @@ export type EditorAction =
   | { type: "OPEN_EXPORT" }
   | { type: "CLOSE_EXPORT" }
   | { type: "TOGGLE_RIGHT_PANEL"; panel: Exclude<RightPanel, "none"> }
-  | { type: "CLOSE_RIGHT_PANEL" };
+  | { type: "CLOSE_RIGHT_PANEL" }
+  | { type: "OPEN_DIALOG"; dialog: EditorDialog }
+  | { type: "CLOSE_DIALOG" };
 
 /* ------------------------------------------------------------------ *
  * Tree locators (operate on a structuredClone, mutating in place)
@@ -436,6 +461,13 @@ export function editorReducer(
         }
       });
       return touched(state, content);
+    }
+    case "REPLACE_CONTENT": {
+      // Apply a wholesale new tree (formatting at worksheet scope, replace-all).
+      // Selection is reconciled so any ids that vanished are dropped.
+      return touched(state, action.content, {
+        ...reconcileSelection(action.content, state.selectedId, state.selectedIds),
+      });
     }
 
     /* ---- table edits ---- */
@@ -884,6 +916,10 @@ export function editorReducer(
       };
     case "CLOSE_RIGHT_PANEL":
       return { ...state, ui: { ...state.ui, rightPanel: "none" } };
+    case "OPEN_DIALOG":
+      return { ...state, ui: { ...state.ui, activeDialog: action.dialog } };
+    case "CLOSE_DIALOG":
+      return { ...state, ui: { ...state.ui, activeDialog: null } };
 
     default:
       return state;
@@ -921,6 +957,7 @@ export function initEditorState(args: {
       referenceKind: "FUNCTIONS",
       exportOpen: false,
       rightPanel: "none",
+      activeDialog: null,
     },
   };
 }

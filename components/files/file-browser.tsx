@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Dialog, Button, Input, Select } from "@/components/ds";
+import { Input, Select } from "@/components/ds";
+import { useConfirm } from "@/components/shared/confirm-provider";
 import type {
   FolderRow,
   FileRow,
@@ -39,7 +40,6 @@ import {
   RenameDialog,
   MoveDialog,
   TagDialog,
-  DeleteFolderDialog,
 } from "./dialogs";
 import { ListIcon, GridIcon, ChevronRightIcon, SearchIcon } from "./icons";
 
@@ -61,9 +61,7 @@ type DialogState =
   | { type: "newFolder" }
   | { type: "rename"; item: RowItem }
   | { type: "move"; items: RowItem[] }
-  | { type: "tag"; items: RowItem[] }
-  | { type: "deleteFolder"; folder: { id: string; name: string; itemCount: number } }
-  | { type: "bulkDelete"; items: RowItem[] };
+  | { type: "tag"; items: RowItem[] };
 
 const SORT_OPTIONS: { value: FileSort; label: string; dir: "asc" | "desc" }[] = [
   { value: "modified", label: "Recently modified", dir: "desc" },
@@ -96,6 +94,7 @@ function Browser({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const toast = useToast();
+  const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
 
   const [treeOpen, setTreeOpen] = useState(true);
@@ -232,11 +231,7 @@ function Browser({
         break;
       case "delete":
         if (item.kind === "folder") {
-          const folder = folders.find((f) => f.id === item.id);
-          setDialog({
-            type: "deleteFolder",
-            folder: { id: item.id, name: item.name, itemCount: folder?.itemCount ?? 0 },
-          });
+          void askDeleteFolder({ id: item.id, name: item.name, itemCount: folders.find((f) => f.id === item.id)?.itemCount ?? 0 });
         } else {
           run(
             () => softDeleteWorksheet({ id: item.id }),
@@ -320,13 +315,22 @@ function Browser({
     );
   }
 
-  function onDeleteFolderConfirm() {
-    if (dialog.type !== "deleteFolder") return;
-    const id = dialog.folder.id;
+  // Destructive confirmations route through the shared `useConfirm()` primitive.
+  async function askDeleteFolder(folder: { id: string; name: string; itemCount: number }) {
+    const ok = await confirm({
+      title: `Delete “${folder.name}”?`,
+      destructive: true,
+      confirmLabel: "Delete folder",
+      body:
+        folder.itemCount > 0
+          ? `This folder and its subfolders will be deleted, and ${folder.itemCount} worksheet${folder.itemCount === 1 ? "" : "s"} inside will be moved to Trash. Worksheets can be restored from Trash; the folders can’t be recovered.`
+          : "This folder and its subfolders will be deleted. They can’t be recovered.",
+    });
+    if (!ok) return;
+    const id = folder.id;
     run(
       () => deleteFolder({ id }),
       (data) => {
-        closeDialog();
         clearSelection();
         // If the deleted folder is the one we're viewing, jump to its parent.
         if (filters.folder === id) {
@@ -342,15 +346,26 @@ function Browser({
               : undefined,
         });
       },
-      undefined,
-      true,
     );
   }
 
-  function onBulkDeleteConfirm() {
-    if (dialog.type !== "bulkDelete") return;
-    const sheetIds = dialog.items.filter((i) => i.kind === "sheet").map((i) => i.id);
-    const folderIds = dialog.items.filter((i) => i.kind === "folder").map((i) => i.id);
+  async function onBulkDelete() {
+    const items = selectedItems;
+    if (items.length === 0) return;
+    const sheetCount = items.filter((i) => i.kind === "sheet").length;
+    const folderCount = items.filter((i) => i.kind === "folder").length;
+    const parts: string[] = [];
+    if (sheetCount > 0) parts.push(`${sheetCount} worksheet${sheetCount === 1 ? "" : "s"} will be moved to Trash (restorable)`);
+    if (folderCount > 0) parts.push(`${folderCount} folder${folderCount === 1 ? "" : "s"} and their contents will be deleted; their worksheets move to Trash`);
+    const ok = await confirm({
+      title: `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
+      destructive: true,
+      confirmLabel: "Delete",
+      body: parts.join(". ") + ".",
+    });
+    if (!ok) return;
+    const sheetIds = items.filter((i) => i.kind === "sheet").map((i) => i.id);
+    const folderIds = items.filter((i) => i.kind === "folder").map((i) => i.id);
     run(
       async () => {
         if (sheetIds.length) {
@@ -363,12 +378,8 @@ function Browser({
         }
         return { ok: true, data: undefined } as ActionResult<undefined>;
       },
-      () => {
-        closeDialog();
-        clearSelection();
-      },
+      () => clearSelection(),
       "Moved to Trash",
-      true,
     );
   }
 
@@ -383,9 +394,6 @@ function Browser({
   }
   function onBulkTag() {
     setDialog({ type: "tag", items: selectedItems });
-  }
-  function onBulkDelete() {
-    setDialog({ type: "bulkDelete", items: selectedItems });
   }
 
   /* ----------------------------- derived UI ----------------------------- */
@@ -582,23 +590,6 @@ function Browser({
         pending={pending}
         error={dialogError}
       />
-      <DeleteFolderDialog
-        open={dialog.type === "deleteFolder"}
-        onClose={closeDialog}
-        folderName={dialog.type === "deleteFolder" ? dialog.folder.name : ""}
-        itemCount={dialog.type === "deleteFolder" ? dialog.folder.itemCount : 0}
-        onConfirm={onDeleteFolderConfirm}
-        pending={pending}
-        error={dialogError}
-      />
-      <BulkDeleteDialog
-        open={dialog.type === "bulkDelete"}
-        items={dialog.type === "bulkDelete" ? dialog.items : []}
-        onClose={closeDialog}
-        onConfirm={onBulkDeleteConfirm}
-        pending={pending}
-        error={dialogError}
-      />
     </div>
   );
 }
@@ -649,58 +640,3 @@ function ViewToggle({ view, onChange }: { view: "list" | "grid"; onChange: (v: "
   );
 }
 
-function BulkDeleteDialog({
-  open,
-  items,
-  onClose,
-  onConfirm,
-  pending,
-  error,
-}: {
-  open: boolean;
-  items: RowItem[];
-  onClose: () => void;
-  onConfirm: () => void;
-  pending: boolean;
-  error: string | null;
-}) {
-  const folderCount = items.filter((i) => i.kind === "folder").length;
-  const sheetCount = items.filter((i) => i.kind === "sheet").length;
-  return (
-    <Dialog
-      open={open}
-      eyebrow="Delete"
-      title={`Delete ${items.length} item${items.length === 1 ? "" : "s"}?`}
-      onClose={onClose}
-      width={460}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="danger" onClick={onConfirm} disabled={pending}>
-            {pending ? "Deleting…" : "Delete"}
-          </Button>
-        </>
-      }
-    >
-      <p style={{ margin: 0, color: "var(--text-primary)" }}>
-        {sheetCount > 0 && (
-          <>
-            {sheetCount} worksheet{sheetCount === 1 ? "" : "s"} will be moved to Trash (restorable).
-          </>
-        )}
-        {folderCount > 0 && (
-          <>
-            {" "}
-            {folderCount} folder{folderCount === 1 ? "" : "s"} and their contents will be deleted; their
-            worksheets move to Trash.
-          </>
-        )}
-      </p>
-      {error && (
-        <p style={{ margin: "12px 0 0", font: "12.5px/1.4 var(--font-sans)", color: "var(--status-error)" }}>{error}</p>
-      )}
-    </Dialog>
-  );
-}

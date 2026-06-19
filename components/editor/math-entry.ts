@@ -11,19 +11,23 @@
  * configures), so the module stays a plain, testable helper.
  */
 
+// The operator / matrix insert templates are the SINGLE canonical table in
+// `/lib/keymap` (shared with the Insert-symbol dialog, shortcuts panel, and
+// command palette). This bridge re-exports them and owns only the DOM-side
+// insertion; there is deliberately no second copy of the table.
+export {
+  OPERATOR_TEMPLATES,
+  MATRIX_TEMPLATES,
+  type OperatorKey,
+  type MatrixOpKey,
+  type OperatorTemplate,
+} from "@/lib/keymap";
+
 export interface InsertPayload {
   /** LaTeX template for the MathLive field (placeholders `#@` arg / `#?` empty). */
   latex?: string;
   /** Plain engine-source text for an `<input>`/`<textarea>` (and ascii fallback). */
   text?: string;
-}
-
-/** A math structure that can be inserted live or used to seed a new region. */
-export interface OperatorTemplate {
-  /** LaTeX inserted into the active math-field. */
-  latex: string;
-  /** Engine-plain-text used for the mono field and to seed a fresh math region. */
-  source: string;
 }
 
 /** Loose view of the MathLive element — typed without importing the package. */
@@ -77,59 +81,6 @@ export function insertIntoActiveField(payload: InsertPayload): boolean {
 
   return false;
 }
-
-/** Keys for the ribbon's Operators / Math-evaluation groups. */
-export type OperatorKey =
-  | "fraction" | "exponent" | "root" | "subscript" | "absolute" | "factorial"
-  | "summation" | "product" | "integral"
-  | "derivative" | "partial" | "limit"
-  | "range" | "index"
-  | "assign" | "evaluate" | "global";
-
-/**
- * Math structures the ribbon inserts (Func §5.2 — the operator groups that drive
- * natural entry). `latex` builds 2D notation in the live field; `source` is the
- * engine-plain-text used for the mono field and to seed a new region when nothing
- * is focused. LaTeX placeholders: `#@` = the current selection/argument, `#?` =
- * an empty slot to tab into.
- */
-export const OPERATOR_TEMPLATES: Record<OperatorKey, OperatorTemplate> = {
-  fraction: { latex: "\\frac{#@}{#?}", source: "a/b" },
-  exponent: { latex: "{#@}^{#?}", source: "x^2" },
-  root: { latex: "\\sqrt{#0}", source: "sqrt(x)" },
-  subscript: { latex: "{#@}_{#?}", source: "x_1" },
-  absolute: { latex: "\\left|#0\\right|", source: "abs(x)" },
-  factorial: { latex: "#@!", source: "n!" },
-  summation: { latex: "\\sum_{#?}^{#?}#0", source: "sum([1, 2, 3])" },
-  product: { latex: "\\prod_{#?}^{#?}#0", source: "prod([1, 2, 3])" },
-  integral: { latex: "\\int_{#?}^{#?}#0\\,d#?", source: "integrate(x^2, x)" },
-  derivative: { latex: "\\frac{d}{d#?}#0", source: "diff(x^2, x)" },
-  partial: { latex: "\\frac{\\partial}{\\partial #?}#0", source: "diff(f, x)" },
-  limit: { latex: "\\lim_{#?\\to#?}#0", source: "limit(sin(x)/x, x, 0)" },
-  range: { latex: "#@..#?", source: "1..10" },
-  index: { latex: "{#@}_{#?}", source: "v_1" },
-  assign: { latex: "\\coloneq", source: ":=" },
-  evaluate: { latex: "=", source: "=" },
-  global: { latex: "\\equiv", source: "==" },
-};
-
-/** Keys for the Matrices tab's operation buttons. */
-export type MatrixOpKey =
-  | "transpose" | "inverse" | "determinant" | "identity" | "augment" | "stack" | "indexing";
-
-/**
- * Matrix operations — wrap the selection (or seed a call) with a mathjs function
- * the engine evaluates (`transpose`, `inv`, `det`, `identity`, `concat`).
- */
-export const MATRIX_TEMPLATES: Record<MatrixOpKey, OperatorTemplate> = {
-  transpose: { latex: "{#@}^{\\mathsf{T}}", source: "transpose(M)" },
-  inverse: { latex: "{#@}^{-1}", source: "inv(M)" },
-  determinant: { latex: "\\left|#@\\right|", source: "det(M)" },
-  identity: { latex: "\\mathrm{identity}(#?)", source: "identity(3)" },
-  augment: { latex: "\\mathrm{augment}(#?, #?)", source: "concat(A, B)" },
-  stack: { latex: "\\mathrm{stack}(#?, #?)", source: "concat(A, B, 1)" },
-  indexing: { latex: "{#@}_{#?}", source: "M_1" },
-};
 
 /** A `rows × cols` matrix as a LaTeX template (empty slots to tab through). */
 export function matrixLatex(rows: number, cols: number): string {

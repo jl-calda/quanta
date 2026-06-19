@@ -5,6 +5,7 @@ import "@/components/editor/editor.css";
 import { EditorProvider } from "@/components/editor/state/editor-provider";
 import { Canvas } from "@/components/editor/canvas";
 import { parseContent } from "@/lib/worksheet/content";
+import { DEFAULT_LAYOUT_SETTINGS, DEFAULT_PAGE_SETTINGS } from "@/lib/schema/page";
 import type { Json } from "@/lib/supabase/types";
 
 /**
@@ -40,9 +41,12 @@ export function ReadOnlyPreview({
       <div style={{ transform: "scale(0.6)", transformOrigin: "top center", width: 816, flex: "0 0 auto" }}>
         <EditorProvider
           worksheetId={templateId}
+          workspaceId=""
           initialContent={parseContent(content)}
           initialCalcMode="auto"
           initialUnits="si"
+          initialPageSettings={DEFAULT_PAGE_SETTINGS}
+          initialLayoutSettings={DEFAULT_LAYOUT_SETTINGS}
           canEdit={false}
         >
           <Canvas worksheetTitle={title} />

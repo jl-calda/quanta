@@ -13,6 +13,7 @@ import {
 import type { CollaboratorEntry } from "@/server/queries/shared";
 import type { ActionResult } from "@/server/result";
 import { Avatar } from "./avatar";
+import { useConfirm } from "./confirm-provider";
 import { LinkIcon } from "./icons";
 
 /**
@@ -60,6 +61,7 @@ export function ShareDialog({
   const [info, setInfo] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   // Load (and reset) the access list each time the dialog opens.
   useEffect(() => {
@@ -116,9 +118,16 @@ export function ShareDialog({
     );
   }
 
-  function onMemberRoleChange(entry: CollaboratorEntry, next: string) {
+  async function onMemberRoleChange(entry: CollaboratorEntry, next: string) {
     if (!entry.id) return;
     if (next === "remove") {
+      const ok = await confirm({
+        title: `Remove ${entry.name}?`,
+        destructive: true,
+        confirmLabel: "Remove access",
+        body: `${entry.name} will lose access to this worksheet. You can re-invite them anytime.`,
+      });
+      if (!ok) return;
       run(() => revokeCollaborator({ collaboratorId: entry.id as string }), () =>
         setInfo(`Removed ${entry.name}.`),
       );

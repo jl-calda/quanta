@@ -14,6 +14,7 @@ import {
 import { CalcEngine, SI_SYSTEM, type PlotResult, type SolveResult, type TableResult } from "@/lib/calc";
 import { buildEngineInputs, settleTables } from "@/lib/worksheet/flatten";
 import type { WorksheetContent } from "@/lib/worksheet/content";
+import type { LayoutSettings, PageSettings } from "@/lib/schema/page";
 import {
   renameWorksheet as renameAction,
   saveWorksheetVersion,
@@ -34,6 +35,14 @@ export interface EditorContextValue {
   dispatch: Dispatch<EditorAction>;
   canEdit: boolean;
   worksheetId: string;
+  /** The owning workspace (for workspace-default settings writes). */
+  workspaceId: string;
+  /** Page setup + headers/footers (worksheets.page_settings). */
+  pageSettings: PageSettings;
+  setPageSettings: (settings: PageSettings) => void;
+  /** Columns/indent + text styles (worksheets.layout_settings). */
+  layoutSettings: LayoutSettings;
+  setLayoutSettings: (settings: LayoutSettings) => void;
   /** Recompute the whole sheet now and publish results (Manual "Recalculate"). */
   recalculate: () => void;
   /** Recompute up to a region in reading order; later regions stay stale. */
@@ -62,18 +71,24 @@ export function useEditor(): EditorContextValue {
 
 export interface EditorProviderProps {
   worksheetId: string;
+  workspaceId: string;
   initialContent: WorksheetContent;
   initialCalcMode: CalcMode;
   initialUnits: UnitsSystem;
+  initialPageSettings: PageSettings;
+  initialLayoutSettings: LayoutSettings;
   canEdit: boolean;
   children: ReactNode;
 }
 
 export function EditorProvider({
   worksheetId,
+  workspaceId,
   initialContent,
   initialCalcMode,
   initialUnits,
+  initialPageSettings,
+  initialLayoutSettings,
   canEdit,
   children,
 }: EditorProviderProps) {
@@ -97,6 +112,11 @@ export function EditorProvider({
   const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
   const [plotResults, setPlotResults] = useState<Map<string, PlotResult>>(() => new Map());
   const [solveResults, setSolveResults] = useState<Map<string, SolveResult>>(() => new Map());
+
+  // Document-level settings (page setup / headers / text styles). Held here so a
+  // dialog's Server-Action write reflects immediately; the canvas reads them.
+  const [pageSettings, setPageSettings] = useState<PageSettings>(initialPageSettings);
+  const [layoutSettings, setLayoutSettings] = useState<LayoutSettings>(initialLayoutSettings);
 
   // Run the engine + tables to a settled fixpoint (the scope-bridge); `settleTables`
   // is pure and unit-tested in `lib/worksheet/flatten`. Plots sample the settled
@@ -192,6 +212,11 @@ export function EditorProvider({
       dispatch,
       canEdit,
       worksheetId,
+      workspaceId,
+      pageSettings,
+      setPageSettings,
+      layoutSettings,
+      setLayoutSettings,
       recalculate,
       recalculateToHere,
       setMode,
@@ -205,7 +230,7 @@ export function EditorProvider({
     // dependencies consumers read; the callbacks close over them and are recreated
     // each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId, tableResults, plotResults, solveResults],
+    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
