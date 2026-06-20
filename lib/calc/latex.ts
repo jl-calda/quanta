@@ -194,6 +194,19 @@ function convert(s: string): string {
   return out;
 }
 
+/**
+ * Heuristic: does this pasted text look like LaTeX rather than an engine source
+ * expression? Used by the math-entry paste paths to decide whether to route a
+ * clipboard string through {@link latexToSource} (mono field) or insert it as
+ * LaTeX into the 2D field. A backslash command, a brace group, `~`, or a script
+ * with a brace operand (`x^{2}`) signals LaTeX; bare `a^2 / b` does not (the
+ * engine reads it directly). Conservative on purpose — false negatives just mean
+ * the text is treated as plain source, which the parser still normalizes.
+ */
+export function looksLikeLatex(text: string): boolean {
+  return /\\[a-zA-Z]+|\\[{}\\,;!]|[{}]|~|[_^]\s*\{/.test(text);
+}
+
 /** Convert MathLive/mathjs LaTeX to the engine's plain-text expression form. */
 export function latexToSource(latex: string): string {
   try {

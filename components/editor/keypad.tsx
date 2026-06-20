@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useKeymap } from "@/lib/preferences/provider";
-import { insertIntoActiveField } from "./math-entry";
+import { insertIntoActiveField, OPERATOR_TEMPLATES } from "./math-entry";
+import { useEditor } from "./state/editor-provider";
 import { Icon } from "./icons";
 
 /**
@@ -11,22 +12,31 @@ import { Icon } from "./icons";
  * steal focus from the editor; insertion goes through the shared math-entry
  * bridge so it works in both the MathLive field and the mono input. Tabs mirror
  * the design mockup.
+ *
+ * This is Quanta's single on-screen keyboard (per the design system — "Quanta
+ * has its own keypad"; MathLive's built-in virtual keyboard stays disabled). Its
+ * open state lives in the editor UI reducer so the MathInput field can summon it.
+ * Structural keys carry the shared `/lib/keymap` operator templates, so clicking
+ * one drops a proper 2D structure into the MathLive field (and the ascii/plain
+ * fallback into the mono input) — the same source the ribbon and palette use.
  */
 interface Key {
   s: string;
   insert: string;
   hint?: string;
+  /** Operator template key — its LaTeX builds a 2D structure in the math field. */
+  op?: keyof typeof OPERATOR_TEMPLATES;
 }
 
 const CATEGORIES: Record<string, Key[]> = {
   Build: [
-    { s: "a⁄b", insert: "/", hint: "/" },
-    { s: "xⁿ", insert: "^", hint: "^" },
-    { s: "x_n", insert: "_", hint: "_" },
-    { s: "√", insert: "sqrt(", hint: "\\" },
-    { s: ":=", insert: ":=", hint: ":" },
+    { s: "a⁄b", insert: "/", hint: "/", op: "fraction" },
+    { s: "xⁿ", insert: "^", hint: "^", op: "exponent" },
+    { s: "x_n", insert: "_", hint: "_", op: "subscript" },
+    { s: "√", insert: "sqrt(", hint: "\\", op: "root" },
+    { s: ":=", insert: ":=", hint: ":", op: "assign" },
     { s: "·", insert: "*" },
-    { s: "|x|", insert: "abs(" },
+    { s: "|x|", insert: "abs(", op: "absolute" },
     { s: "π", insert: "pi" },
     { s: "(", insert: "(" },
     { s: ")", insert: ")" },
@@ -52,7 +62,9 @@ const CATEGORIES: Record<string, Key[]> = {
 
 export function Keypad() {
   const { keymap } = useKeymap();
-  const [open, setOpen] = useState(false);
+  const { state, dispatch } = useEditor();
+  const open = state.ui.keypadOpen;
+  const setOpen = (next: boolean) => dispatch({ type: "SET_KEYPAD", open: next });
   const [cat, setCat] = useState<keyof typeof CATEGORIES>("Build");
   const [pos, setPos] = useState<{ x: number | null; bottom: number; top?: number }>({ x: null, bottom: 18 });
   const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
@@ -75,8 +87,11 @@ export function Keypad() {
     window.addEventListener("mouseup", up);
   };
 
-  const insert = (text: string) => {
-    insertIntoActiveField({ text });
+  const insert = (key: Key) => {
+    // Structural keys carry an operator template: its LaTeX builds the 2D form in
+    // the MathLive field, the ascii `insert` is the plain/mono fallback.
+    const latex = key.op ? OPERATOR_TEMPLATES[key.op].latex : undefined;
+    insertIntoActiveField({ latex, text: key.insert });
   };
 
   const panelStyle: React.CSSProperties =
@@ -122,7 +137,7 @@ export function Keypad() {
             title={key.hint ? `Key: ${key.hint}` : key.insert}
             onMouseDown={(e) => {
               e.preventDefault();
-              insert(key.insert);
+              insert(key);
             }}
             style={{ position: "relative", gridColumn: key.s.length > 2 ? "span 2" : "span 1", fontSize: key.s.length > 2 ? 12 : 15, fontFamily: key.s.length > 2 ? "var(--font-sans)" : "var(--font-math)" }}
           >
