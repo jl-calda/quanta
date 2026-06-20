@@ -2,6 +2,40 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Pyodide / SymPy / SciPy worker backend (Phase 2 refinement R0, Func §2)
+
+- **`EngineBackend` = `SymbolicBackend` (SymPy) + `NumericBackend` (SciPy/NumPy).** The async
+  heavy-offload seam is a single typed interface in `lib/calc/worker/backend.ts`. The SciPy facet is
+  named `NumericBackend`, deliberately **NOT** `SolverBackend`, to avoid collision with the existing
+  **synchronous** `SolverBackend` in `lib/calc/solve.ts`. That synchronous seam stays exactly as-is
+  (pure, deterministic, used during recalc + server-side PDF export); a future solve that needs SciPy
+  **delegates** to `NumericBackend` — do not reintroduce an async `SolverBackend`. The user confirmed
+  this naming. None of the three async types are re-exported from `lib/calc/index.ts`; the public engine
+  entry stays pure and synchronous. Callers (Math symbolic, future Solve ODE/PDE) use `getBackend()` and
+  never touch Pyodide directly. (No callers wired this pass — backend infrastructure only.)
+- **One `PythonRunner` seam, two runtimes, identical Python.** `getBackend()` picks the runtime by
+  environment via dynamic import: browser → `browser-runner.ts` (wraps the existing Pyodide Web Worker
+  client, unchanged) → worker; Node → `node-runner.ts` (loads the `pyodide` npm package in-process,
+  lazy singleton). `makeEngineBackend(runner)` composes the snippet builders + envelope once, so the
+  generated Python is byte-identical across runtimes → deterministic. Node is in-process (not
+  `worker_threads`): the server path is request-scoped and the Python is our own code.
+- **JSON-envelope contract.** Every op's Python is wrapped (`lib/calc/worker/python/envelope.ts`) to
+  return a single `json.dumps({ok,value}|{ok,error})` **string**, parsed on the JS side
+  (`parseEnvelope` → typed `PyBackendError`). Returning a plain string (never a PyProxy/dict/array)
+  sidesteps structured-clone / PyProxy-lifetime surprises and keeps both runtimes identical.
+- **`pyodide` added to `serverExternalPackages` + dynamic Node imports.** `node-runner.ts` imports
+  `pyodide`/`node:module`/`node:path` only via `await import()` so the Node-only runner never enters a
+  browser bundle (the factory reaches it only when `typeof window === "undefined"`); `pyodide` in
+  `serverExternalPackages` stops Webpack bundling its wasm. `indexURL` is pinned to the installed
+  package dir so Pyodide locates its runtime even when a bundler relocates the module.
+- **On-demand Node smoke is separate from the default suite.** The real SymPy/SciPy round-trip needs
+  the JsDelivr CDN (the scientific wheels ship only there), so it lives in
+  `scripts/pyodide-smoke.smoke.test.ts` run via `npm run test:pyodide` (`vitest.pyodide.config.ts`),
+  never in the fast/offline `npm test`. The smoke proves the Node bridge **offline** with a Python-stdlib
+  op (boot → run → envelope → parse) and gates the SymPy/SciPy cases on CDN reachability (they run where
+  the CDN is allowed, skip with a notice where the network policy blocks it). Pyodide is pinned to
+  `0.27.2` in both the CDN constant (`pyodide.worker.ts`) and the npm dep — keep them in lockstep.
+
 ## Empty states board (Mockup 4.12 + Claude Design `empty-states.html`)
 
 - **Public root-level route `app/empty-states/page.tsx`, not under `(app)`.** The mockup is a

@@ -177,6 +177,10 @@ const ITEMS = [
 "Implement the Empty states board.\nDESIGN (Claude Design mockup): empty-states.html — eight consistent empty-state cards (icon, headline, supporting line, one action). Port _ds tokens; match it.\nFEATURE (Mockup 4.12): each card = a one-line headline + supporting line in the app's voice + exactly one primary action wired to the relevant Server Action; the offline state reflects real connection status (navigator.onLine + Supabase channel). Thin-line spot icons, no mascots, no emoji.\nHonor CLAUDE.md."},
 {g:"Catalogues", n:"Keyboard shortcuts (Mathcad keymap)", f:"keyboard-shortcuts.html", r:"Mockup 7.25 · Func §7", p:
 "Implement the Keyboard shortcuts feature.\nDESIGN (Claude Design mockup): keyboard-shortcuts.html — Mathcad-style shortcuts reference, keymap preference, and a math input bar with key hints. Port _ds tokens; match it.\nFEATURE (Func §7 keymap): one /lib/keymap module drives BOTH the MathLive bindings AND the reference modal (no drift). Math entry: ':' -> ':=', '=' evaluate, '/' stacked fraction, '^' superscript, '_' subscript, the backslash key -> square root, '.' literal name subscript (F.t -> F_t), '[' index subscript, '|' absolute value, Space = expand selection up the expression (signature Mathcad key), Ctrl+G -> Greek. App: F9 recalculate, Shift+F9 recalc-to-here, Ctrl+Enter new region, Cmd/Ctrl + S/Z/Shift+Z/F/K/P, '/' opens the reference. Add a Keymap preference (Mathcad default / Default); platform-aware; accessible (no focus trap; every shortcut also reachable via ribbon/menu).\nHonor CLAUDE.md."},
+
+/* ───────── Refinement (Phase 2) ───────── */
+{g:"Refinement", n:"R0 · Pyodide backend (EngineBackend)", f:"lib/calc/worker", r:"Func §2 · Phase 2", p:
+"Pyodide/SymPy/SciPy worker backend — DONE (Phase 2, R0).\nDESIGN: n/a (infrastructure).\nFEATURE: the worker backend is a single typed async seam — getBackend() in lib/calc/worker/backend.ts returns EngineBackend = SymbolicBackend (SymPy) + NumericBackend (SciPy/NumPy). One PythonRunner with two runtimes: browser (browser-runner.ts wraps the existing Pyodide Web Worker) and Node (node-runner.ts loads the pyodide npm package in-process). Both run byte-identical Python via the python/ snippet builders + a JSON-envelope contract (parseEnvelope -> typed PyBackendError).\nRULES for future sessions: do NOT reintroduce an async SolverBackend. The synchronous SolverBackend in lib/calc/solve.ts stays as-is (pure/deterministic for recalc + server-side PDF export); when a solve needs SciPy it delegates to NumericBackend. Keep all three async types (SymbolicBackend, NumericBackend, EngineBackend) under lib/calc/worker/ and do NOT re-export them from lib/calc/index.ts (the public engine entry stays pure/synchronous). Callers (Math symbolic, Solve ODE/PDE) use getBackend() and never touch Pyodide directly. The real SymPy/SciPy round-trip is proven via npm run test:pyodide (needs the JsDelivr CDN; the offline Node bridge case always runs).\nHonor CLAUDE.md; /lib/calc stays pure."},
 ];
 
 const groupNotes={
@@ -186,6 +190,7 @@ const groupNotes={
   "Core region components":"The content units that carry the math logic.",
   "Modals & dialogs":"Cross-cutting dialog patterns.",
   "Catalogues":"Pattern boards & cross-cutting features.",
+  "Refinement":"Phase-2 refinement passes (post-foundation hardening).",
 };
 const groups=[...new Set(ITEMS.map(i=>i.g))];
 ITEMS.forEach((it,i)=>it.id='i'+i);

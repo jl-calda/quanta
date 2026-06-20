@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:pyodide": "vitest run --config vitest.pyodide.config.ts"
   },
   "dependencies": {
     "@sparticuz/chromium": "^131.0.1",
@@ -23,6 +24,7 @@
     "mathlive": "^0.110.0",
     "next": "^15.1.0",
     "puppeteer-core": "^23.11.1",
+    "pyodide": "0.27.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xlsx": "^0.18.5",
