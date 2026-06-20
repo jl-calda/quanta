@@ -2,6 +2,35 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Symbolic-evaluate operator — the producer (Phase 2 refinement, Math region)
+
+- **Trigger = the CAS function call, not a new `→` operator (user-confirmed).** A math region is
+  symbolic when `isSymbolic(source)` is true (a call to `diff / integrate / simplify / solve / factor /
+  substitute / series / limit / …`). The Mathcad symbolic arrow `→` is a **render convention** (formula
+  `→` result), not grammar. This keeps the producer and the export consumer (`applySymbolicCache`) keyed
+  off the **same** detector, and leaves `parse.ts` / `graph.ts` / `recalc.ts` and the numeric path
+  untouched — no risky grammar change. `substitute` was added to `CAS_FUNCTIONS` so the user's listed
+  operator set routes to the worker (SymPy has no `substitute` function; the builder injects a helper
+  that maps it to `expr.subs`).
+- **One SymPy entry point: `symbolicEval(expr)` on `SymbolicBackend`.** A single `buildSymbolicEval`
+  (`lib/calc/worker/python/symbolic.ts`) parses the engine expression with SymPy's `parse_expr` +
+  `convert_xor` (engine `^` → Python `**`) so every operator evaluates as it parses, and returns
+  `{ tex, value }` (rendered TeX + plain text) through the JSON envelope. One builder covers all
+  operators rather than one method each — keeps the typed seam small and the Python string-buildable
+  (pure, unit-tested without Pyodide).
+- **Producer is a client hook, cache rides autosave.** `useSymbolicEval`
+  (`components/editor/state/use-symbolic-eval.ts`, called from `EditorProvider`) walks the tree for
+  stale/absent symbolic regions, computes each via `getBackend()`, and writes the result into
+  `region.cache` via `SET_REGION_PROP` — the existing autosave then persists it, completing the loop the
+  export consumer reads. Compute runs **only when `canEdit`** (a viewer can't write the cache under RLS;
+  it reads any existing cache or shows the export-matching placeholder). Transient compute status
+  (computing / error) lives in React state, never in `content` (no persisted UI state, per CLAUDE.md).
+- **Sheet status overlay so a worked symbolic region isn't a "1 error".** The pure engine errors on a
+  CAS region ("x is not defined"). The provider runs the existing pure `applySymbolicCache` over the
+  freshly-evaluated sheet and recomputes the roll-up status, clearing that bogus error — the same overlay
+  the PDF export uses, so editor and export agree. The render reads `region.cache` directly; this only
+  corrects sheet-level status. Engine and `/lib/calc` stay pure and untouched.
+
 ## Export strategy for worker-computed (symbolic) results (Phase 2 refinement, Func §4.10)
 
 - **Settled: cache the worker result in `worksheets.content`, not Pyodide-at-export.** Server-side

@@ -16,17 +16,32 @@
  */
 import type { PythonRunner } from "./python-runner";
 import { parseEnvelope } from "./python/envelope";
-import { buildSimplify, buildSympy } from "./python/symbolic";
+import { buildSimplify, buildSympy, buildSymbolicEval } from "./python/symbolic";
 import { buildLinearSolve, buildScipy } from "./python/numeric";
 
 export type { PyEnvelope, PyEnvelopeOk, PyEnvelopeErr } from "./python/envelope";
 export { PyBackendError } from "./python/envelope";
 export type { PythonRunner } from "./python-runner";
 
+/** A symbolic-operator result: rendered TeX plus a plain-text form. */
+export interface SymbolicEvalResult {
+  /** The result as TeX (KaTeX-renderable), e.g. `2 x` for `diff(x^2, x)`. */
+  tex: string;
+  /** The result as plain text, e.g. `2*x` (or `[-2, 2]` for a solve). */
+  value: string;
+}
+
 /** Symbolic algebra (SymPy) facet. */
 export interface SymbolicBackend {
   /** Simplify an expression, returning the simplified form as a string. */
   simplify(expr: string): Promise<string>;
+  /**
+   * Evaluate a Mathcad symbolic-operator expression (diff / integrate /
+   * simplify / solve / factor / substitute / series / limit) and return its
+   * rendered TeX + plain-text value. `expr` is the engine's plain-text
+   * expression with any `name :=` prefix already stripped.
+   */
+  symbolicEval(expr: string): Promise<SymbolicEvalResult>;
   /**
    * Run arbitrary SymPy. `body` must end in `return <json-serializable>`
    * (typically `return str(expr)`). The `sympy` package is loaded first.
@@ -61,6 +76,11 @@ export function makeEngineBackend(runner: PythonRunner): EngineBackend {
     async simplify(expr) {
       return parseEnvelope<string>(
         await runner.run(buildSimplify(expr), { packages: SYMPY_PACKAGES }),
+      );
+    },
+    async symbolicEval(expr) {
+      return parseEnvelope<SymbolicEvalResult>(
+        await runner.run(buildSymbolicEval(expr), { packages: SYMPY_PACKAGES }),
       );
     },
     async sympy<T = unknown>(body: string) {

@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { applyColonAssign } from "@/lib/keymap";
 import { useKeymap } from "@/lib/preferences/provider";
-import { latexToSource } from "@/lib/calc";
+import { isSymbolic, latexToSource, sourceToLatex } from "@/lib/calc";
+import { symbolicCacheHash, SYMBOLIC_PLACEHOLDER } from "@/lib/worksheet/symbolic-cache";
 import { DEFAULT_DISPLAY, type MathRegion as MathRegionData } from "@/lib/worksheet/content";
 import { KatexMath } from "../katex-math";
 import { MathField } from "../math-field";
 import { insertIntoActiveField } from "../math-entry";
 import { Icon } from "../icons";
+import { useEditor } from "../state/editor-provider";
 import { MATH_PALETTE, splitResultUnit } from "./math-display";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
@@ -35,11 +37,156 @@ export function MathRegionView({
   if (editing && canEdit) {
     return <MathEditor region={region} dispatch={dispatch} />;
   }
+  // Symbolic regions (CAS calls like diff / simplify / solve) render their
+  // worker-computed result from the cache, never the pure engine's result — the
+  // engine can't evaluate free symbols and would surface an undefined-symbol
+  // error. Checked before `result?.error` so that error never shows here.
+  if (isSymbolic(region.source)) {
+    return (
+      <MathSymbolic region={region} canEdit={canEdit} multiActive={multiActive} dispatch={dispatch} />
+    );
+  }
   if (result?.error) {
     return <MathError region={region} message={result.error.message} fix={result.error.fixHint} />;
   }
   return (
     <MathCommitted region={region} result={result} canEdit={canEdit} multiActive={multiActive} dispatch={dispatch} />
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Symbolic — the Mathcad symbolic-evaluate operator: formula → result
+ * ------------------------------------------------------------------ */
+
+/** The committed formula as TeX, falling back to the raw source if it won't convert. */
+function committedTex(source: string): string {
+  try {
+    return sourceToLatex(source) || source;
+  } catch {
+    return source;
+  }
+}
+
+/**
+ * A symbolic math region: the formula, the Mathcad symbolic arrow (→), and the
+ * SymPy result rendered as TeX. The successful result is read from `region.cache`
+ * (written by the symbolic producer, persisted via autosave); while it computes
+ * or if it failed, transient status comes from the editor context. A viewer with
+ * no cached result sees the same placeholder the PDF export shows.
+ */
+function MathSymbolic({
+  region,
+  canEdit,
+  multiActive,
+  dispatch,
+}: Pick<RegionRenderProps<MathRegionData>, "region" | "canEdit" | "multiActive" | "dispatch">) {
+  const { symbolicStatus } = useEditor();
+  const display = { ...DEFAULT_DISPLAY, ...(region.display ?? {}) };
+  const status = symbolicStatus.get(region.id);
+
+  const cache = region.cache;
+  const fresh = !!cache && cache.v === 1 && cache.hash === symbolicCacheHash(region.source);
+
+  const onClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (applyModifierSelect(e, region.id, dispatch, multiActive)) return;
+    dispatch(canEdit ? { type: "BEGIN_EDIT", id: region.id } : { type: "SELECT", id: region.id });
+  };
+
+  const formula =
+    display.formula ? (
+      <KatexMath tex={committedTex(region.source)} size={19} />
+    ) : (
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--text-primary)" }}>
+        {region.source || "Empty formula"}
+      </span>
+    );
+
+  // The result that follows the arrow: fresh TeX, a computing pulse, an error
+  // chip in the app's voice, or the export-matching placeholder.
+  let resultNode: React.ReactNode;
+  if (fresh) {
+    resultNode = (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "1px 8px",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--accent-tint)",
+          color: "var(--accent)",
+        }}
+      >
+        <KatexMath tex={cache!.tex} size={18} />
+      </span>
+    );
+  } else if (status?.state === "computing") {
+    resultNode = (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "12px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+        <Icon name="spinner" size={13} />
+        Computing…
+      </span>
+    );
+  } else if (status?.state === "error") {
+    return (
+      <div onClick={onClick} title={canEdit ? "Click to edit formula" : undefined} style={{ display: "inline-flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", cursor: canEdit ? "text" : "default" }}>
+        {formula}
+        <SymbolicArrow />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            font: "11.5px/1.3 var(--font-sans)",
+            color: "var(--status-error)",
+            background: "var(--status-error-bg)",
+            border: "1px solid color-mix(in srgb, var(--status-error) 30%, transparent)",
+            borderRadius: "var(--radius-sm)",
+            padding: "4px 7px",
+          }}
+        >
+          <Icon name="alertCirc" size={13} />
+          {status.message}
+        </span>
+      </div>
+    );
+  } else {
+    resultNode = (
+      <span style={{ font: "12px/1 var(--font-sans)", color: "var(--text-muted)", fontStyle: "italic" }}>
+        {SYMBOLIC_PLACEHOLDER}
+      </span>
+    );
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      title={canEdit ? "Click to edit formula" : undefined}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        columnGap: "0.35em",
+        rowGap: 4,
+        cursor: canEdit ? "text" : "default",
+      }}
+    >
+      {formula}
+      <SymbolicArrow />
+      {resultNode}
+    </div>
+  );
+}
+
+/** The Mathcad symbolic-evaluate arrow (→), set in the math face. */
+function SymbolicArrow() {
+  return (
+    <span
+      aria-label="evaluates symbolically to"
+      style={{ fontFamily: "var(--font-math)", fontSize: 19, color: "var(--text-math)" }}
+    >
+      →
+    </span>
   );
 }
 
