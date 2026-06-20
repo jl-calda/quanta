@@ -1,43 +1,31 @@
 "use client";
 
-import { Group, Radio, Row, Section } from "@/components/settings/controls";
-import { keymaps } from "@/lib/keymap";
+import { Section } from "@/components/settings/controls";
+import { KeymapCards } from "@/components/settings/keymap-cards";
 import type { KeymapId } from "@/lib/keymap";
 
 /**
  * Editor — per-user prefs. The keymap selects how math entry behaves (Mathcad
- * 2D building vs conventional explicit commands); persisted to
- * `profiles.preferences` and read by the math editor.
+ * 2D building vs conventional explicit commands). It applies instantly through
+ * the cookie-backed provider (no flash, app-wide — the editor, the MathLive
+ * bridge, the shortcuts reference, and the keypad all read it) and is mirrored
+ * to `profiles.preferences` for cross-device sync via `onPersist`.
+ *
+ * Matches design mockup 7.26 — radio cards, Mathcad is the default.
  */
 export function EditorSection({
-  keymap,
-  onChange,
+  onPersist,
 }: {
-  keymap: KeymapId;
-  onChange: (keymap: KeymapId) => void;
+  onPersist: (patch: { keymap?: KeymapId }) => void;
 }) {
-  const active = keymaps[keymap];
   return (
     <Section
       title="Editor"
-      desc="How you enter math. The keymap drives the editor shortcuts and the shortcuts reference."
+      desc="How keys behave inside a math region. The keymap drives the editor shortcuts and the shortcuts reference."
     >
-      <Group title="Keymap">
-        <Row
-          label="Math entry keymap"
-          help={active.description}
-          control={
-            <Radio
-              options={[
-                { value: "mathcad", label: "Mathcad" },
-                { value: "default", label: "Default" },
-              ]}
-              value={keymap}
-              onChange={(v) => onChange(v as KeymapId)}
-            />
-          }
-        />
-      </Group>
+      <div style={{ maxWidth: 460 }}>
+        <KeymapCards onPersist={(keymap) => onPersist({ keymap })} />
+      </div>
     </Section>
   );
 }

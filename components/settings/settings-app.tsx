@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ds";
 import { SettingsIcons, type SectionIcon } from "@/components/settings/icons";
 import { PlaceholderSection } from "@/components/settings/sections/placeholder";
@@ -13,6 +13,7 @@ import {
   updateUserPreferences,
   updateWorkspaceSettings,
 } from "@/server/actions/settings";
+import { useKeymap } from "@/lib/preferences/provider";
 import type { Density, Theme } from "@/lib/preferences/cookies";
 import type { KeymapId } from "@/lib/keymap";
 import type { FormatSettings, WorkspaceSettings } from "@/lib/settings/types";
@@ -143,7 +144,13 @@ export function SettingsApp({
   const [settings, setSettings] = useState<WorkspaceSettings>(initialWorkspace);
   const [saved, setSaved] = useState<WorkspaceSettings>(initialWorkspace);
   const [dirty, setDirty] = useState(false);
-  const [keymap, setKeymap] = useState<KeymapId>(initialKeymap);
+
+  // Reconcile the cookie-backed keymap (which the editor reads) with the value
+  // stored on the profile — the DB is authoritative across devices.
+  const { setKeymap } = useKeymap();
+  useEffect(() => {
+    setKeymap(initialKeymap);
+  }, [initialKeymap, setKeymap]);
 
   /** Persist workspace defaults, reverting + warning on failure. */
   const persistWorkspace = useCallback(
@@ -229,15 +236,7 @@ export function SettingsApp({
           />
         );
       case "editor":
-        return (
-          <EditorSection
-            keymap={keymap}
-            onChange={(k) => {
-              setKeymap(k);
-              void persistUserPrefs({ keymap: k });
-            }}
-          />
-        );
+        return <EditorSection onPersist={(p) => void persistUserPrefs(p)} />;
       default: {
         const sec = SECTIONS.find((x) => x.id === active)!;
         return <PlaceholderSection label={sec.label} icon={sec.icon} />;

@@ -20,9 +20,17 @@ export {
   type MathfieldKeymapConfig,
   type MathfieldKeybinding,
 } from "./mathlive";
+export {
+  detectPlatform,
+  formatKeyToken,
+  formatKeys,
+  groupBindings,
+  type Platform,
+} from "./display";
 export type {
   Keymap,
   KeymapId,
   KeyBinding,
   KeyBindingGroup,
+  KeyScope,
 } from "./types";

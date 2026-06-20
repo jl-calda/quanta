@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { applyColonAssign, DEFAULT_KEYMAP_ID, getKeymap } from "@/lib/keymap";
+import { applyColonAssign } from "@/lib/keymap";
+import { useKeymap } from "@/lib/preferences/provider";
 import { latexToSource } from "@/lib/calc";
 import { DEFAULT_DISPLAY, type MathRegion as MathRegionData } from "@/lib/worksheet/content";
 import { KatexMath } from "../katex-math";
@@ -245,7 +246,7 @@ function MathEditor({
   const [draft, setDraft] = useState(region.source);
   const [mode, setMode] = useState<EntryMode>("math");
   const liveLatex = useRef("");
-  const keymap = getKeymap(DEFAULT_KEYMAP_ID);
+  const { keymap } = useKeymap();
 
   const commit = (source: string) => {
     if (source !== region.source) dispatch({ type: "EDIT_SOURCE", id: region.id, source });
@@ -374,6 +375,7 @@ function PlainTextEntry({
 }) {
   const [draft, setDraft] = useState(source);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { keymapId } = useKeymap();
 
   useEffect(() => {
     const el = inputRef.current;
@@ -395,7 +397,7 @@ function PlainTextEntry({
     } else if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
-    } else if (e.key === ":" && DEFAULT_KEYMAP_ID === "mathcad") {
+    } else if (e.key === ":" && keymapId === "mathcad") {
       const el = e.currentTarget;
       const edit = applyColonAssign(el.value, el.selectionStart ?? el.value.length);
       if (edit) {

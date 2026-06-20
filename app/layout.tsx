@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { density, theme } = await readPreferences();
+  const { density, theme, keymap } = await readPreferences();
 
   return (
     <html
@@ -37,7 +37,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <PreferencesProvider initialDensity={density} initialTheme={theme}>
+        <PreferencesProvider initialDensity={density} initialTheme={theme} initialKeymap={keymap}>
           <ConfirmProvider>
             <div className="flex min-h-screen flex-col">
               <ConditionalAppBar />

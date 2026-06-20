@@ -7,8 +7,11 @@
  * components; cookies are the SSR-safe equivalent.
  */
 
+import type { KeymapId } from "@/lib/keymap";
+
 export const DENSITY_COOKIE = "quanta-density";
 export const THEME_COOKIE = "quanta-theme";
+export const KEYMAP_COOKIE = "quanta-keymap";
 
 export type Density = "compact" | "comfortable";
 export type Theme = "light" | "dark";
@@ -17,6 +20,8 @@ export type Theme = "light" | "dark";
 export const DEFAULT_DENSITY: Density = "compact";
 /** Light is the default theme (dark is opt-in via [data-theme="dark"]). */
 export const DEFAULT_THEME: Theme = "light";
+/** Mathcad-style entry is the default keymap (CLAUDE.md / Func §7). */
+export const DEFAULT_KEYMAP: KeymapId = "mathcad";
 
 /** One year — preferences are sticky. */
 export const PREF_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
@@ -29,12 +34,18 @@ export function parseTheme(value: string | null | undefined): Theme {
   return value === "dark" ? "dark" : DEFAULT_THEME;
 }
 
+export function parseKeymap(value: string | null | undefined): KeymapId {
+  return value === "default" ? "default" : DEFAULT_KEYMAP;
+}
+
 export interface Preferences {
   density: Density;
   theme: Theme;
+  keymap: KeymapId;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
   density: DEFAULT_DENSITY,
   theme: DEFAULT_THEME,
+  keymap: DEFAULT_KEYMAP,
 };
