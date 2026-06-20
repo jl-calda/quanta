@@ -11,8 +11,17 @@ import {
   type Dispatch,
   type ReactNode,
 } from "react";
-import { CalcEngine, SI_SYSTEM, type PlotResult, type SolveResult, type TableResult } from "@/lib/calc";
+import {
+  CalcEngine,
+  SI_SYSTEM,
+  type PlotResult,
+  type RegionResult,
+  type SheetResult,
+  type SolveResult,
+  type TableResult,
+} from "@/lib/calc";
 import { buildEngineInputs, settleTables } from "@/lib/worksheet/flatten";
+import { applySymbolicCache } from "@/lib/worksheet/symbolic-cache";
 import type { WorksheetContent } from "@/lib/worksheet/content";
 import type { LayoutSettings, PageSettings } from "@/lib/schema/page";
 import {
@@ -29,6 +38,7 @@ import {
   type UnitsSystem,
 } from "./editor-reducer";
 import { useAutosave } from "./use-autosave";
+import { useSymbolicEval, type SymbolicStatus } from "./use-symbolic-eval";
 
 export interface EditorContextValue {
   state: EditorState;
@@ -59,6 +69,8 @@ export interface EditorContextValue {
   plotResults: Map<string, PlotResult>;
   /** Per-solve-block results (unknowns + convergence), keyed by region id. */
   solveResults: Map<string, SolveResult>;
+  /** Transient symbolic-compute status (computing / error), keyed by region id. */
+  symbolicStatus: Map<string, SymbolicStatus>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -79,6 +91,25 @@ export interface EditorProviderProps {
   initialLayoutSettings: LayoutSettings;
   canEdit: boolean;
   children: ReactNode;
+}
+
+/**
+ * Overlay symbolic regions' cached worker results onto a freshly-evaluated sheet,
+ * then recompute its roll-up status. The pure numeric engine can't evaluate a CAS
+ * expression (free symbols) and reports it as an error; this clears that bogus
+ * error so a worked symbolic region doesn't inflate the worksheet error count.
+ * Reuses the same pure overlay the PDF export uses, so editor and export agree.
+ * The Math view renders symbolic results from `region.cache` directly — this only
+ * corrects the sheet-level status — and the numeric path is untouched.
+ */
+function withSymbolic(content: WorksheetContent, sheet: SheetResult): SheetResult {
+  const map = new Map<string, RegionResult>(sheet.regions.map((r) => [r.id, r]));
+  const overlaid = applySymbolicCache(content, map);
+  if (overlaid === map) return sheet; // nothing symbolic — identity
+  const regions = sheet.regions.map((r) => overlaid.get(r.id) ?? r);
+  const errorCount = regions.filter((r) => r.status === "error").length;
+  const hasStale = regions.some((r) => r.status === "stale");
+  return { regions, errorCount, status: errorCount > 0 ? "error" : hasStale ? "stale" : "current" };
 }
 
 export function EditorProvider({
@@ -128,7 +159,7 @@ export function EditorProvider({
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
-    dispatch({ type: "SET_RESULTS", sheet });
+    dispatch({ type: "SET_RESULTS", sheet: withSymbolic(content, sheet) });
   };
 
   // Compute once on mount; thereafter reconcile on every content change.
@@ -155,7 +186,8 @@ export function EditorProvider({
   const recalculate = () => publishReconcile(state.content);
 
   const recalculateToHere = (id: string) => {
-    const { sheet: fresh, tables, plots, solves } = reconcile(state.content);
+    const { sheet, tables, plots, solves } = reconcile(state.content);
+    const fresh = withSymbolic(state.content, sheet);
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
@@ -206,6 +238,11 @@ export function EditorProvider({
     dispatch,
   });
 
+  // Symbolic producer: compute CAS regions via the SymPy worker and write each
+  // result into `region.cache` (autosave persists it). The pure engine above is
+  // untouched — symbolic regions read their cache, not the numeric result.
+  const symbolicStatus = useSymbolicEval({ content: state.content, canEdit, dispatch });
+
   const value = useMemo<EditorContextValue>(
     () => ({
       state,
@@ -225,12 +262,13 @@ export function EditorProvider({
       tableResults,
       plotResults,
       solveResults,
+      symbolicStatus,
     }),
-    // `state`, `tableResults`, `plotResults`, and `solveResults` are the changing
-    // dependencies consumers read; the callbacks close over them and are recreated
-    // each render.
+    // `state`, `tableResults`, `plotResults`, `solveResults`, and `symbolicStatus`
+    // are the changing dependencies consumers read; the callbacks close over them
+    // and are recreated each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults],
+    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults, symbolicStatus],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;

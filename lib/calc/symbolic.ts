@@ -27,6 +27,7 @@ const CAS_FUNCTIONS = new Set([
   "solve",
   "diff",
   "integrate",
+  "substitute",
   "limit",
   "series",
   "dsolve",

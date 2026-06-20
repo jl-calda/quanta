@@ -61,6 +61,14 @@ describe.skipIf(!CDN_OK)("Pyodide Node round-trip (SymPy + SciPy)", () => {
     expect(simplified.replace(/\s+/g, "")).toBe("2*x+1");
   });
 
+  it("evaluates the symbolic-operator (diff) and renders its TeX", async () => {
+    const backend = await getBackend();
+    // Engine source uses `^`; convert_xor maps it to Python `**`.
+    const { tex, value } = await backend.symbolicEval("diff(x^2, x)");
+    expect(value.replace(/\s+/g, "")).toBe("2*x");
+    expect(tex.replace(/\s+/g, "")).toBe("2x");
+  });
+
   it("solves a linear system via NumPy/SciPy", async () => {
     const backend = await getBackend();
     const x = await backend.linearSolve(

@@ -8,5 +8,5 @@ export {
   wrapEnvelope,
   parseEnvelope,
 } from "./envelope";
-export { buildSimplify, buildSympy } from "./symbolic";
+export { buildSimplify, buildSympy, buildSymbolicEval } from "./symbolic";
 export { buildLinearSolve, buildScipy } from "./numeric";

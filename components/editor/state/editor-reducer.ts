@@ -32,6 +32,7 @@ import {
   type SolveAlgorithm,
   type SolveGuess,
   type SurfaceOptions,
+  type SymbolicCache,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
@@ -110,6 +111,8 @@ export interface RegionPatch {
   format?: ResultFormat;
   conditional?: CondRule[];
   display?: Partial<DisplayFlags>;
+  /** Worker-computed symbolic result, written by the symbolic producer. */
+  cache?: SymbolicCache;
   border?: boolean;
   tag?: string;
   heading?: 1 | 2 | 3;
