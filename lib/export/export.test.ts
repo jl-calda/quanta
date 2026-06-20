@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { parseContent, type WorksheetContent } from "@/lib/worksheet/content";
+import { parseContent, type SymbolicCache, type WorksheetContent } from "@/lib/worksheet/content";
+import { symbolicCacheHash, SYMBOLIC_PLACEHOLDER } from "@/lib/worksheet/symbolic-cache";
 import { ExportDocument } from "./document";
 import { evaluateForExport } from "./evaluate";
 import { selectInputs } from "./inputs";
@@ -54,6 +55,58 @@ describe("evaluateForExport", () => {
     const nrd = results.get("m3")?.formatted ?? "";
     expect(nrd).toMatch(/9\.7/);
     expect(results.get("m3")?.error).toBeUndefined();
+  });
+});
+
+/* A worksheet with one symbolic (SymPy) region, optionally carrying a cache. */
+const SYM_SOURCE = "y := simplify((x^2-1)/(x-1))";
+function symbolicFixture(cache?: SymbolicCache): WorksheetContent {
+  return parseContent({
+    version: 1,
+    rows: [
+      {
+        id: "r1",
+        columns: 1,
+        cells: [{ regions: [{ id: "s1", type: "math", source: SYM_SOURCE, indent: 0, ...(cache ? { cache } : {}) }] }],
+      },
+    ],
+  });
+}
+
+describe("evaluateForExport — symbolic cache", () => {
+  it("reads a fresh cache so the symbolic result is the rendered value", () => {
+    const cache: SymbolicCache = { v: 1, hash: symbolicCacheHash(SYM_SOURCE), tex: "x + 1", value: "x + 1", computedAt: "2026-06-20T00:00:00Z" };
+    const r = evaluateForExport(symbolicFixture(cache)).get("s1");
+    expect(r?.tex).toBe("x + 1");
+    expect(r?.status).toBe("current");
+    expect(r?.error).toBeUndefined();
+  });
+
+  it("degrades a stale or absent cache to a non-blank placeholder, not the engine error", () => {
+    const stale: SymbolicCache = { v: 1, hash: "deadbeef", tex: "x + 1", value: "x + 1", computedAt: "2026-06-20T00:00:00Z" };
+    for (const content of [symbolicFixture(stale), symbolicFixture()]) {
+      const r = evaluateForExport(content).get("s1");
+      expect(r?.tex).not.toBe("");
+      expect(r?.formatted).toBe(SYMBOLIC_PLACEHOLDER);
+      expect(r?.error).toBeUndefined();
+    }
+  });
+
+  it("leaves ordinary numeric regions byte-identical", () => {
+    // N_Rd = 0.67 * 14.5 kN = 9.715 kN — the overlay must not touch it.
+    expect(evaluateForExport(fixture()).get("m3")?.formatted ?? "").toMatch(/9\.7/);
+  });
+});
+
+describe("ExportDocument — symbolic cache", () => {
+  it("renders the cached symbolic result into the PDF markup, not blank", () => {
+    const cache: SymbolicCache = { v: 1, hash: symbolicCacheHash(SYM_SOURCE), tex: "x + 1", value: "x + 1", computedAt: "2026-06-20T00:00:00Z" };
+    const content = symbolicFixture(cache);
+    const html = renderToStaticMarkup(
+      createElement(ExportDocument, { title: "Symbolic", content, results: evaluateForExport(content), options: OPTS }),
+    );
+    expect(html).toContain("katex"); // the result rendered as math
+    expect(html).toContain("Symbolic");
   });
 });
 

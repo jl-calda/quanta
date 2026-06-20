@@ -27,6 +27,7 @@ export {
   normalizeSource,
 } from "./parse";
 export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex } from "./latex";
+export { isSymbolic } from "./symbolic";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";
 export { applyConditional } from "./conditional";
