@@ -2,6 +2,37 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Export strategy for worker-computed (symbolic) results (Phase 2 refinement, Func §4.10)
+
+- **Settled: cache the worker result in `worksheets.content`, not Pyodide-at-export.** Server-side
+  export runs the **pure synchronous** engine in Node (`evaluateForExport` → `evaluateSheet`). Symbolic
+  (SymPy) results need the **async Pyodide worker**, which the Node/Puppeteer export path can't drive,
+  so a symbolic region would print blank. We chose **option (a): persist the worker-computed result on
+  the region** and read it during export — over **option (b): run Pyodide in-process during export**.
+  Rationale: keeps export on **one fast deterministic Node path** (no WASM cold-start in the serverless
+  PDF route), keeps `/lib/calc` **pure** (no async in the evaluate path), needs **no new tables/entities**
+  (the cache rides in the existing JSONB), and guarantees **PDF == app** because the cache *is* the app's
+  worker result. Matches the task constraint "prefer caching results in content if it keeps export on a
+  single Node path".
+- **Versioned, Zod-validated cache contract on the math region.** `cache: { v: 1, hash, tex, value?,
+  unit?, computedAt }` (`symbolicCacheSchema` in `lib/worksheet/content.ts`). `v` lets a future shape
+  change invalidate old entries; `hash` is an FNV-1a hash of the **normalized** input source
+  (`symbolicCacheHash`), so a formula edit makes the cache **stale** (mismatch). Optional ⇒ legacy docs
+  validate and it round-trips through `saveWorksheet`'s `contentSchema` with **no DB migration**.
+- **Symbolic detection by AST callee, not regex.** `isSymbolic` (`lib/calc/symbolic.ts`, the grammar
+  truth next to the parser) normalizes + splits the source like the engine, parses it, and flags any
+  function call to a CAS function (`simplify, factor, expand, solve, diff, integrate, limit, series,
+  dsolve, gradient, assume`). No new `→` operator is introduced here — that grammar change is owned by
+  the symbolic-evaluate session.
+- **Pure overlay, never imports the worker.** `applySymbolicCache` (`lib/worksheet/symbolic-cache.ts`,
+  tree-aware so it sits in `/lib/worksheet`, not `/lib/calc`) overlays a fresh cache onto the export
+  `RegionResult` map; **stale/absent degrades to the committed formula + a muted placeholder, never
+  blank**, and clears the pure engine's "undefined symbol" error so it doesn't read as a failure. It
+  must not import the backend, which is what structurally guarantees no Pyodide on the export path.
+- **Producer deferred to the Math symbolic-evaluate (→) session.** This slice is the **export-read
+  consumer only**. Writing the cache (provider effect → `getBackend().sympy(...)` → persist via
+  autosave) completes the loop there; tracked by a new build-tracker Refinement row.
+
 ## Pyodide / SymPy / SciPy worker backend (Phase 2 refinement R0, Func §2)
 
 - **`EngineBackend` = `SymbolicBackend` (SymPy) + `NumericBackend` (SciPy/NumPy).** The async

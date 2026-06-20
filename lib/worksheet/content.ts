@@ -76,6 +76,32 @@ const regionBase = {
   disabled: z.boolean().optional(),
 };
 
+/*
+ * Symbolic result cache (Phase-2 R0 export — cache-in-content strategy).
+ *
+ * Symbolic (SymPy) results are computed by the async Pyodide worker, which the
+ * Node PDF-export path cannot drive. Rather than run Pyodide server-side, the
+ * worker-computed result is cached HERE in the content tree so the deterministic
+ * Node export reads it directly and the PDF matches the app. Versioned (`v`) so a
+ * future shape change invalidates old entries cleanly, and `hash`-keyed to the
+ * region's input source: a mismatch means the formula changed and the cache is
+ * stale. The producer (worker compute → write this cache) is wired in the Math
+ * symbolic-evaluate (→) session; this slice is the export-read consumer only.
+ */
+const symbolicCacheSchema = z.object({
+  v: z.literal(1),
+  /** Hash of the normalized input source the result was computed from. */
+  hash: z.string(),
+  /** Rendered result as TeX (e.g. "x + 1"). */
+  tex: z.string(),
+  /** Plain-text result value, when meaningful. */
+  value: z.string().optional(),
+  /** Result unit label, when the value carries one. */
+  unit: z.string().optional(),
+  /** ISO timestamp the result was computed (provenance). */
+  computedAt: z.string(),
+});
+
 const mathRegionSchema = z.object({
   ...regionBase,
   type: z.literal("math"),
@@ -84,6 +110,8 @@ const mathRegionSchema = z.object({
   format: resultFormatSchema.optional(),
   conditional: z.array(condRuleSchema).optional(),
   display: displayFlagsSchema.partial().optional(),
+  /** Cached worker-computed symbolic result, read by server-side export. */
+  cache: symbolicCacheSchema.optional(),
 });
 
 const textRegionSchema = z.object({
@@ -395,6 +423,7 @@ export type ControlOption = z.infer<typeof controlOptionSchema>;
 export type SolveAlgorithm = z.infer<typeof solveAlgoSchema>;
 export type SolveGuess = z.infer<typeof solveGuessSchema>;
 export type OdeConfig = z.infer<typeof odeConfigSchema>;
+export type SymbolicCache = z.infer<typeof symbolicCacheSchema>;
 
 export interface RegionBase {
   id: string;
@@ -411,6 +440,8 @@ export interface MathRegion extends RegionBase {
   format?: ResultFormat;
   conditional?: CondRule[];
   display?: Partial<DisplayFlags>;
+  /** Cached worker-computed symbolic result, read by server-side export. */
+  cache?: SymbolicCache;
 }
 
 export interface TextRegion extends RegionBase {
