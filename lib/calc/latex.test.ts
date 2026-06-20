@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { latexToSource, sourceToLatex } from "./latex";
+import { latexToSource, looksLikeLatex, sourceToLatex } from "./latex";
 import { normalizeSource, splitDefinition } from "./parse";
 import { math } from "./math";
+
+describe("looksLikeLatex", () => {
+  it("detects LaTeX commands, brace groups, and braced scripts", () => {
+    expect(looksLikeLatex("\\frac{a}{b}")).toBe(true);
+    expect(looksLikeLatex("\\sqrt{x}")).toBe(true);
+    expect(looksLikeLatex("x^{2}")).toBe(true);
+    expect(looksLikeLatex("N_{Rd}")).toBe(true);
+    expect(looksLikeLatex("a~b")).toBe(true);
+  });
+
+  it("treats plain engine source as not-LaTeX", () => {
+    expect(looksLikeLatex("a^2 / b")).toBe(false);
+    expect(looksLikeLatex("0.75 * A_s * f_ub")).toBe(false);
+    expect(looksLikeLatex("12 kN")).toBe(false);
+    expect(looksLikeLatex("")).toBe(false);
+  });
+
+  it("pasted LaTeX round-trips to engine source via latexToSource", () => {
+    expect(looksLikeLatex("\\frac{a}{b}")).toBe(true);
+    expect(latexToSource("\\frac{a}{b}")).toBe("((a)/(b))");
+  });
+});
 
 describe("latexToSource", () => {
   it("keeps a subscript name as a single identifier", () => {

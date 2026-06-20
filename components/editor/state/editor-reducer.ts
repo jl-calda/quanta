@@ -80,6 +80,8 @@ export interface EditorUiState {
   exportOpen: boolean;
   /** Which app-bar drawer is docked on the right (comments / AI / none). */
   rightPanel: RightPanel;
+  /** Whether the floating Quanta math keypad is showing (summonable from a field). */
+  keypadOpen: boolean;
   /** The centrally-hosted dialog that is open, or null. */
   activeDialog: EditorDialog | null;
 }
@@ -223,6 +225,8 @@ export type EditorAction =
   | { type: "TOGGLE_LEFT" }
   | { type: "SET_LEFT_TAB"; tab: LeftTab }
   | { type: "TOGGLE_RIGHT" }
+  | { type: "TOGGLE_KEYPAD" }
+  | { type: "SET_KEYPAD"; open: boolean }
   | { type: "SET_RIBBON_TAB"; tab: string }
   | { type: "TOGGLE_RIBBON" }
   | { type: "OPEN_REFERENCE"; kind: RefGroup }
@@ -890,6 +894,10 @@ export function editorReducer(
       return { ...state, ui: { ...state.ui, leftTab: action.tab, leftOpen: true } };
     case "TOGGLE_RIGHT":
       return { ...state, ui: { ...state.ui, rightOpen: !state.ui.rightOpen } };
+    case "TOGGLE_KEYPAD":
+      return { ...state, ui: { ...state.ui, keypadOpen: !state.ui.keypadOpen } };
+    case "SET_KEYPAD":
+      return { ...state, ui: { ...state.ui, keypadOpen: action.open } };
     case "SET_RIBBON_TAB":
       return { ...state, ui: { ...state.ui, ribbonTab: action.tab } };
     case "TOGGLE_RIBBON":
@@ -960,6 +968,7 @@ export function initEditorState(args: {
       referenceKind: "FUNCTIONS",
       exportOpen: false,
       rightPanel: "none",
+      keypadOpen: false,
       activeDialog: null,
     },
   };

@@ -26,7 +26,7 @@ export {
   filterUnitLiterals,
   normalizeSource,
 } from "./parse";
-export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex } from "./latex";
+export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex, looksLikeLatex } from "./latex";
 export { isSymbolic } from "./symbolic";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";

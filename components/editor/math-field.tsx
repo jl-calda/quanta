@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { MathfieldElement } from "mathlive";
 import { mathfieldOptionsFromKeymap, type Keymap } from "@/lib/keymap";
-import { latexToSource, sourceToLatex } from "@/lib/calc";
+import { latexToSource, looksLikeLatex, sourceToLatex } from "@/lib/calc";
 
 /**
  * MathField — the PRIMARY math-entry surface: MathLive's `<math-field>` web
@@ -83,6 +83,17 @@ export function MathField({ value, keymap, onCommit, onCancel, onLatexChange }: 
           e.stopPropagation();
           done = true;
           cb.current.onCancel();
+        }
+      });
+      // LaTeX paste — deterministic, not reliant on MathLive's format sniffing.
+      // When the clipboard holds LaTeX (`\frac{a}{b}`, `x^{2}`), insert it as
+      // LaTeX so it renders as 2D notation; otherwise let MathLive handle the
+      // paste natively (plain ascii-math expressions still parse on commit).
+      mf.addEventListener("paste", (e: ClipboardEvent) => {
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        if (text && looksLikeLatex(text) && mf) {
+          e.preventDefault();
+          mf.executeCommand(["insert", text, { format: "latex" }]);
         }
       });
 

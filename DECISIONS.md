@@ -721,6 +721,48 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   (committed math is KaTeX). Toggling entry modes uses `onMouseDown`
   `preventDefault` on the chip so the active field never blurs/commits mid-toggle.
 
+## MathInput seam — the reusable math-entry contract (Phase 2 refinement)
+
+- **Scope: math region only.** The MathLive entry chrome (2D field + mono
+  toggle + inline palette + keyboard button) is extracted from
+  `regions/math-region.tsx` into a reusable seam, `components/editor/math-input.tsx`
+  (`<MathInput>`), and the math region now drives all of its entry through it.
+  Solve/plot/table inspector formula fields are **left untouched** — they migrate
+  via their own Refinement rows (solve inline-MathLive editing; plot trace/z-expr;
+  table formula) and inherit the seam when they adopt it. This is also kept
+  separate from the non-intrusive-input / editing-lines row (interaction model,
+  after M6). **Corrected DONE-WHEN** (was "all math entry uses the MathLive 2D
+  editor through the MathInput seam"): *the math region uses the MathLive 2D
+  editor via the reusable MathInput seam; the seam is reusable and ready for
+  adoption; LaTeX paste works.*
+- **Typed contract.** `MathInput` takes `{ value (engine source), keymap (from
+  /lib/keymap), onCommit(source), onCancel(), onChange?(source), onToggleKeypad?,
+  placeholder? }`. It owns only the entry chrome and the 2D↔mono draft; commit
+  (Enter/blur) and cancel (Esc) are reported to the caller. It is unit-aware for
+  free via the engine round-trip (`sourceToLatex`/`latexToSource` + the keymap's
+  unit inline shortcuts). The math region keeps its `EDIT_SOURCE`/`END_EDIT`
+  dispatch in the caller, so the seam stays decoupled from the editor reducer
+  (the keypad toggle is injected as `onToggleKeypad`).
+- **One on-screen keyboard: the Quanta keypad.** Per the design system ("Quanta
+  has its own keypad"), MathLive's built-in virtual keyboard stays disabled
+  (`mathVirtualKeyboardPolicy = "manual"`). The field's keyboard button summons
+  the existing floating `Keypad` (`components/editor/keypad.tsx`); its open state
+  moved from local `useState` into editor UI state (`ui.keypadOpen` +
+  `TOGGLE_KEYPAD`/`SET_KEYPAD`) so a field can summon it. The button and keypad
+  keys all fire on `onMouseDown` + `preventDefault` so the active field never
+  blurs. **No second on-screen keyboard is added.**
+- **Keypad insertions go through `/lib/keymap`.** The keypad's structural keys
+  carry an `OPERATOR_TEMPLATES` key (shared with the operator palette, shortcuts,
+  and command palette), so a click inserts the template's LaTeX (a real 2D
+  structure) into the MathLive field and the ascii fallback into the mono input —
+  one source of truth, via the existing `insertIntoActiveField` bridge.
+- **LaTeX paste works in both sub-modes.** A pure `looksLikeLatex(text)` heuristic
+  in `lib/calc/latex.ts` (backslash command / brace group / braced script / `~`)
+  decides routing: the `MathField` paste handler inserts detected LaTeX as
+  `format: "latex"` (deterministic 2D render, not reliant on MathLive's sniffing);
+  the mono field converts detected LaTeX through `latexToSource` before splicing
+  at the caret. Plain engine source (`a^2 / b`, `12 kN`) pastes natively in both.
+
 ## Math region — mockup-fidelity polish (Mockup 6.1)
 
 - **Inline operator palette while editing (Frame A).** `MathEditor` now stacks a
