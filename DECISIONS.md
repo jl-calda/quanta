@@ -1141,3 +1141,43 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   workspace settings). The AI proxy is untouched; `lib/schema/ai-region.ts` ships
   the Zod region-JSON validator the future key-gated route will use (tested, not
   wired). No diffs to `graph.ts` / `recalc.ts`; `/lib/calc` stays pure.
+
+## Keyboard shortcuts & keymap (Func §7.25–§7.26 / design mockup keyboard-shortcuts.html)
+
+- **One `/lib/keymap` keymap, no drift.** The keymap is the single source of
+  truth and now carries the FULL binding set (math entry, operators & Greek,
+  selection & navigation, regions, calculation, app) with rich metadata —
+  `label`, display `keys[]` (keycap tokens), `group`, `scope` (`math` | `app`),
+  `signature`, and a machine `chord`. The MathLive bridge (`mathfieldOptionsFromKeymap`)
+  and the reference modal render from the SAME bindings, so what the editor does
+  and what the reference says can't diverge. Shared app/calc/region/selection
+  bindings are composed once and reused by both keymaps; only math-entry differs
+  (Mathcad assigns on `:`, Default on `:=`).
+- **Platform-aware display.** `lib/keymap/display.ts` adds `detectPlatform()` +
+  `formatKeyToken()`: app accelerators store a `Mod` sentinel that renders ⌘ on
+  macOS and Ctrl elsewhere; in-field math chords stay literal Ctrl (matching the
+  actual MathLive binding). Detection defaults to `other` on the server so SSR is
+  deterministic.
+- **Keymap preference flows app-wide via the cookie-backed provider** — same
+  pattern as theme/density. Added `keymap` to `lib/preferences` (cookie +
+  `useKeymap()`); the editor (`math-region`, `MathField`, `keypad`), the shortcuts
+  reference, and the keypad badge all read the active keymap instead of the old
+  hardcoded `DEFAULT_KEYMAP_ID`. Settings mirrors to `profiles.preferences` (DB =
+  cross-device truth) and reconciles the cookie from the DB value on the Settings
+  screen. The Settings Editor section and the design board share ONE
+  `KeymapCards` component.
+- **App shortcuts live in `EditorKeyboard`, wired only to real actions.** F9 /
+  Shift+F9 (recalc / recalc-to-here), Mod+Enter (new region), Mod+K/F/P (palette /
+  find / export), Mod+Shift+A (auto/manual), and `/` (open reference, canvas-only
+  since `/` is a fraction in a field). Mod+S preventDefaults the browser dialog
+  (the sheet autosaves). Undo/Redo are advertised in the reference (the Mathcad
+  keymap) but not bound — there is no undo stack yet, and binding a no-op would be
+  worse than leaving native behavior. Nothing traps focus; every shortcut is also
+  reachable via ribbon/menus.
+- **Reference modal rebuilt to mockup 7.25.** Extracted `ShortcutsReference` (the
+  searchable, masonry, keycap-chip panel) so `ShortcutsDialog` (scrim overlay,
+  Esc/scrim close, no focus trap) and the new `/keyboard-shortcuts` design board
+  both render it. The board (sibling to `/design`, `/empty-states`) hosts the live
+  reference (7.25), the live keymap preference (7.26), and the math input bar with
+  inline key-hint chips; the keypad keys gained the same 2px-bottom-border hint
+  chips so the keyboard path is discoverable.

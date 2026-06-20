@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { DEFAULT_KEYMAP_ID } from "@/lib/keymap";
+import { useKeymap } from "@/lib/preferences/provider";
 import { insertIntoActiveField } from "./math-entry";
 import { Icon } from "./icons";
 
@@ -51,6 +51,7 @@ const CATEGORIES: Record<string, Key[]> = {
 };
 
 export function Keypad() {
+  const { keymap } = useKeymap();
   const [open, setOpen] = useState(false);
   const [cat, setCat] = useState<keyof typeof CATEGORIES>("Build");
   const [pos, setPos] = useState<{ x: number | null; bottom: number; top?: number }>({ x: null, bottom: 18 });
@@ -100,7 +101,7 @@ export function Keypad() {
         <span style={{ color: "var(--text-muted)", display: "inline-flex" }}><Icon name="grip" size={14} /></span>
         <span style={{ font: "600 12px/1 var(--font-sans)", color: "var(--text-primary)" }}>Math keypad</span>
         <span style={{ font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)", background: "var(--accent-tint)", borderRadius: "var(--radius-full)", padding: "3px 7px" }}>
-          Keymap: <span style={{ color: "var(--accent)", fontWeight: 600, textTransform: "capitalize" }}>{DEFAULT_KEYMAP_ID}</span>
+          Keymap: <span style={{ color: "var(--accent)", fontWeight: 600 }}>{keymap.name}</span>
         </span>
         <button onClick={() => setOpen(false)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, border: "none", background: "transparent", borderRadius: "var(--radius-sm)", color: "var(--text-muted)", cursor: "pointer" }}>
           <Icon name="chevD" size={15} />
@@ -126,6 +127,29 @@ export function Keypad() {
             style={{ position: "relative", gridColumn: key.s.length > 2 ? "span 2" : "span 1", fontSize: key.s.length > 2 ? 12 : 15, fontFamily: key.s.length > 2 ? "var(--font-sans)" : "var(--font-math)" }}
           >
             {key.s}
+            {key.hint && (
+              // Inline key hint chip (mockup) — 2px bottom border, so the
+              // keyboard path is always discoverable: click to learn, type next time.
+              <span
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  bottom: -1,
+                  right: -1,
+                  font: "8px/1 var(--font-mono)",
+                  color: "var(--text-muted)",
+                  background: "var(--surface-chrome)",
+                  border: "1px solid var(--border-hairline)",
+                  borderBottom: "2px solid var(--border-strong)",
+                  borderRadius: 3,
+                  padding: "1px 2px",
+                  minWidth: 11,
+                  textAlign: "center",
+                }}
+              >
+                {key.hint}
+              </span>
+            )}
           </button>
         ))}
       </div>

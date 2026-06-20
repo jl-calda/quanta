@@ -75,12 +75,13 @@ export function mathfieldOptionsFromKeymap(keymap: Keymap): MathfieldKeymapConfi
   const keybindings: MathfieldKeybinding[] = [];
 
   for (const b of keymap.bindings) {
+    if (b.scope !== "math" || !b.chord) continue; // app accelerators / native keys
     if (b.action === "insertAssign") {
       // `:` (Mathcad) or `:=` (Default) → the assignment glyphs.
-      inlineShortcuts[b.keys] = ":=";
+      inlineShortcuts[b.chord] = ":=";
       continue;
     }
-    const key = toMathliveKey(b.keys);
+    const key = toMathliveKey(b.chord);
     const command = commandForAction(b.action);
     if (key && command) keybindings.push({ key, command });
   }
