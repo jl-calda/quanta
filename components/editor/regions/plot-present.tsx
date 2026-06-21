@@ -14,10 +14,19 @@ import {
   contourBands,
   contourLines,
   niceNum,
+  resolveScale,
+  linthreshOf,
+  scaleForward,
+  logTicks,
+  symlogTicks,
+  type AxisScale,
   type CalcError,
   type ContourResult,
+  type PlotPoint,
   type PlotResult,
   type PlotTraceStyle,
+  type ResolvedAnnotation,
+  type ResolvedReference,
   type TraceResult,
 } from "@/lib/calc";
 import type { PlotRegion } from "@/lib/worksheet/content";
@@ -34,6 +43,13 @@ const X0 = M.l;
 const X1 = W - M.r;
 const Y0 = H - M.b;
 const Y1 = M.t;
+/** Extra room reserved on the right for a secondary y-axis (ticks + label). */
+const Y2_PAD = 40;
+
+/** Clamp a pixel y into the plot rect, so error whiskers/bands never spill over the axes. */
+function clampY(py: number): number {
+  return Math.max(Y1, Math.min(Y0, py));
+}
 
 /** Default trace palette — design-system hues, blueprint first (mockup). */
 const PALETTE = [
@@ -72,6 +88,13 @@ export function niceTicks(min: number, max: number, count = 6): number[] {
   return ticks;
 }
 
+/** Ticks for any axis scale — decades for log, ±L·10ᵏ for symlog, nice numbers otherwise. */
+function axisTicks(scale: AxisScale, min: number, max: number, linthresh: number, count: number): number[] {
+  if (scale === "log") return logTicks(min, max, count);
+  if (scale === "symlog") return symlogTicks(min, max, linthresh, count);
+  return niceTicks(min, max, count);
+}
+
 /** Trim binary-float fuzz (0.30000000004 → 0.3) relative to the tick step. */
 function cleanFloat(v: number, step: number): number {
   const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1);
@@ -107,7 +130,7 @@ function AxisLabel({ symbol, unit }: { symbol: string; unit: string | null }): R
 
 export interface PlotFigureProps {
   result: PlotResult;
-  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar">;
+  region: Pick<PlotRegion, "kind" | "x" | "y" | "y2" | "xVar">;
   /** Index (into the primary trace) of the hovered sample, for the read-out. */
   hoverIndex?: number | null;
   /** Report the nearest sample under the cursor (omit ⇒ static, no hover). */
@@ -122,20 +145,50 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
     return <PolarFigure result={result} height={height} />;
   }
 
-  const { xMin, xMax, yMin, yMax } = result.bounds;
-  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
-  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
-  const baseY = Math.min(Math.max(0, yMin), yMax); // bar/area baseline (0 when in range)
+  const { xMin, xMax, yMin, yMax, y2Min, y2Max } = result.bounds;
 
-  const xticks = niceTicks(xMin, xMax, 7);
-  const yticks = niceTicks(yMin, yMax, 5);
+  const xScale = resolveScale(region.x);
+  const yScale = resolveScale(region.y);
+  const y2Scale = resolveScale(region.y2);
+  const xLin = linthreshOf(region.x);
+  const yLin = linthreshOf(region.y);
+  const y2Lin = linthreshOf(region.y2);
 
   const drawable = result.traces.filter((t) => !t.hidden && !t.error && t.points.length > 0);
+  // The secondary axis only draws when the engine produced y2 bounds AND a trace uses it.
+  const hasY2 = y2Min != null && y2Max != null && drawable.some((t) => t.axis === "y2");
+  const xRight = hasY2 ? X1 - Y2_PAD : X1;
+
+  // data → pixel mappers (scale-aware; the engine keeps values untransformed).
+  const fx = (v: number) => scaleForward(xScale, xLin, v);
+  const fxMin = fx(xMin);
+  const fxSpan = fx(xMax) - fxMin || 1;
+  const sx = (v: number) => X0 + ((fx(v) - fxMin) / fxSpan) * (xRight - X0);
+
+  const fy = (v: number) => scaleForward(yScale, yLin, v);
+  const fyMin = fy(yMin);
+  const fySpan = fy(yMax) - fyMin || 1;
+  const sy = (v: number) => Y0 - ((fy(v) - fyMin) / fySpan) * (Y0 - Y1);
+
+  const sy2 = hasY2
+    ? buildMapper(y2Scale, y2Lin, y2Min as number, y2Max as number)
+    : sy;
+
+  // bar/area baseline — 0 when in range, the axis floor on a log axis (no 0).
+  const baseY = yScale === "log" ? yMin : Math.min(Math.max(0, yMin), yMax);
+  const baseY2 = hasY2 ? (y2Scale === "log" ? (y2Min as number) : Math.min(Math.max(0, y2Min as number), y2Max as number)) : baseY;
+
+  const xticks = axisTicks(xScale, xMin, xMax, xLin, 7);
+  const yticks = axisTicks(yScale, yMin, yMax, yLin, 5);
+  const y2ticks = hasY2 ? axisTicks(y2Scale, y2Min as number, y2Max as number, y2Lin, 5) : [];
+
   const primary = drawable[0];
+  const hoverMap = primary?.axis === "y2" ? sy2 : sy;
+  const hoverUnit = primary?.axis === "y2" ? result.y2Unit : result.yUnit;
 
   // Bar width — share the x-span across the densest bar trace's sample count.
   const barTrace = drawable.find((t) => styleFlags(t.style).bars);
-  const barW = barTrace ? Math.max(2, ((X1 - X0) / Math.max(barTrace.points.length, 1)) * 0.62) : 0;
+  const barW = barTrace ? Math.max(2, ((xRight - X0) / Math.max(barTrace.points.length, 1)) * 0.62) : 0;
 
   const hover =
     onHoverIndex && primary && hoverIndex != null && primary.points[hoverIndex]
@@ -159,6 +212,9 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
     onHoverIndex(best);
   };
 
+  // Pan only on plain linear axes — a dragged delta isn't a constant data step on log/symlog.
+  const canPan = !!onPan && xScale === "linear" && yScale === "linear";
+
   return (
     <svg
       width="100%"
@@ -167,19 +223,19 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
       role="img"
       aria-label="Plot"
     >
-      {/* gridlines */}
+      {/* gridlines (primary y + x) */}
       {yticks.map((v, i) => (
-        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={X1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={xRight} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
       ))}
       {xticks.map((v, i) => (
         <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
       ))}
 
       {/* axes */}
-      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={xRight} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
       <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
 
-      {/* ticks */}
+      {/* ticks (x + primary y) */}
       {xticks.map((v, i) => (
         <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
           {fmtNum(v)}
@@ -191,28 +247,64 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
         </text>
       ))}
 
-      {/* axis labels */}
-      <text x={(X0 + X1) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+      {/* secondary y-axis (right) */}
+      {hasY2 && (
+        <>
+          <line x1={xRight} y1={Y0} x2={xRight} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+          {y2ticks.map((v, i) => (
+            <line key={`y2t${i}`} x1={xRight} y1={sy2(v)} x2={xRight + 4} y2={sy2(v)} stroke="var(--border-strong)" strokeWidth="1" />
+          ))}
+          {y2ticks.map((v, i) => (
+            <text key={`y2l${i}`} x={xRight + 7} y={sy2(v) + 3} textAnchor="start" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+              {fmtNum(v)}
+            </text>
+          ))}
+          <text x={W - 5} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(90 ${W - 5} ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+            <AxisLabel symbol={region.y2?.label || "y₂"} unit={result.y2Unit} />
+          </text>
+        </>
+      )}
+
+      {/* axis labels (x + primary y) */}
+      <text x={(X0 + xRight) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
         <AxisLabel symbol={region.x?.label || region.xVar || "x"} unit={result.xUnit} />
       </text>
       <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
         <AxisLabel symbol={region.y?.label || "y"} unit={result.yUnit} />
       </text>
 
-      {/* traces */}
+      {/* traces (each on its own y-axis) */}
       {drawable.map((t, i) => (
-        <TraceMarks key={t.id} trace={t} index={i} sx={sx} sy={sy} baseY={baseY} barW={barW} />
+        <TraceMarks
+          key={t.id}
+          trace={t}
+          index={i}
+          sx={sx}
+          sy={t.axis === "y2" ? sy2 : sy}
+          baseY={t.axis === "y2" ? baseY2 : baseY}
+          barW={barW}
+        />
+      ))}
+
+      {/* reference (datum) lines */}
+      {result.references.map((ref) => (
+        <ReferenceLine key={ref.id} reference={ref} sx={sx} sy={sy} sy2={sy2} xRight={xRight} />
+      ))}
+
+      {/* annotations (anchored on the primary axes) */}
+      {result.annotations.map((a) => (
+        <AnnotationMark key={a.id} annotation={a} px={sx(a.x)} py={sy(a.y)} xRight={xRight} />
       ))}
 
       {/* hover crosshair + read-out */}
       {hover && (
         <HoverReadout
           px={sx(hover.x)}
-          py={sy(hover.y)}
+          py={hoverMap(hover.y)}
           x={hover.x}
           y={hover.y}
           xUnit={result.xUnit}
-          yUnit={result.yUnit}
+          yUnit={hoverUnit}
           color={traceColor(0, primary?.color)}
         />
       )}
@@ -222,16 +314,24 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
         <rect
           x={X0}
           y={Y1}
-          width={X1 - X0}
+          width={xRight - X0}
           height={Y0 - Y1}
           fill="transparent"
           onMouseMove={onMove}
           onMouseLeave={() => onHoverIndex(null)}
         />
       )}
-      {onPan && <PanStrips xMin={xMin} xMax={xMax} yMin={yMin} yMax={yMax} onPan={onPan} />}
+      {canPan && <PanStrips xMin={xMin} xMax={xMax} yMin={yMin} yMax={yMax} xRight={xRight} onPan={onPan!} />}
     </svg>
   );
+}
+
+/** A scale-aware data→pixel mapper for one y-axis range. */
+function buildMapper(scale: AxisScale, linthresh: number, min: number, max: number): (v: number) => number {
+  const f = (v: number) => scaleForward(scale, linthresh, v);
+  const lo = f(min);
+  const span = f(max) - lo || 1;
+  return (v: number) => Y0 - ((f(v) - lo) / span) * (Y0 - Y1);
 }
 
 /* ------------------------------------------------------------------ *
@@ -257,9 +357,13 @@ function TraceMarks({
   const f = styleFlags(trace.style);
   const pts = trace.points;
   const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
+  const hasErr = pts.some((p) => p.err != null);
+  const band = trace.errorMode === "band";
 
   return (
     <g>
+      {/* error band sits behind the trace */}
+      {hasErr && band && <path d={errorBandPath(pts, sx, sy)} fill={color} opacity={0.14} />}
       {f.area && (
         <path
           d={`${d} L${sx(pts[pts.length - 1].x).toFixed(1)} ${sy(baseY).toFixed(1)} L${sx(pts[0].x).toFixed(1)} ${sy(baseY).toFixed(1)} Z`}
@@ -278,8 +382,112 @@ function TraceMarks({
       {f.line && pts.length > 1 && (
         <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray={trace.dash ? "5 3" : undefined} />
       )}
+      {/* error bars (whiskers) — clamped to the plot rect on log axes */}
+      {hasErr && !band &&
+        pts.map((p, i) =>
+          p.err == null ? null : (
+            <ErrorBar key={`e${i}`} cx={sx(p.x)} top={clampY(sy(p.y + p.err))} bot={clampY(sy(p.y - p.err))} color={color} />
+          ),
+        )}
       {(f.markers || f.stem) &&
         pts.map((p, i) => <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={f.markers ? 3 : 2.4} fill={f.markers ? "var(--surface-paper)" : color} stroke={color} strokeWidth="1.6" />)}
+    </g>
+  );
+}
+
+/** Closed polygon between the y+err (forward) and y−err (reversed) curves. */
+function errorBandPath(pts: PlotPoint[], sx: (v: number) => number, sy: (v: number) => number): string {
+  const upper = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)} ${clampY(sy(p.y + (p.err ?? 0))).toFixed(1)}`);
+  const lower = pts
+    .slice()
+    .reverse()
+    .map((p) => `L${sx(p.x).toFixed(1)} ${clampY(sy(p.y - (p.err ?? 0))).toFixed(1)}`);
+  return `${upper.join(" ")} ${lower.join(" ")} Z`;
+}
+
+function ErrorBar({ cx, top, bot, color }: { cx: number; top: number; bot: number; color: string }) {
+  return (
+    <g>
+      <line x1={cx} y1={top} x2={cx} y2={bot} stroke={color} strokeWidth="1.2" />
+      <line x1={cx - 3} y1={top} x2={cx + 3} y2={top} stroke={color} strokeWidth="1.2" />
+      <line x1={cx - 3} y1={bot} x2={cx + 3} y2={bot} stroke={color} strokeWidth="1.2" />
+    </g>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reference lines + annotations
+ * ------------------------------------------------------------------ */
+
+function ReferenceLine({
+  reference,
+  sx,
+  sy,
+  sy2,
+  xRight,
+}: {
+  reference: ResolvedReference;
+  sx: (v: number) => number;
+  sy: (v: number) => number;
+  sy2: (v: number) => number;
+  xRight: number;
+}) {
+  const color = reference.color || "var(--status-error)";
+  const dashArr = reference.dash === false ? undefined : "6 3";
+
+  if (reference.axis === "x") {
+    const px = sx(reference.value);
+    if (!Number.isFinite(px) || px < X0 - 0.5 || px > xRight + 0.5) return null;
+    return (
+      <g>
+        <line x1={px} y1={Y1} x2={px} y2={Y0} stroke={color} strokeWidth="1.3" strokeDasharray={dashArr} />
+        {reference.label && (
+          <text x={px + 3} y={Y1 + 9} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+            {reference.label}
+          </text>
+        )}
+      </g>
+    );
+  }
+
+  const onRight = reference.axis === "y2";
+  const py = (onRight ? sy2 : sy)(reference.value);
+  if (!Number.isFinite(py) || py < Y1 - 0.5 || py > Y0 + 0.5) return null;
+  return (
+    <g>
+      <line x1={X0} y1={py} x2={xRight} y2={py} stroke={color} strokeWidth="1.3" strokeDasharray={dashArr} />
+      {reference.label && (
+        <text x={onRight ? xRight - 3 : X0 + 3} y={py - 3} textAnchor={onRight ? "end" : "start"} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+          {reference.label}
+        </text>
+      )}
+    </g>
+  );
+}
+
+function AnnotationMark({
+  annotation,
+  px,
+  py,
+  xRight,
+}: {
+  annotation: ResolvedAnnotation;
+  px: number;
+  py: number;
+  xRight: number;
+}) {
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+  if (px < X0 - 0.5 || px > xRight + 0.5 || py < Y1 - 0.5 || py > Y0 + 0.5) return null;
+  const color = annotation.color || "var(--text-primary)";
+  const flip = px > W - 90;
+  return (
+    <g>
+      <circle cx={px} cy={py} r={2.6} fill={color} stroke="var(--surface-paper)" strokeWidth="1" />
+      {annotation.text && (
+        <text x={flip ? px - 5 : px + 5} y={py - 4} textAnchor={flip ? "end" : "start"} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+          {annotation.text}
+        </text>
+      )}
     </g>
   );
 }
@@ -338,12 +546,14 @@ function PanStrips({
   xMax,
   yMin,
   yMax,
+  xRight,
   onPan,
 }: {
   xMin: number;
   xMax: number;
   yMin: number;
   yMax: number;
+  xRight: number;
   onPan: (axis: "x" | "y", delta: number) => void;
 }) {
   const dragX = (e: ReactPointerEvent<SVGRectElement>) => {
@@ -363,7 +573,7 @@ function PanStrips({
   };
   return (
     <>
-      <rect x={X0} y={Y0} width={X1 - X0} height={M.b - 4} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={dragX} onPointerMove={moveX}>
+      <rect x={X0} y={Y0} width={xRight - X0} height={M.b - 4} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={dragX} onPointerMove={moveX}>
         <title>Drag to pan the x range</title>
       </rect>
       <rect x={0} y={Y1} width={M.l - 4} height={Y0 - Y1} fill="transparent" style={{ cursor: "ns-resize" }} onPointerDown={dragX} onPointerMove={moveY}>

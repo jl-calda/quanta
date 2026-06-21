@@ -109,7 +109,11 @@ export {
   niceNum,
   type PlotSpec,
   type PlotAxisSpec,
+  type PlotAxisId,
+  type PlotErrorMode,
   type PlotTraceSpec,
+  type PlotReferenceSpec,
+  type PlotAnnotationSpec,
   type PlotZSpec,
   type PlotGridSpec,
   type PlotSurfaceSpec,
@@ -121,7 +125,21 @@ export {
   type PlotSurface,
   type TraceResult,
   type PlotBounds,
+  type ResolvedReference,
+  type ResolvedAnnotation,
 } from "./plot";
+
+// Axis scales (pure — shared by the plot engine's bounds and the renderer's mapping).
+export {
+  resolveScale,
+  linthreshOf,
+  scaleForward,
+  scaleInverse,
+  logTicks,
+  symlogTicks,
+  niceLogBounds,
+  type AxisScale,
+} from "./plot-scale";
 
 // Contour iso-band / iso-line geometry (pure — see ./contour).
 export {
