@@ -16,7 +16,7 @@
  * best-effort string that the engine's typed error model can surface.
  */
 import { math } from "./math";
-import { splitDefinition } from "./parse";
+import { splitDefinition, normalizeRanges } from "./parse";
 
 /** Greek command names mathjs accepts as symbols (it re-renders them to TeX). */
 const GREEK = new Set([
@@ -241,7 +241,7 @@ export function sourceToLatex(source: string): string {
   if (!expr.trim()) return trimmed; // half-typed (`x :=`) — seed verbatim
   let rhs: string;
   try {
-    rhs = math.parse(expr).toTex();
+    rhs = math.parse(normalizeRanges(expr)).toTex();
   } catch {
     return trimmed;
   }
@@ -253,7 +253,7 @@ export function exprToLatex(src: string): string {
   const t = src.trim();
   if (!t) return "";
   try {
-    return math.parse(t).toTex();
+    return math.parse(normalizeRanges(t)).toTex();
   } catch {
     return t;
   }

@@ -13,6 +13,7 @@
 import { create, all } from "mathjs";
 import { registerMatrixFunctions } from "./matrix";
 import { registerProgramDispatcher } from "./program-registry";
+import { registerIteratorFunctions } from "./iterators";
 
 export const math = create(all, {});
 
@@ -20,6 +21,12 @@ export const math = create(all, {});
 // here, so every module shares one configured instance. matrix.ts takes the
 // instance as an argument (no static import back to ./math) to stay cycle-free.
 registerMatrixFunctions(math);
+
+// Range variables (`a..b`) and the live-evaluating ∑ / ∏ / ∫ operators
+// (`summation`, `product`, `integral`, `__quantaRange`). Registered once, here, so
+// the unmodified recalc engine evaluates and renders them. iterators.ts takes the
+// instance as an argument (no static import back to ./math) to stay cycle-free.
+registerIteratorFunctions(math);
 
 // Program-block dispatcher: a single static function `__quantaProgram(token, …)`
 // that resolves a compiled program closure by token (see ./program-registry).

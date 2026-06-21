@@ -25,6 +25,7 @@ export {
   collectDeps,
   filterUnitLiterals,
   normalizeSource,
+  normalizeRanges,
 } from "./parse";
 export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex, looksLikeLatex } from "./latex";
 export { isSymbolic } from "./symbolic";
