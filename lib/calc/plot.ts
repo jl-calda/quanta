@@ -65,14 +65,48 @@ export interface PlotTraceSpec {
   hidden?: boolean;
 }
 
+/** z = f(x, y) field expression + scale, for contour/surface. */
+export interface PlotZSpec {
+  expr?: string;
+  label?: string;
+  unit?: string;
+  min?: number;
+  max?: number;
+}
+
+/** Sampling grid resolution for contour/surface (each clamped to 2–200). */
+export interface PlotGridSpec {
+  x?: number;
+  y?: number;
+}
+
+/** Display options for contour/surface. */
+export interface PlotSurfaceSpec {
+  /** Number of iso-bands (contour); clamped to 1–64. */
+  levels?: number;
+  /** Filled bands (default) vs. iso-lines only. */
+  filled?: boolean;
+  colormap?: string;
+  wireframe?: boolean;
+  showScale?: boolean;
+}
+
 export interface PlotSpec {
   kind?: PlotKind;
   /** Independent variable swept across the x-axis (default "x"); θ for polar. */
   xVar?: string;
+  /** Second independent variable for contour/surface (z = f(x, y); default "y"). */
+  yVar?: string;
   /** Explicit x data expression (a vector) — switches the plot to data mode. */
   xData?: string;
   x?: PlotAxisSpec;
   y?: PlotAxisSpec;
+  /** z = f(x, y) expression + scale, sampled over the (x, y) grid (contour/surface). */
+  z?: PlotZSpec;
+  /** Sampling grid resolution (contour/surface). */
+  grid?: PlotGridSpec;
+  /** Display options (contour/surface). */
+  surface?: PlotSurfaceSpec;
   traces?: PlotTraceSpec[];
   /** Sweep sample count; clamped to 2–400. */
   samples?: number;
@@ -110,6 +144,32 @@ export interface PlotBounds {
   yMax: number;
 }
 
+/**
+ * A sampled 2D field `z = f(x, y)` for a contour plot. `z[iy][ix]` is the value
+ * at `(x[ix], y[iy])` in display units; `NaN` marks a gap (a non-finite result or
+ * a per-point domain miss). `levels` are the ascending band boundaries the
+ * renderer fills/strokes. Pure data — the iso-band geometry lives in `./contour`.
+ */
+export interface ContourResult {
+  /** x sample positions (length nx), in display units. */
+  x: number[];
+  /** y sample positions (length ny), in display units. */
+  y: number[];
+  /** z[iy][ix] — row-major by y; NaN = gap. */
+  z: number[][];
+  /** Finite z extent across the grid (or the pinned z.min / z.max scale). */
+  zMin: number;
+  zMax: number;
+  /** Ascending band boundaries (nBands + 1 values) spanning [zMin, zMax]. */
+  levels: number[];
+  /** z display unit, or null. */
+  zUnit: string | null;
+  /** z symbol/label for the colour scale. */
+  zLabel: string;
+  /** Set when the z expression fails everywhere (parse / undefined name). */
+  error?: CalcError;
+}
+
 export interface PlotResult {
   kind: PlotKind;
   traces: TraceResult[];
@@ -120,9 +180,13 @@ export interface PlotResult {
   errorCount: number;
   /** True when nothing is plottable yet (no usable trace / no x binding). */
   empty: boolean;
+  /** Sampled 2D field for `kind === "contour"`; undefined otherwise. */
+  contour?: ContourResult;
 }
 
 const DEFAULT_SAMPLES = 80;
+const DEFAULT_GRID = 24;
+const DEFAULT_LEVELS = 8;
 const TAU = 2 * Math.PI;
 
 /* ------------------------------------------------------------------ *
@@ -140,8 +204,12 @@ export function evaluatePlot(
   const xUnit = realUnit(xAxis.unit);
   const yUnit = realUnit(yAxis.unit);
 
-  // contour/surface are typed-but-inert this pass — the view shows a placeholder.
-  if (kind === "contour" || kind === "surface") {
+  // contour samples a real 2D z = f(x, y) field (rendered as iso-bands by ./contour);
+  // 3D surface stays typed-but-inert this pass — the view shows a 'configure' placeholder.
+  if (kind === "contour") {
+    return sampleGrid(spec, xAxis, yAxis, xUnit ?? null, yUnit ?? null, externalScope, system);
+  }
+  if (kind === "surface") {
     return {
       kind,
       traces: [],
@@ -228,6 +296,147 @@ function resolveSampling(
   // Bind the sample to `xVar` carrying the x-axis unit, so `f(x)` is unit-aware.
   const raw = display.map((v) => attachUnit(v, xAxis.unit));
   return { mode: "sweep", display, raw, span: { lo, hi } };
+}
+
+/* ------------------------------------------------------------------ *
+ * 2D grid sampling (contour) — z = f(x, y) over the (x, y) ranges
+ * ------------------------------------------------------------------ */
+
+type ContourBase = {
+  kind: "contour";
+  traces: TraceResult[];
+  bounds: PlotBounds;
+  xUnit: string | null;
+  yUnit: string | null;
+};
+
+/**
+ * Sample a contour's `z = f(x, y)` over a regular grid spanning the x/y ranges,
+ * unit-aware and reusing the same value model as the 1D sweep: `xVar`/`yVar` are
+ * bound carrying their axis units and each z is converted to the z display unit.
+ * Pure and synchronous — a default 24×24 grid is the same evaluation order as a
+ * sweep, so no worker is needed. Per-point throws / non-finite results are NaN
+ * gaps; a z expression that fails to PARSE, or throws at EVERY point (e.g. an
+ * undefined name), or whose conversion fails at every point (a unit mismatch),
+ * surfaces a single typed error — exactly mirroring the 1D trace error model.
+ */
+function sampleGrid(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  xUnit: string | null,
+  yUnit: string | null,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const zUnit = realUnit(spec.z?.unit) ?? null;
+  const zLabel = spec.z?.label?.trim() || "z";
+  const base: ContourBase = {
+    kind: "contour",
+    traces: [],
+    bounds: defaultBounds(xAxis, yAxis),
+    xUnit,
+    yUnit,
+  };
+
+  const expr = spec.z?.expr?.trim() ?? "";
+  const xVar = spec.xVar?.trim() || "x";
+  const yVar = spec.yVar?.trim() || "y";
+
+  // A contour needs a z expression AND finite, non-degenerate x and y ranges.
+  const xLo = xAxis.min;
+  const xHi = xAxis.max;
+  const yLo = yAxis.min;
+  const yHi = yAxis.max;
+  const ranged =
+    xLo != null && xHi != null && yLo != null && yHi != null &&
+    Number.isFinite(xLo) && Number.isFinite(xHi) && Number.isFinite(yLo) && Number.isFinite(yHi) &&
+    xLo !== xHi && yLo !== yHi;
+  if (!expr || !ranged) return { ...base, errorCount: 0, empty: true };
+
+  let node: MathNode;
+  try {
+    node = math.parse(expr);
+  } catch (error) {
+    return contourError(base, zUnit, zLabel, classifyThrow(error));
+  }
+
+  const nx = clampInt(spec.grid?.x ?? DEFAULT_GRID, 2, 200);
+  const ny = clampInt(spec.grid?.y ?? DEFAULT_GRID, 2, 200);
+  const xs = linspace(xLo!, xHi!, nx);
+  const ys = linspace(yLo!, yHi!, ny);
+  const xRaw = xs.map((v) => attachUnit(v, xAxis.unit));
+  const yRaw = ys.map((v) => attachUnit(v, yAxis.unit));
+
+  const z: number[][] = [];
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  let nodeOk = 0;
+  let finiteCount = 0;
+  let firstNodeThrow: unknown = null;
+  let firstConvError: unknown = null;
+
+  for (let iy = 0; iy < ny; iy += 1) {
+    const row = new Array<number>(nx).fill(NaN);
+    for (let ix = 0; ix < nx; ix += 1) {
+      let raw: unknown;
+      try {
+        raw = node.evaluate({ ...scope, [xVar]: xRaw[ix], [yVar]: yRaw[iy] });
+      } catch (error) {
+        if (!firstNodeThrow) firstNodeThrow = error;
+        continue; // row[ix] stays NaN (gap)
+      }
+      nodeOk += 1;
+      try {
+        const n = toAxisNumber(raw, spec.z?.unit, system);
+        if (Number.isFinite(n)) {
+          row[ix] = n;
+          finiteCount += 1;
+          if (n < zMin) zMin = n;
+          if (n > zMax) zMax = n;
+        }
+      } catch (error) {
+        if (!firstConvError) firstConvError = error;
+      }
+    }
+    z.push(row);
+  }
+
+  // Threw on every point ⇒ a structural error (undefined name, bad expression).
+  if (nodeOk === 0 && firstNodeThrow) return contourError(base, zUnit, zLabel, classifyThrow(firstNodeThrow));
+  // Converted nowhere: a unit mismatch surfaces; otherwise the whole field is a gap.
+  if (finiteCount === 0) {
+    if (firstConvError) return contourError(base, zUnit, zLabel, classifyThrow(firstConvError));
+    return { ...base, errorCount: 0, empty: true };
+  }
+
+  // Colour / level scale: pinned z.min/z.max win, else a nice rounding of the data extent.
+  let scaleLo = spec.z?.min ?? null;
+  let scaleHi = spec.z?.max ?? null;
+  if (scaleLo == null || scaleHi == null) {
+    const [nlo, nhi] = niceBounds(zMin, zMax);
+    scaleLo = scaleLo ?? nlo;
+    scaleHi = scaleHi ?? nhi;
+  }
+  if (scaleHi <= scaleLo) scaleHi = scaleLo + 1;
+  const nBands = clampInt(spec.surface?.levels ?? DEFAULT_LEVELS, 1, 64);
+  const levels = linspace(scaleLo, scaleHi, nBands + 1);
+
+  return {
+    ...base,
+    errorCount: 0,
+    empty: false,
+    contour: { x: xs, y: ys, z, zMin: scaleLo, zMax: scaleHi, levels, zUnit, zLabel },
+  };
+}
+
+function contourError(base: ContourBase, zUnit: string | null, zLabel: string, error: CalcError): PlotResult {
+  return {
+    ...base,
+    errorCount: 1,
+    empty: true,
+    contour: { x: [], y: [], z: [], zMin: 0, zMax: 1, levels: [], zUnit, zLabel, error },
+  };
 }
 
 /* ------------------------------------------------------------------ *

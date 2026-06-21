@@ -17,6 +17,8 @@ import type { ReactNode } from "react";
 import katex from "katex";
 import {
   constraintToLatex,
+  contourBands,
+  contourLines,
   evaluatePlot,
   evaluateProgram,
   evaluateSolve,
@@ -372,9 +374,13 @@ function PlotBlock({
     </div>
   );
 
-  // contour/3D (config-only this pass) and unconfigured plots: a compact print note.
-  if (region.kind === "contour" || region.kind === "surface") {
-    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{region.kind === "surface" ? "3D surface" : "Contour"} plot — configured.</div>);
+  // 3D surface is config-only this pass: a compact print note.
+  if (region.kind === "surface") {
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>3D surface plot — configured.</div>);
+  }
+  // Contour: render the same iso-bands the editor draws (pure geometry, runs in Node).
+  if (region.kind === "contour") {
+    return wrap(<ContourBlock region={region} />);
   }
   if (region.traces.length === 0) {
     return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>No traces yet.</div>);
@@ -416,6 +422,68 @@ function PlotBlock({
         );
       })}
     </svg>,
+  );
+}
+
+/**
+ * Printed contour — the same pure `evaluatePlot` sampling + `./contour` iso-band
+ * geometry the editor uses, drawn with the page's blueprint ink (a sequential
+ * opacity ramp, deeper = higher z) plus a compact colour scale.
+ */
+function ContourBlock({ region }: { region: PlotRegion }): ReactNode {
+  const result = evaluatePlot(region, {});
+  const grid = result.contour;
+  if (!grid || grid.error) {
+    return (
+      <div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>
+        {grid?.error ? grid.error.message : "Contour plot — set z = f(x, y) and an x/y range."}
+      </div>
+    );
+  }
+  const BLUEPRINT = "#1F5FBF";
+  const filled = region.surface?.filled ?? true;
+  const X0 = 46;
+  const Y0 = 166;
+  const Y1 = 14;
+  const X1 = 454 - 38; // leave a gutter for the colour scale
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const op = (t: number) => 0.06 + 0.8 * Math.max(0, Math.min(1, t));
+  const toPath = (poly: ReadonlyArray<readonly [number, number]>) =>
+    poly.map(([px, py], i) => `${i ? "L" : "M"}${sx(px).toFixed(1)} ${sy(py).toFixed(1)}`).join(" ") + " Z";
+  const bands = filled ? contourBands(grid) : [];
+  const lines = contourLines(grid);
+  const span = grid.zMax - grid.zMin || 1;
+  const syz = (v: number) => Y0 - ((v - grid.zMin) / span) * (Y0 - Y1);
+  const scaleX = X1 + 10;
+
+  return (
+    <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Contour plot">
+      {filled &&
+        bands.map((b, i) => (
+          <g key={`b${i}`} fill={BLUEPRINT} fillOpacity={op(b.t)}>
+            {b.polygons.map((poly, j) => (
+              <path key={j} d={toPath(poly)} />
+            ))}
+          </g>
+        ))}
+      {lines.map((ls, i) => (
+        <g key={`l${i}`} stroke={filled ? "#FFFFFF" : BLUEPRINT} strokeOpacity={filled ? 0.6 : 0.45 + 0.4 * ls.t} strokeWidth={filled ? 0.5 : 1.2}>
+          {ls.segments.map((seg, j) => (
+            <line key={j} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])} />
+          ))}
+        </g>
+      ))}
+      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke={STRONG_RULE} strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke={STRONG_RULE} strokeWidth="1.2" />
+      {grid.levels.slice(0, -1).map((lo, i) => {
+        const hi = grid.levels[i + 1];
+        const t = ((lo + hi) / 2 - grid.zMin) / span;
+        return <rect key={i} x={scaleX} y={syz(hi)} width="8" height={Math.max(0.5, syz(lo) - syz(hi))} fill={BLUEPRINT} fillOpacity={op(t)} />;
+      })}
+      <rect x={scaleX} y={Y1} width="8" height={Y0 - Y1} fill="none" stroke={HAIRLINE} strokeWidth="1" />
+    </svg>
   );
 }
 
