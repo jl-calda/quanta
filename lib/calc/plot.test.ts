@@ -235,13 +235,109 @@ describe("evaluatePlot — contour (2D z = f(x, y) sampling)", () => {
   });
 });
 
-describe("evaluatePlot — 3D surface stays typed-but-inert this pass", () => {
-  it("returns empty without sampling", () => {
-    const res = evaluatePlot({ kind: "surface", x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, z: { expr: "x*y" }, traces: [] });
-    expect(res.empty).toBe(true);
-    expect(res.traces).toHaveLength(0);
+describe("evaluatePlot — surface (projected-wireframe sampling)", () => {
+  /** A configured surface spec; override per test. */
+  function surf(over: Partial<PlotSpec> = {}): PlotSpec {
+    return { kind: "surface", xVar: "x", yVar: "y", x: { min: 0, max: 2 }, y: { min: 0, max: 2 }, grid: { x: 3, y: 3 }, z: { expr: "x+y" }, ...over };
+  }
+
+  it("samples z = f(x, y) over the grid", () => {
+    const res = evaluatePlot(surf());
+    const s = res.surface!;
+    expect(s).toBeDefined();
     expect(res.kind).toBe("surface");
+    expect(res.empty).toBe(false);
     expect(res.contour).toBeUndefined();
+    expect(s.xs).toEqual([0, 1, 2]);
+    expect(s.ys).toEqual([0, 1, 2]);
+    expect(s.z).toHaveLength(3); // ny rows
+    expect(s.z[0]).toHaveLength(3); // nx cols
+    expect(s.z[0][0]).toBe(0); // x=0, y=0
+    expect(s.z[1][1]).toBe(2); // x=1, y=1
+    expect(s.z[2][2]).toBe(4); // x=2, y=2
+    expect(s.zMin).toBe(0);
+    expect(s.zMax).toBe(4);
+    expect(s.error).toBeUndefined();
+  });
+
+  it("honors the grid resolution per axis", () => {
+    const s = evaluatePlot(surf({ grid: { x: 5, y: 2 } })).surface!;
+    expect(s.xs).toHaveLength(5);
+    expect(s.ys).toHaveLength(2);
+    expect(s.z).toHaveLength(2);
+    expect(s.z[0]).toHaveLength(5);
+  });
+
+  it("is unit-aware on x, y, and z", () => {
+    const s = evaluatePlot(
+      surf({ x: { min: 0, max: 2, unit: "m" }, y: { min: 0, max: 2, unit: "m" }, z: { expr: "x*y", unit: "m^2" } }),
+    ).surface!;
+    expect(s.z[2][2]).toBe(4); // 2 m · 2 m = 4 m²
+    expect(s.zUnit).toBe("m^2");
+    expect(evaluatePlot(surf({ x: { min: 0, max: 2, unit: "m" } })).xUnit).toBe("m");
+  });
+
+  it("drops non-finite cells as gaps without erroring the surface", () => {
+    const s = evaluatePlot(surf({ z: { expr: "sqrt(x-1)" }, x: { min: 0, max: 2 }, grid: { x: 3, y: 2 } })).surface!;
+    expect(s.error).toBeUndefined();
+    expect(s.z[0][0]).toBeNull(); // sqrt(-1) ⇒ complex ⇒ gap
+    expect(s.z[0][2]).toBe(1); // sqrt(1)
+    expect(s.empty).toBe(false);
+  });
+
+  it("leaves the surface unset when z is blank (placeholder fallback)", () => {
+    const res = evaluatePlot(surf({ z: { expr: "" } }));
+    expect(res.surface).toBeUndefined();
+    expect(res.empty).toBe(true);
+  });
+
+  it("leaves the surface unset when an x/y range is missing", () => {
+    expect(evaluatePlot(surf({ x: {} })).surface).toBeUndefined();
+    expect(evaluatePlot(surf({ y: { min: 0 } })).surface).toBeUndefined();
+  });
+
+  it("samples against the worksheet scope", () => {
+    const s = evaluatePlot(surf({ z: { expr: "k*x+y" } }), { k: 2 }).surface!;
+    expect(s.z[0][2]).toBe(4); // 2·2 + 0
+    expect(s.z[2][0]).toBe(2); // 2·0 + 2
+  });
+
+  it("errors when z references an undefined name on every cell", () => {
+    const res = evaluatePlot(surf({ z: { expr: "k*x+y" } })); // no scope
+    expect(res.surface?.error).toBeDefined();
+    expect(res.surface?.empty).toBe(true);
+    expect(res.errorCount).toBe(1);
+  });
+
+  it("carries a parse error on the surface", () => {
+    const res = evaluatePlot(surf({ z: { expr: "x +" } }));
+    expect(res.surface?.error?.kind).toBe("parse");
+    expect(res.surface?.empty).toBe(true);
+  });
+
+  it("errors on a z unit mismatch (every cell)", () => {
+    const res = evaluatePlot(surf({ x: { min: 0, max: 2, unit: "m" }, z: { expr: "x", unit: "kN" } }));
+    expect(res.surface?.error?.kind).toBe("unit-mismatch");
+  });
+
+  it("honors a pinned z.min / z.max for the height scale", () => {
+    const s = evaluatePlot(surf({ z: { expr: "x*y", min: 0, max: 10 } })).surface!;
+    expect(s.zMin).toBe(0);
+    expect(s.zMax).toBe(10);
+  });
+
+  it("reports a constant z as a flat sheet (zMin === zMax)", () => {
+    const s = evaluatePlot(surf({ z: { expr: "5" } })).surface!;
+    expect(s.empty).toBe(false);
+    expect(s.zMin).toBe(5);
+    expect(s.zMax).toBe(5);
+    expect(s.z[0][0]).toBe(5);
+  });
+
+  it("clamps the grid resolution to 2..200", () => {
+    const s = evaluatePlot(surf({ grid: { x: 1, y: 500 } })).surface!;
+    expect(s.xs).toHaveLength(2);
+    expect(s.ys).toHaveLength(200);
   });
 });
 

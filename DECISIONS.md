@@ -2,6 +2,48 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Plot — 3D surface rendering (projected wireframe, Phase 2)
+
+- **Fills the surface seam, renderer-only — no schema/picker change.** The `surface`
+  config (`kind`, `z`, `grid`, `xVar`/`yVar`, `x`/`y`, `surface.wireframe`) already
+  round-tripped through the content schema and the inspector; this pass only adds the
+  pure sampler + the SVG renderer, so no migration is needed. `evaluatePlot`
+  (`lib/calc/plot.ts`) now samples `z = f(x, y)` over the grid into a new
+  `PlotSurface` (`xs`, `ys`, `z:(number|null)[][]` row-major `[yi][xi]`, `zMin/zMax`,
+  `zUnit`, `wireframe`, `empty`, `error?`) carried on `PlotResult.surface` (alongside
+  the contour PR's `contour?: ContourResult`). It stays a **clean superset** —
+  `traces:[]`/`bounds`/`xUnit`/`yUnit`/`empty` remain populated so nothing downstream
+  breaks. `surface.filled`/`colormap`/`showScale` stay config-only — the wireframe
+  ignores them.
+- **Merged with the parallel contour PR (#54).** `surface` sampling mirrors that PR's
+  `sampleGrid` exactly — a sibling `sampleSurface` reusing the same helpers
+  (`attachUnit`, `toAxisNumber`, `linspace`, `clampInt`, `realUnit`) and the same
+  error/gap model — so the two 2D kinds read consistently: **contour → iso-bands,
+  surface → projected wireframe**, both real samplers now (neither is inert).
+- **Grid sampling kept pure & synchronous** in `/lib/calc`, exactly the class of work
+  `sweep` does (closed-form `node.evaluate` per cell — parsed once, never per-cell).
+  Clamped 2..200 per axis to **match the schema clamp** so a configured 200 actually
+  renders; no hidden product cap (default 24×24 = 576 cells is trivial; the 200×200
+  ceiling is the engineer's explicit choice). Gap/error parity with `sampleGrid`: a
+  per-cell throw or non-finite value → a `null` cell; a throw on **every** cell (undefined
+  name / unit mismatch) → a single structural `surface.error`. Pinned `z.min`/`z.max`
+  fix the height scale; else it's the finite-cell extent.
+- **Cabinet (parallel/axonometric) projection, auto-fit — no camera fields added.**
+  `SurfaceFigure` (`plot-present.tsx`, pure SVG, no hooks — renders in editor, history,
+  and the server-side export) projects normalized `(u, v, w)` with fixed basis weights
+  (x right `1.0`, depth up-right `0.42`/`0.30`, height `0.55`), echoing the mockup's
+  `Thumb3D`, then **auto-fits** the data cube's 8 corners into the frame so any z range
+  stays in bounds. Deliberately **no azimuth/elevation/zoom schema fields** — "the
+  deferred renderer adds only the renderer." Row lines (constant y) are the blueprint
+  profile (centre row emphasised, others height-shaded via accent opacity); column lines
+  (constant x) are faint depth structure; polylines split on `null` gaps. No painter's
+  sort — transparent stroke compositing is order-independent.
+- **Export mirrors the contour print path.** Like the contour PR's hand-rolled
+  `ContourBlock` (fixed print ink, not CSS vars), `lib/export/document.tsx` gets a
+  `SurfaceBlock` that re-projects the wireframe with the same cabinet math in print
+  hexes; a worksheet-name-bound `z` has no live scope in export, so it falls back to a
+  compact "set z / range" note.
+
 ## Table import & paste from Excel/CSV + copy a selection (Phase 2)
 
 - **Import surface = dialog only this phase.** A dedicated Import-data dialog on the

@@ -18,9 +18,10 @@
  *   • data: evaluate an `xData` expression to a vector and zip it with each
  *     trace's vector result (a scalar result broadcasts to a constant line).
  *
- * `contour`/`surface` need a 2D `z = f(x, y)` sampling + renderer that ship in a
- * follow-up; this pass returns them `empty` so the view shows a typed 'configure'
- * placeholder (their config still round-trips through the content schema).
+ * Both 2D kinds sample a `z = f(x, y)` field over the (x, y) grid (pure, sync —
+ * closed-form `node.evaluate` per cell, the same class of work as a sweep):
+ * `contour` renders it as iso-bands (geometry in `./contour`), `surface` as a
+ * projected wireframe. Their config round-trips through the content schema.
  */
 import { math } from "./math";
 import type { MathNode, Unit } from "./math";
@@ -170,6 +171,31 @@ export interface ContourResult {
   error?: CalcError;
 }
 
+/**
+ * A sampled `z = f(x, y)` grid for the projected-wireframe surface renderer. `z`
+ * is row-major `[yi][xi]` in display units; `null` marks a gap (a non-finite or
+ * throwing cell — same gap semantics as a swept trace).
+ */
+export interface PlotSurface {
+  /** x sample positions in display units (length nx). */
+  xs: number[];
+  /** y sample positions in display units (length ny). */
+  ys: number[];
+  /** z grid in display units, indexed [yi][xi]; null = gap. */
+  z: (number | null)[][];
+  /** z extent across finite cells (or the pinned z.min/z.max). */
+  zMin: number;
+  zMax: number;
+  /** Unit label used on the z axis (after conversion), or null. */
+  zUnit: string | null;
+  /** Render hint from the region (wireframe is the only mode this pass). */
+  wireframe: boolean;
+  /** True when no cell is finite (blank/structural) — the view stays a placeholder. */
+  empty: boolean;
+  /** A structural error (parse / undefined name / unit mismatch) — surfaced once. */
+  error?: CalcError;
+}
+
 export interface PlotResult {
   kind: PlotKind;
   traces: TraceResult[];
@@ -182,6 +208,8 @@ export interface PlotResult {
   empty: boolean;
   /** Sampled 2D field for `kind === "contour"`; undefined otherwise. */
   contour?: ContourResult;
+  /** Sampled grid for `kind === "surface"`; undefined otherwise. */
+  surface?: PlotSurface;
 }
 
 const DEFAULT_SAMPLES = 80;
@@ -204,21 +232,13 @@ export function evaluatePlot(
   const xUnit = realUnit(xAxis.unit);
   const yUnit = realUnit(yAxis.unit);
 
-  // contour samples a real 2D z = f(x, y) field (rendered as iso-bands by ./contour);
-  // 3D surface stays typed-but-inert this pass — the view shows a 'configure' placeholder.
+  // Both 2D kinds sample a real z = f(x, y) field over the grid: contour renders it
+  // as iso-bands (./contour), surface as a projected wireframe (./regions/plot-present).
   if (kind === "contour") {
     return sampleGrid(spec, xAxis, yAxis, xUnit ?? null, yUnit ?? null, externalScope, system);
   }
   if (kind === "surface") {
-    return {
-      kind,
-      traces: [],
-      bounds: defaultBounds(xAxis, yAxis),
-      xUnit: xUnit ?? null,
-      yUnit: yUnit ?? null,
-      errorCount: 0,
-      empty: true,
-    };
+    return sampleSurface(spec, xAxis, yAxis, xUnit ?? null, yUnit ?? null, externalScope, system);
   }
 
   const polar = kind === "polar";
@@ -436,6 +456,138 @@ function contourError(base: ContourBase, zUnit: string | null, zLabel: string, e
     errorCount: 1,
     empty: true,
     contour: { x: [], y: [], z: [], zMin: 0, zMax: 1, levels: [], zUnit, zLabel, error },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * 2D grid sampling (surface) — z = f(x, y) for the projected wireframe
+ * ------------------------------------------------------------------ */
+
+type SurfaceBase = {
+  kind: "surface";
+  traces: TraceResult[];
+  bounds: PlotBounds;
+  xUnit: string | null;
+  yUnit: string | null;
+};
+
+/**
+ * Sample a surface's `z = f(x, y)` over the (x, y) grid into a `[yi][xi]` grid in
+ * display units for the projected-wireframe renderer. Same pure, synchronous value
+ * model and error/gap semantics as the contour `sampleGrid`: a per-cell throw or
+ * non-finite value is a `null` gap, while a parse failure, a throw at every cell
+ * (undefined name), or a conversion that fails everywhere (unit mismatch) surfaces a
+ * single typed error. An unconfigured surface (blank z / unset range) returns no
+ * `surface`, so the view falls back to the 'configure' placeholder.
+ */
+function sampleSurface(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  xUnit: string | null,
+  yUnit: string | null,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const base: SurfaceBase = {
+    kind: "surface",
+    traces: [],
+    bounds: defaultBounds(xAxis, yAxis),
+    xUnit,
+    yUnit,
+  };
+  const zUnit = realUnit(spec.z?.unit) ?? null;
+  const wireframe = spec.surface?.wireframe ?? true;
+
+  const expr = spec.z?.expr?.trim() ?? "";
+  const xVar = spec.xVar?.trim() || "x";
+  const yVar = spec.yVar?.trim() || "y";
+
+  // A surface needs a z expression AND finite, non-degenerate x and y ranges.
+  const xLo = xAxis.min;
+  const xHi = xAxis.max;
+  const yLo = yAxis.min;
+  const yHi = yAxis.max;
+  const ranged =
+    xLo != null && xHi != null && yLo != null && yHi != null &&
+    Number.isFinite(xLo) && Number.isFinite(xHi) && Number.isFinite(yLo) && Number.isFinite(yHi) &&
+    xLo !== xHi && yLo !== yHi;
+  if (!expr || !ranged) return { ...base, errorCount: 0, empty: true }; // ⇒ placeholder
+
+  let node: MathNode;
+  try {
+    node = math.parse(expr);
+  } catch (error) {
+    return surfaceError(base, zUnit, wireframe, classifyThrow(error));
+  }
+
+  const nx = clampInt(spec.grid?.x ?? DEFAULT_GRID, 2, 200);
+  const ny = clampInt(spec.grid?.y ?? DEFAULT_GRID, 2, 200);
+  const xs = linspace(xLo!, xHi!, nx);
+  const ys = linspace(yLo!, yHi!, ny);
+  const xRaw = xs.map((v) => attachUnit(v, xAxis.unit));
+  const yRaw = ys.map((v) => attachUnit(v, yAxis.unit));
+
+  const z: (number | null)[][] = [];
+  let zLo = Infinity;
+  let zHi = -Infinity;
+  let nodeOk = 0;
+  let finiteCount = 0;
+  let firstNodeThrow: unknown = null;
+  let firstConvError: unknown = null;
+
+  for (let iy = 0; iy < ny; iy += 1) {
+    const row: (number | null)[] = new Array<number | null>(nx).fill(null);
+    for (let ix = 0; ix < nx; ix += 1) {
+      let raw: unknown;
+      try {
+        raw = node.evaluate({ ...scope, [xVar]: xRaw[ix], [yVar]: yRaw[iy] });
+      } catch (error) {
+        if (!firstNodeThrow) firstNodeThrow = error;
+        continue; // row[ix] stays null (gap)
+      }
+      nodeOk += 1;
+      try {
+        const n = toAxisNumber(raw, spec.z?.unit, system);
+        if (Number.isFinite(n)) {
+          row[ix] = n;
+          finiteCount += 1;
+          if (n < zLo) zLo = n;
+          if (n > zHi) zHi = n;
+        }
+      } catch (error) {
+        if (!firstConvError) firstConvError = error;
+      }
+    }
+    z.push(row);
+  }
+
+  // Threw on every cell ⇒ a structural error (undefined name, bad expression).
+  if (nodeOk === 0 && firstNodeThrow) return surfaceError(base, zUnit, wireframe, classifyThrow(firstNodeThrow));
+  // Converted nowhere: a unit mismatch surfaces; otherwise the whole field is a gap.
+  if (finiteCount === 0) {
+    if (firstConvError) return surfaceError(base, zUnit, wireframe, classifyThrow(firstConvError));
+    return { ...base, errorCount: 0, empty: true };
+  }
+
+  // Height scale: honor pinned z.min/z.max when set, else the finite-cell extent.
+  const zMin = spec.z?.min ?? zLo;
+  const zMax = spec.z?.max ?? zHi;
+
+  return {
+    ...base,
+    errorCount: 0,
+    empty: false,
+    surface: { xs, ys, z, zMin, zMax, zUnit, wireframe, empty: false },
+  };
+}
+
+function surfaceError(base: SurfaceBase, zUnit: string | null, wireframe: boolean, error: CalcError): PlotResult {
+  return {
+    ...base,
+    errorCount: 1,
+    empty: true,
+    surface: { xs: [], ys: [], z: [], zMin: 0, zMax: 1, zUnit, wireframe, empty: true, error },
   };
 }
 

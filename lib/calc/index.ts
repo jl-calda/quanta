@@ -118,6 +118,7 @@ export {
   type PlotPoint,
   type PlotResult,
   type ContourResult,
+  type PlotSurface,
   type TraceResult,
   type PlotBounds,
 } from "./plot";
