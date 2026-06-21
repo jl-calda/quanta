@@ -666,6 +666,47 @@ describe("plot trace edits", () => {
     s = editorReducer(s, { type: "DELETE_PLOT_TRACE", id: "P", traceId: "t1" });
     expect(getPlot(s.content).traces.map((t) => t.id)).toEqual([newId]);
   });
+
+  it("binds a trace to the secondary axis and an error expression", () => {
+    const s = editorReducer(freshState(plotDoc), { type: "SET_PLOT_TRACE", id: "P", traceId: "t1", patch: { axis: "y2", errorExpr: "0.1*x", errorMode: "band" } });
+    expect(getPlot(s.content).traces[0]).toMatchObject({ axis: "y2", errorExpr: "0.1*x", errorMode: "band" });
+  });
+});
+
+describe("SET_PLOT_AXIS — secondary axis + scale", () => {
+  it("creates the y2 axis on first edit and sets a log scale", () => {
+    const s = editorReducer(freshState(plotDoc), { type: "SET_PLOT_AXIS", id: "P", axis: "y2", patch: { unit: "MPa", scale: "log" } });
+    expect(getPlot(s.content).y2).toEqual({ unit: "MPa", scale: "log" });
+    expect(s.saveState).toBe("unsaved");
+  });
+});
+
+describe("plot reference lines", () => {
+  it("adds, edits, and deletes reference lines", () => {
+    let s = editorReducer(freshState(plotDoc), { type: "ADD_PLOT_REFERENCE", id: "P" });
+    expect(getPlot(s.content).references).toHaveLength(1);
+    const refId = getPlot(s.content).references![0].id;
+
+    s = editorReducer(s, { type: "SET_PLOT_REFERENCE", id: "P", refId, patch: { axis: "y", expr: "phi*Rn", label: "capacity" } });
+    expect(getPlot(s.content).references![0]).toMatchObject({ axis: "y", expr: "phi*Rn", label: "capacity" });
+
+    s = editorReducer(s, { type: "DELETE_PLOT_REFERENCE", id: "P", refId });
+    expect(getPlot(s.content).references).toHaveLength(0);
+  });
+});
+
+describe("plot annotations", () => {
+  it("adds, edits, and deletes annotations", () => {
+    let s = editorReducer(freshState(plotDoc), { type: "ADD_PLOT_ANNOTATION", id: "P" });
+    expect(getPlot(s.content).annotations).toHaveLength(1);
+    const annId = getPlot(s.content).annotations![0].id;
+
+    s = editorReducer(s, { type: "SET_PLOT_ANNOTATION", id: "P", annId, patch: { x: 3, y: 18, text: "peak" } });
+    expect(getPlot(s.content).annotations![0]).toMatchObject({ x: 3, y: 18, text: "peak" });
+
+    s = editorReducer(s, { type: "DELETE_PLOT_ANNOTATION", id: "P", annId });
+    expect(getPlot(s.content).annotations).toHaveLength(0);
+  });
 });
 
 describe("contour / 3D config round-trips through the content schema", () => {

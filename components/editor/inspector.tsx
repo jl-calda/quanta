@@ -12,9 +12,12 @@ import type {
   ControlValueType,
   MathRegion,
   Notation,
+  PlotAnnotation,
   PlotAxis,
   PlotKind,
+  PlotReference,
   PlotRegion,
+  PlotScale,
   PlotTrace,
   ProgramRegion,
   Radix,
@@ -30,6 +33,7 @@ import type {
   TraceStyle,
 } from "@/lib/worksheet/content";
 import { DEFAULT_DISPLAY } from "@/lib/worksheet/content";
+import { PLOT_THEME_OPTIONS, themePalette } from "@/lib/worksheet/plot-theme";
 import { parseProgramBody, programBodyToText } from "@/lib/worksheet/program-text";
 import { useEditor } from "./state/editor-provider";
 import type { EditorAction, RegionPatch, TableColumnPatch } from "./state/editor-reducer";
@@ -492,6 +496,44 @@ const TRACE_STYLES: { value: TraceStyle; label: string }[] = [
   { value: "box", label: "Box" },
 ];
 
+const LEGEND_POSITIONS: { value: NonNullable<PlotRegion["legendPos"]>; label: string }[] = [
+  { value: "bottom", label: "Bottom" },
+  { value: "top", label: "Top" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+];
+
+/** Clamp a line-width entry to the schema's 0.5–6 px (blank ⇒ default). */
+function clampWidth(raw: string): number | undefined {
+  const t = raw.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0.5, Math.min(6, n));
+}
+
+const SCALE_OPTIONS: { value: PlotScale; label: string }[] = [
+  { value: "linear", label: "Linear" },
+  { value: "log", label: "Log" },
+  { value: "symlog", label: "Symlog" },
+];
+
+const AXIS_OPTIONS: { value: "y" | "y2"; label: string }[] = [
+  { value: "y", label: "Primary y" },
+  { value: "y2", label: "Secondary y₂" },
+];
+
+const ERROR_MODES: { value: "bar" | "band"; label: string }[] = [
+  { value: "bar", label: "Bars" },
+  { value: "band", label: "Band" },
+];
+
+const REF_AXES: { value: "x" | "y" | "y2"; label: string }[] = [
+  { value: "x", label: "x" },
+  { value: "y", label: "y" },
+  { value: "y2", label: "y₂" },
+];
+
 function PlotInspector({
   region,
   set,
@@ -501,12 +543,13 @@ function PlotInspector({
   set: (p: RegionPatch) => void;
   dispatch: Dispatch<EditorAction>;
 }) {
-  const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
+  const setAxis = (axis: "x" | "y" | "y2", patch: Partial<PlotAxis>) =>
     dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
   const setTrace = (traceId: string, patch: Partial<PlotTrace>) =>
     dispatch({ type: "SET_PLOT_TRACE", id: region.id, traceId, patch });
   const kind = region.kind;
   const is2D = kind === "contour" || kind === "surface";
+  const isXY = kind === "xy";
   const isHistogram = kind === "histogram";
   const isBoxplot = kind === "boxplot";
   const isParametric = kind === "parametric";
@@ -598,6 +641,16 @@ function PlotInspector({
         />
       )}
       <AxisInspector eyebrow={isHistogram ? "Y axis (count)" : "Y axis"} region={region} axisKey="y" axis={region.y} setAxis={setAxis} />
+      {isXY && (
+        <AxisInspector
+          eyebrow="Secondary Y axis (y₂)"
+          region={region}
+          axisKey="y2"
+          axis={region.y2 ?? {}}
+          setAxis={setAxis}
+          note="Shown when a trace is assigned to it."
+        />
+      )}
 
       {isHistogram && (
         <>
@@ -713,7 +766,7 @@ function PlotInspector({
                 </div>
               </Row>
               <Row label="Filled bands">
-                <Switch checked={!!region.surface?.filled} onChange={(e) => set({ surface: { ...region.surface, filled: e.target.checked } })} />
+                <Switch checked={region.surface?.filled ?? true} onChange={(e) => set({ surface: { ...region.surface, filled: e.target.checked } })} />
               </Row>
             </>
           ) : (
@@ -733,9 +786,25 @@ function PlotInspector({
             <Row label="Samples">
               <SampleStepper value={region.samples ?? 80} set={(v) => set({ samples: v })} />
             </Row>
+            <Row label="Theme">
+              <div style={{ width: 140 }}>
+                <Select value={region.theme ?? "default"} onChange={(e) => set({ theme: e.target.value })} options={PLOT_THEME_OPTIONS} />
+              </div>
+            </Row>
             <Row label="Legend">
               <Switch checked={region.legend} onChange={(e) => set({ legend: e.target.checked })} />
             </Row>
+            {region.legend && (
+              <Row label="Legend position">
+                <div style={{ width: 140 }}>
+                  <Select
+                    value={region.legendPos ?? "bottom"}
+                    onChange={(e) => set({ legendPos: e.target.value as PlotRegion["legendPos"] })}
+                    options={LEGEND_POSITIONS}
+                  />
+                </div>
+              </Row>
+            )}
           </Group>
 
           <Group eyebrow="Traces">
@@ -743,6 +812,8 @@ function PlotInspector({
               <TraceEditor
                 key={t.id}
                 trace={t}
+                theme={region.theme}
+                extended={isXY}
                 setTrace={setTrace}
                 onToggle={() => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: t.id })}
                 onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })}
@@ -750,9 +821,49 @@ function PlotInspector({
             ))}
             {addTrace}
           </Group>
+
+          {isXY && (
+            <Group eyebrow="Reference lines">
+              {(region.references ?? []).map((r) => (
+                <ReferenceEditor
+                  key={r.id}
+                  reference={r}
+                  setRef={(patch) => dispatch({ type: "SET_PLOT_REFERENCE", id: region.id, refId: r.id, patch })}
+                  onDelete={() => dispatch({ type: "DELETE_PLOT_REFERENCE", id: region.id, refId: r.id })}
+                />
+              ))}
+              <AddRowButton label="Add reference line" onClick={() => dispatch({ type: "ADD_PLOT_REFERENCE", id: region.id })} />
+            </Group>
+          )}
+
+          {isXY && (
+            <Group eyebrow="Annotations">
+              {(region.annotations ?? []).map((a) => (
+                <AnnotationEditor
+                  key={a.id}
+                  annotation={a}
+                  setAnn={(patch) => dispatch({ type: "SET_PLOT_ANNOTATION", id: region.id, annId: a.id, patch })}
+                  onDelete={() => dispatch({ type: "DELETE_PLOT_ANNOTATION", id: region.id, annId: a.id })}
+                />
+              ))}
+              <AddRowButton label="Add annotation" onClick={() => dispatch({ type: "ADD_PLOT_ANNOTATION", id: region.id })} />
+            </Group>
+          )}
         </>
       )}
     </>
+  );
+}
+
+/** Shared "add a row" affordance, matching the plot inspector's accent link style. */
+function AddRowButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ display: "inline-flex", alignItems: "center", gap: 5, alignSelf: "flex-start", border: "none", background: "none", color: "var(--accent)", font: "500 12px/1 var(--font-sans)", cursor: "pointer", padding: 0 }}
+    >
+      <Icon name="plusSm" size={13} /> {label}
+    </button>
   );
 }
 
@@ -762,12 +873,14 @@ function AxisInspector({
   axisKey,
   axis,
   setAxis,
+  note,
 }: {
   eyebrow: string;
   region: PlotRegion;
-  axisKey: "x" | "y";
+  axisKey: "x" | "y" | "y2";
   axis: PlotAxis;
-  setAxis: (axis: "x" | "y", patch: Partial<PlotAxis>) => void;
+  setAxis: (axis: "x" | "y" | "y2", patch: Partial<PlotAxis>) => void;
+  note?: string;
 }) {
   const num = (raw: string): number | undefined => {
     const t = raw.trim();
@@ -775,6 +888,7 @@ function AxisInspector({
     const n = Number(t);
     return Number.isFinite(n) ? n : undefined;
   };
+  const scale: PlotScale = axis.scale ?? (axis.log ? "log" : "linear");
   return (
     <Group eyebrow={eyebrow}>
       <div style={{ display: "flex", gap: 8 }}>
@@ -798,20 +912,44 @@ function AxisInspector({
           </div>
         </div>
       </Row>
-      <Row label="Log scale">
-        <Switch checked={!!axis.log} onChange={(e) => setAxis(axisKey, { log: e.target.checked || undefined })} />
+      <Row label="Scale">
+        <div style={{ width: 120 }}>
+          <Select
+            value={scale}
+            onChange={(e) =>
+              setAxis(axisKey, {
+                scale: e.target.value === "linear" ? undefined : (e.target.value as PlotScale),
+                log: undefined,
+              })
+            }
+            options={SCALE_OPTIONS}
+          />
+        </div>
       </Row>
+      {scale === "symlog" && (
+        <Row label="Linear threshold">
+          <div style={{ width: 70 }}>
+            <Input key={`${region.id}:${axisKey}:lin`} mono defaultValue={axis.linthresh != null ? String(axis.linthresh) : ""} placeholder="1" onBlur={(e) => setAxis(axisKey, { linthresh: num(e.target.value) })} />
+          </div>
+        </Row>
+      )}
+      {note && <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>{note}</div>}
     </Group>
   );
 }
 
 function TraceEditor({
   trace,
+  theme,
+  extended,
   setTrace,
   onToggle,
   onDelete,
 }: {
   trace: PlotTrace;
+  theme?: string;
+  /** Show the axis binding + error controls (XY plots only). */
+  extended: boolean;
   setTrace: (traceId: string, patch: Partial<PlotTrace>) => void;
   onToggle: () => void;
   onDelete: () => void;
@@ -834,6 +972,156 @@ function TraceEditor({
         </div>
         <Input key={`${trace.id}:label`} defaultValue={trace.label ?? ""} placeholder="Label" onBlur={(e) => setTrace(trace.id, { label: e.target.value.trim() || undefined })} containerStyle={{ width: 96 }} />
       </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <TraceColorPicker trace={trace} theme={theme} onColor={(color) => setTrace(trace.id, { color })} />
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          <Switch checked={!!trace.dash} onChange={(e) => setTrace(trace.id, { dash: e.target.checked || undefined })} /> Dashed
+        </label>
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          Width
+          <Input key={`${trace.id}:width`} mono defaultValue={trace.width != null ? String(trace.width) : ""} placeholder="2" onBlur={(e) => setTrace(trace.id, { width: clampWidth(e.target.value) })} containerStyle={{ width: 52 }} />
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11px/1 var(--font-mono)", color: "var(--text-muted)" }}>x =</span>
+        <Input key={`${trace.id}:xdata`} mono defaultValue={trace.xData ?? ""} placeholder="Plot x (default)" onBlur={(e) => setTrace(trace.id, { xData: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
+      </div>
+      {extended && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)", width: 30 }}>Axis</span>
+            <div style={{ flex: 1 }}>
+              <Select value={trace.axis ?? "y"} onChange={(e) => setTrace(trace.id, { axis: e.target.value as "y" | "y2" })} options={AXIS_OPTIONS} />
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ font: "12px/1 var(--font-mono)", color: "var(--accent)" }}>±</span>
+            <Input key={`${trace.id}:err`} mono defaultValue={trace.errorExpr ?? ""} placeholder="error (optional)" onBlur={(e) => setTrace(trace.id, { errorExpr: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
+            <div style={{ width: 78 }}>
+              <Select value={trace.errorMode ?? "bar"} onChange={(e) => setTrace(trace.id, { errorMode: e.target.value as "bar" | "band" })} options={ERROR_MODES} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Per-trace color: theme swatches + a custom color well + a reset to the theme
+ * default. An unset color (`undefined`) means "follow the theme palette".
+ */
+function TraceColorPicker({
+  trace,
+  theme,
+  onColor,
+}: {
+  trace: PlotTrace;
+  theme?: string;
+  onColor: (color: string | undefined) => void;
+}) {
+  const swatches = themePalette(theme);
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {swatches.map((c) => {
+        const active = trace.color?.toLowerCase() === c.toLowerCase();
+        return (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Use color ${c}`}
+            aria-pressed={active}
+            onClick={() => onColor(c)}
+            style={{
+              width: 16,
+              height: 16,
+              padding: 0,
+              borderRadius: "var(--radius-sm)",
+              border: active ? "2px solid var(--text-primary)" : "1px solid var(--border-strong)",
+              background: c,
+              cursor: "pointer",
+            }}
+          />
+        );
+      })}
+      <label
+        title="Custom color"
+        style={{ display: "inline-flex", width: 16, height: 16, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-strong)", overflow: "hidden", cursor: "pointer" }}
+      >
+        <input
+          type="color"
+          value={trace.color ?? "#1F5FBF"}
+          onChange={(e) => onColor(e.target.value)}
+          style={{ width: 24, height: 24, margin: -4, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+        />
+      </label>
+      <IconButton label="Use theme color" size="sm" onClick={() => onColor(undefined)}>
+        <Icon name="x" size={12} />
+      </IconButton>
+    </div>
+  );
+}
+
+function ReferenceEditor({
+  reference,
+  setRef,
+  onDelete,
+}: {
+  reference: PlotReference;
+  setRef: (patch: Partial<PlotReference>) => void;
+  onDelete: () => void;
+}) {
+  // A single "at" field: a number pins a literal value, anything else is an expression.
+  const atValue = reference.expr ?? (reference.value != null ? String(reference.value) : "");
+  const commitAt = (raw: string) => {
+    const t = raw.trim();
+    if (t === "") return setRef({ value: undefined, expr: undefined });
+    const n = Number(t);
+    if (Number.isFinite(n)) setRef({ value: n, expr: undefined });
+    else setRef({ expr: t, value: undefined });
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "9px 10px", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-md)", background: "var(--surface-raised)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 64 }}>
+          <Select value={reference.axis} onChange={(e) => setRef({ axis: e.target.value as "x" | "y" | "y2" })} options={REF_AXES} />
+        </div>
+        <span style={{ font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>=</span>
+        <Input key={`${reference.id}:at`} mono defaultValue={atValue} placeholder="value / expr" onBlur={(e) => commitAt(e.target.value)} containerStyle={{ flex: 1 }} />
+        <IconButton label="Delete reference line" size="sm" onClick={onDelete}>
+          <Icon name="x" size={14} />
+        </IconButton>
+      </div>
+      <Input key={`${reference.id}:label`} defaultValue={reference.label ?? ""} placeholder="Label (optional)" onBlur={(e) => setRef({ label: e.target.value.trim() || undefined })} />
+    </div>
+  );
+}
+
+function AnnotationEditor({
+  annotation,
+  setAnn,
+  onDelete,
+}: {
+  annotation: PlotAnnotation;
+  setAnn: (patch: Partial<PlotAnnotation>) => void;
+  onDelete: () => void;
+}) {
+  const num = (raw: string): number => {
+    const n = Number(raw.trim());
+    return Number.isFinite(n) ? n : 0;
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "9px 10px", border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-md)", background: "var(--surface-raised)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11.5px/1 var(--font-mono)", color: "var(--text-muted)" }}>x</span>
+        <Input key={`${annotation.id}:x`} mono defaultValue={String(annotation.x)} onBlur={(e) => setAnn({ x: num(e.target.value) })} containerStyle={{ width: 60 }} />
+        <span style={{ font: "11.5px/1 var(--font-mono)", color: "var(--text-muted)" }}>y</span>
+        <Input key={`${annotation.id}:y`} mono defaultValue={String(annotation.y)} onBlur={(e) => setAnn({ y: num(e.target.value) })} containerStyle={{ width: 60 }} />
+        <IconButton label="Delete annotation" size="sm" onClick={onDelete}>
+          <Icon name="x" size={14} />
+        </IconButton>
+      </div>
+      <Input key={`${annotation.id}:text`} defaultValue={annotation.text} placeholder="Note text" onBlur={(e) => setAnn({ text: e.target.value })} />
     </div>
   );
 }

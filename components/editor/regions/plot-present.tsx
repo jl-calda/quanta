@@ -9,9 +9,28 @@
  * read-out, and pill legend chips. Interactivity is opt-in via callbacks — with
  * none passed (export/history) the figure is fully static.
  */
-import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
-import { niceNum, type PlotResult, type PlotTraceStyle, type TraceResult } from "@/lib/calc";
-import type { PlotRegion } from "@/lib/worksheet/content";
+import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
+import {
+  contourBands,
+  contourLines,
+  niceNum,
+  resolveScale,
+  linthreshOf,
+  scaleForward,
+  logTicks,
+  symlogTicks,
+  type AxisScale,
+  type CalcError,
+  type ContourResult,
+  type PlotPoint,
+  type PlotResult,
+  type PlotTraceStyle,
+  type ResolvedAnnotation,
+  type ResolvedReference,
+  type TraceResult,
+} from "@/lib/calc";
+import type { LegendPos, PlotRegion } from "@/lib/worksheet/content";
+import { themePalette } from "@/lib/worksheet/plot-theme";
 import { Icon } from "../icons";
 
 /* ------------------------------------------------------------------ *
@@ -25,9 +44,19 @@ const X0 = M.l;
 const X1 = W - M.r;
 const Y0 = H - M.b;
 const Y1 = M.t;
+/** Extra room reserved on the right for a secondary y-axis (ticks + label). */
+const Y2_PAD = 40;
 
-/** Default trace palette — design-system hues, blueprint first (mockup). */
-const PALETTE = [
+/** Clamp a pixel y into the plot rect, so error whiskers/bands never spill over the axes. */
+function clampY(py: number): number {
+  return Math.max(Y1, Math.min(Y0, py));
+}
+
+/**
+ * The on-screen DEFAULT palette uses design-system CSS variables so trace colors
+ * track the light/dark theme; the named themes (`plot-theme.ts`) are fixed hex hues.
+ */
+const SCREEN_DEFAULT_PALETTE = [
   "var(--accent)",
   "var(--status-pass)",
   "var(--status-warning)",
@@ -35,8 +64,35 @@ const PALETTE = [
   "var(--status-error)",
 ];
 
-export function traceColor(index: number, color?: string): string {
-  return color || PALETTE[index % PALETTE.length];
+/** Palette a plot draws with: theme-aware vars for the default, else the named hex palette. */
+function palette(theme?: string): string[] {
+  return !theme || theme === "default" ? SCREEN_DEFAULT_PALETTE : themePalette(theme);
+}
+
+/** Per-trace color: an explicit override wins, else the theme palette cycled by index. */
+export function traceColor(index: number, color?: string, theme?: string): string {
+  const p = palette(theme);
+  return color || p[index % p.length];
+}
+
+/** Default line weight (px) when a trace sets no explicit width. */
+const DEFAULT_LINE_W = 2;
+
+/**
+ * Flex arrangement for a legend position: bottom/top stack in a column (legend
+ * after/before the figure), left/right sit in a row with the chips stacked vertically.
+ */
+export function legendFlex(pos: LegendPos | undefined): { flexDirection: CSSProperties["flexDirection"]; vertical: boolean } {
+  switch (pos) {
+    case "top":
+      return { flexDirection: "column-reverse", vertical: false };
+    case "left":
+      return { flexDirection: "row-reverse", vertical: true };
+    case "right":
+      return { flexDirection: "row", vertical: true };
+    default:
+      return { flexDirection: "column", vertical: false };
+  }
 }
 
 /** Which engine styles draw markers / fills / bars (others map to a near neighbour). */
@@ -61,6 +117,13 @@ export function niceTicks(min: number, max: number, count = 6): number[] {
   const ticks: number[] = [];
   for (let v = start; v <= max + step * 1e-6; v += step) ticks.push(cleanFloat(v, step));
   return ticks;
+}
+
+/** Ticks for any axis scale — decades for log, ±L·10ᵏ for symlog, nice numbers otherwise. */
+function axisTicks(scale: AxisScale, min: number, max: number, linthresh: number, count: number): number[] {
+  if (scale === "log") return logTicks(min, max, count);
+  if (scale === "symlog") return symlogTicks(min, max, linthresh, count);
+  return niceTicks(min, max, count);
 }
 
 /** Trim binary-float fuzz (0.30000000004 → 0.3) relative to the tick step. */
@@ -98,7 +161,7 @@ function AxisLabel({ symbol, unit }: { symbol: string; unit: string | null }): R
 
 export interface PlotFigureProps {
   result: PlotResult;
-  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar" | "yVar">;
+  region: Pick<PlotRegion, "kind" | "x" | "y" | "y2" | "xVar" | "theme">;
   /** Index (into the primary trace) of the hovered sample, for the read-out. */
   hoverIndex?: number | null;
   /** Report the nearest sample under the cursor (omit ⇒ static, no hover). */
@@ -110,7 +173,7 @@ export interface PlotFigureProps {
 
 export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, height }: PlotFigureProps) {
   if (result.kind === "polar") {
-    return <PolarFigure result={result} height={height} />;
+    return <PolarFigure result={result} theme={region.theme} height={height} />;
   }
   if (result.kind === "histogram") {
     return <HistogramFigure result={result} region={region} height={height} />;
@@ -124,20 +187,50 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
   // `parametric` falls through to the cartesian body below — its (x(t), y(t))
   // points draw as an ordinary line/scatter trace with no special handling.
 
-  const { xMin, xMax, yMin, yMax } = result.bounds;
-  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
-  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
-  const baseY = Math.min(Math.max(0, yMin), yMax); // bar/area baseline (0 when in range)
+  const { xMin, xMax, yMin, yMax, y2Min, y2Max } = result.bounds;
 
-  const xticks = niceTicks(xMin, xMax, 7);
-  const yticks = niceTicks(yMin, yMax, 5);
+  const xScale = resolveScale(region.x);
+  const yScale = resolveScale(region.y);
+  const y2Scale = resolveScale(region.y2);
+  const xLin = linthreshOf(region.x);
+  const yLin = linthreshOf(region.y);
+  const y2Lin = linthreshOf(region.y2);
 
   const drawable = result.traces.filter((t) => !t.hidden && !t.error && t.points.length > 0);
+  // The secondary axis only draws when the engine produced y2 bounds AND a trace uses it.
+  const hasY2 = y2Min != null && y2Max != null && drawable.some((t) => t.axis === "y2");
+  const xRight = hasY2 ? X1 - Y2_PAD : X1;
+
+  // data → pixel mappers (scale-aware; the engine keeps values untransformed).
+  const fx = (v: number) => scaleForward(xScale, xLin, v);
+  const fxMin = fx(xMin);
+  const fxSpan = fx(xMax) - fxMin || 1;
+  const sx = (v: number) => X0 + ((fx(v) - fxMin) / fxSpan) * (xRight - X0);
+
+  const fy = (v: number) => scaleForward(yScale, yLin, v);
+  const fyMin = fy(yMin);
+  const fySpan = fy(yMax) - fyMin || 1;
+  const sy = (v: number) => Y0 - ((fy(v) - fyMin) / fySpan) * (Y0 - Y1);
+
+  const sy2 = hasY2
+    ? buildMapper(y2Scale, y2Lin, y2Min as number, y2Max as number)
+    : sy;
+
+  // bar/area baseline — 0 when in range, the axis floor on a log axis (no 0).
+  const baseY = yScale === "log" ? yMin : Math.min(Math.max(0, yMin), yMax);
+  const baseY2 = hasY2 ? (y2Scale === "log" ? (y2Min as number) : Math.min(Math.max(0, y2Min as number), y2Max as number)) : baseY;
+
+  const xticks = axisTicks(xScale, xMin, xMax, xLin, 7);
+  const yticks = axisTicks(yScale, yMin, yMax, yLin, 5);
+  const y2ticks = hasY2 ? axisTicks(y2Scale, y2Min as number, y2Max as number, y2Lin, 5) : [];
+
   const primary = drawable[0];
+  const hoverMap = primary?.axis === "y2" ? sy2 : sy;
+  const hoverUnit = primary?.axis === "y2" ? result.y2Unit : result.yUnit;
 
   // Bar width — share the x-span across the densest bar trace's sample count.
   const barTrace = drawable.find((t) => styleFlags(t.style).bars);
-  const barW = barTrace ? Math.max(2, ((X1 - X0) / Math.max(barTrace.points.length, 1)) * 0.62) : 0;
+  const barW = barTrace ? Math.max(2, ((xRight - X0) / Math.max(barTrace.points.length, 1)) * 0.62) : 0;
 
   const hover =
     onHoverIndex && primary && hoverIndex != null && primary.points[hoverIndex]
@@ -161,6 +254,9 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
     onHoverIndex(best);
   };
 
+  // Pan only on plain linear axes — a dragged delta isn't a constant data step on log/symlog.
+  const canPan = !!onPan && xScale === "linear" && yScale === "linear";
+
   return (
     <svg
       width="100%"
@@ -169,19 +265,19 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
       role="img"
       aria-label="Plot"
     >
-      {/* gridlines */}
+      {/* gridlines (primary y + x) */}
       {yticks.map((v, i) => (
-        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={X1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={xRight} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
       ))}
       {xticks.map((v, i) => (
         <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
       ))}
 
       {/* axes */}
-      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={xRight} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
       <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
 
-      {/* ticks */}
+      {/* ticks (x + primary y) */}
       {xticks.map((v, i) => (
         <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
           {fmtNum(v)}
@@ -193,29 +289,66 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
         </text>
       ))}
 
-      {/* axis labels */}
-      <text x={(X0 + X1) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+      {/* secondary y-axis (right) */}
+      {hasY2 && (
+        <>
+          <line x1={xRight} y1={Y0} x2={xRight} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+          {y2ticks.map((v, i) => (
+            <line key={`y2t${i}`} x1={xRight} y1={sy2(v)} x2={xRight + 4} y2={sy2(v)} stroke="var(--border-strong)" strokeWidth="1" />
+          ))}
+          {y2ticks.map((v, i) => (
+            <text key={`y2l${i}`} x={xRight + 7} y={sy2(v) + 3} textAnchor="start" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+              {fmtNum(v)}
+            </text>
+          ))}
+          <text x={W - 5} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(90 ${W - 5} ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+            <AxisLabel symbol={region.y2?.label || "y₂"} unit={result.y2Unit} />
+          </text>
+        </>
+      )}
+
+      {/* axis labels (x + primary y) */}
+      <text x={(X0 + xRight) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
         <AxisLabel symbol={region.x?.label || region.xVar || "x"} unit={result.xUnit} />
       </text>
       <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
         <AxisLabel symbol={region.y?.label || "y"} unit={result.yUnit} />
       </text>
 
-      {/* traces */}
+      {/* traces (each on its own y-axis) */}
       {drawable.map((t, i) => (
-        <TraceMarks key={t.id} trace={t} index={i} sx={sx} sy={sy} baseY={baseY} barW={barW} />
+        <TraceMarks
+          key={t.id}
+          trace={t}
+          index={i}
+          theme={region.theme}
+          sx={sx}
+          sy={t.axis === "y2" ? sy2 : sy}
+          baseY={t.axis === "y2" ? baseY2 : baseY}
+          barW={barW}
+        />
+      ))}
+
+      {/* reference (datum) lines */}
+      {result.references.map((ref) => (
+        <ReferenceLine key={ref.id} reference={ref} sx={sx} sy={sy} sy2={sy2} xRight={xRight} />
+      ))}
+
+      {/* annotations (anchored on the primary axes) */}
+      {result.annotations.map((a) => (
+        <AnnotationMark key={a.id} annotation={a} px={sx(a.x)} py={sy(a.y)} xRight={xRight} />
       ))}
 
       {/* hover crosshair + read-out */}
       {hover && (
         <HoverReadout
           px={sx(hover.x)}
-          py={sy(hover.y)}
+          py={hoverMap(hover.y)}
           x={hover.x}
           y={hover.y}
           xUnit={result.xUnit}
-          yUnit={result.yUnit}
-          color={traceColor(0, primary?.color)}
+          yUnit={hoverUnit}
+          color={traceColor(0, primary?.color, region.theme)}
         />
       )}
 
@@ -224,16 +357,24 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
         <rect
           x={X0}
           y={Y1}
-          width={X1 - X0}
+          width={xRight - X0}
           height={Y0 - Y1}
           fill="transparent"
           onMouseMove={onMove}
           onMouseLeave={() => onHoverIndex(null)}
         />
       )}
-      {onPan && <PanStrips xMin={xMin} xMax={xMax} yMin={yMin} yMax={yMax} onPan={onPan} />}
+      {canPan && <PanStrips xMin={xMin} xMax={xMax} yMin={yMin} yMax={yMax} xRight={xRight} onPan={onPan!} />}
     </svg>
   );
+}
+
+/** A scale-aware data→pixel mapper for one y-axis range. */
+function buildMapper(scale: AxisScale, linthresh: number, min: number, max: number): (v: number) => number {
+  const f = (v: number) => scaleForward(scale, linthresh, v);
+  const lo = f(min);
+  const span = f(max) - lo || 1;
+  return (v: number) => Y0 - ((f(v) - lo) / span) * (Y0 - Y1);
 }
 
 /* ------------------------------------------------------------------ *
@@ -243,6 +384,7 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
 function TraceMarks({
   trace,
   index,
+  theme,
   sx,
   sy,
   baseY,
@@ -250,18 +392,24 @@ function TraceMarks({
 }: {
   trace: TraceResult;
   index: number;
+  theme?: string;
   sx: (v: number) => number;
   sy: (v: number) => number;
   baseY: number;
   barW: number;
 }) {
-  const color = traceColor(index, trace.color);
+  const color = traceColor(index, trace.color, theme);
+  const lineW = trace.width ?? DEFAULT_LINE_W;
   const f = styleFlags(trace.style);
   const pts = trace.points;
   const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
+  const hasErr = pts.some((p) => p.err != null);
+  const band = trace.errorMode === "band";
 
   return (
     <g>
+      {/* error band sits behind the trace */}
+      {hasErr && band && <path d={errorBandPath(pts, sx, sy)} fill={color} opacity={0.14} />}
       {f.area && (
         <path
           d={`${d} L${sx(pts[pts.length - 1].x).toFixed(1)} ${sy(baseY).toFixed(1)} L${sx(pts[0].x).toFixed(1)} ${sy(baseY).toFixed(1)} Z`}
@@ -276,12 +424,116 @@ function TraceMarks({
           return <rect key={i} x={sx(p.x) - barW / 2} y={top} width={barW} height={Math.max(0.5, h)} fill={color} opacity={0.22} stroke={color} strokeWidth="1.2" />;
         })}
       {f.stem &&
-        pts.map((p, i) => <line key={i} x1={sx(p.x)} y1={sy(baseY)} x2={sx(p.x)} y2={sy(p.y)} stroke={color} strokeWidth="1.5" />)}
+        pts.map((p, i) => <line key={i} x1={sx(p.x)} y1={sy(baseY)} x2={sx(p.x)} y2={sy(p.y)} stroke={color} strokeWidth={lineW} />)}
       {f.line && pts.length > 1 && (
-        <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray={trace.dash ? "5 3" : undefined} />
+        <path d={d} fill="none" stroke={color} strokeWidth={lineW} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={trace.dash ? "5 3" : undefined} />
       )}
+      {/* error bars (whiskers) — clamped to the plot rect on log axes */}
+      {hasErr && !band &&
+        pts.map((p, i) =>
+          p.err == null ? null : (
+            <ErrorBar key={`e${i}`} cx={sx(p.x)} top={clampY(sy(p.y + p.err))} bot={clampY(sy(p.y - p.err))} color={color} />
+          ),
+        )}
       {(f.markers || f.stem) &&
         pts.map((p, i) => <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={f.markers ? 3 : 2.4} fill={f.markers ? "var(--surface-paper)" : color} stroke={color} strokeWidth="1.6" />)}
+    </g>
+  );
+}
+
+/** Closed polygon between the y+err (forward) and y−err (reversed) curves. */
+function errorBandPath(pts: PlotPoint[], sx: (v: number) => number, sy: (v: number) => number): string {
+  const upper = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)} ${clampY(sy(p.y + (p.err ?? 0))).toFixed(1)}`);
+  const lower = pts
+    .slice()
+    .reverse()
+    .map((p) => `L${sx(p.x).toFixed(1)} ${clampY(sy(p.y - (p.err ?? 0))).toFixed(1)}`);
+  return `${upper.join(" ")} ${lower.join(" ")} Z`;
+}
+
+function ErrorBar({ cx, top, bot, color }: { cx: number; top: number; bot: number; color: string }) {
+  return (
+    <g>
+      <line x1={cx} y1={top} x2={cx} y2={bot} stroke={color} strokeWidth="1.2" />
+      <line x1={cx - 3} y1={top} x2={cx + 3} y2={top} stroke={color} strokeWidth="1.2" />
+      <line x1={cx - 3} y1={bot} x2={cx + 3} y2={bot} stroke={color} strokeWidth="1.2" />
+    </g>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reference lines + annotations
+ * ------------------------------------------------------------------ */
+
+function ReferenceLine({
+  reference,
+  sx,
+  sy,
+  sy2,
+  xRight,
+}: {
+  reference: ResolvedReference;
+  sx: (v: number) => number;
+  sy: (v: number) => number;
+  sy2: (v: number) => number;
+  xRight: number;
+}) {
+  const color = reference.color || "var(--status-error)";
+  const dashArr = reference.dash === false ? undefined : "6 3";
+
+  if (reference.axis === "x") {
+    const px = sx(reference.value);
+    if (!Number.isFinite(px) || px < X0 - 0.5 || px > xRight + 0.5) return null;
+    return (
+      <g>
+        <line x1={px} y1={Y1} x2={px} y2={Y0} stroke={color} strokeWidth="1.3" strokeDasharray={dashArr} />
+        {reference.label && (
+          <text x={px + 3} y={Y1 + 9} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+            {reference.label}
+          </text>
+        )}
+      </g>
+    );
+  }
+
+  const onRight = reference.axis === "y2";
+  const py = (onRight ? sy2 : sy)(reference.value);
+  if (!Number.isFinite(py) || py < Y1 - 0.5 || py > Y0 + 0.5) return null;
+  return (
+    <g>
+      <line x1={X0} y1={py} x2={xRight} y2={py} stroke={color} strokeWidth="1.3" strokeDasharray={dashArr} />
+      {reference.label && (
+        <text x={onRight ? xRight - 3 : X0 + 3} y={py - 3} textAnchor={onRight ? "end" : "start"} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+          {reference.label}
+        </text>
+      )}
+    </g>
+  );
+}
+
+function AnnotationMark({
+  annotation,
+  px,
+  py,
+  xRight,
+}: {
+  annotation: ResolvedAnnotation;
+  px: number;
+  py: number;
+  xRight: number;
+}) {
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+  if (px < X0 - 0.5 || px > xRight + 0.5 || py < Y1 - 0.5 || py > Y0 + 0.5) return null;
+  const color = annotation.color || "var(--text-primary)";
+  const flip = px > W - 90;
+  return (
+    <g>
+      <circle cx={px} cy={py} r={2.6} fill={color} stroke="var(--surface-paper)" strokeWidth="1" />
+      {annotation.text && (
+        <text x={flip ? px - 5 : px + 5} y={py - 4} textAnchor={flip ? "end" : "start"} style={{ font: "9.5px var(--font-sans)", fill: color }}>
+          {annotation.text}
+        </text>
+      )}
     </g>
   );
 }
@@ -340,12 +592,14 @@ function PanStrips({
   xMax,
   yMin,
   yMax,
+  xRight,
   onPan,
 }: {
   xMin: number;
   xMax: number;
   yMin: number;
   yMax: number;
+  xRight: number;
   onPan: (axis: "x" | "y", delta: number) => void;
 }) {
   const dragX = (e: ReactPointerEvent<SVGRectElement>) => {
@@ -365,7 +619,7 @@ function PanStrips({
   };
   return (
     <>
-      <rect x={X0} y={Y0} width={X1 - X0} height={M.b - 4} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={dragX} onPointerMove={moveX}>
+      <rect x={X0} y={Y0} width={xRight - X0} height={M.b - 4} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={dragX} onPointerMove={moveX}>
         <title>Drag to pan the x range</title>
       </rect>
       <rect x={0} y={Y1} width={M.l - 4} height={Y0 - Y1} fill="transparent" style={{ cursor: "ns-resize" }} onPointerDown={dragX} onPointerMove={moveY}>
@@ -379,7 +633,7 @@ function PanStrips({
  * Polar figure (r = f(θ))
  * ------------------------------------------------------------------ */
 
-function PolarFigure({ result, height }: { result: PlotResult; height?: number }) {
+function PolarFigure({ result, theme, height }: { result: PlotResult; theme?: string; height?: number }) {
   const cx = W / 2;
   const cy = (height ?? H) / 2;
   const R = Math.min(cx - M.r, cy - M.t) - 6;
@@ -403,14 +657,14 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
         </text>
       ))}
       {drawable.map((t, i) => {
-        const color = traceColor(i, t.color);
+        const color = traceColor(i, t.color, theme);
         const d = t.points
           .map((p, j) => {
             const [x, y] = project(p.x, p.y);
             return `${j ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
           })
           .join(" ");
-        return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
+        return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth={t.width ?? 1.75} strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
       })}
     </svg>
   );
@@ -595,7 +849,7 @@ function VectorFigure({ result, region, height }: { result: PlotResult; region: 
           <path d="M0 0L5 3L0 6z" fill={color} />
         </marker>
       </defs>
-      <XYFrame sx={sx} sy={sy} xticks={xticks} yticks={yticks} xLabel={region.x?.label || region.xVar || "x"} yLabel={region.y?.label || region.yVar || "y"} xUnit={result.xUnit} yUnit={result.yUnit} height={height ?? H} />
+      <XYFrame sx={sx} sy={sy} xticks={xticks} yticks={yticks} xLabel={region.x?.label || region.xVar || "x"} yLabel={region.y?.label || "y"} xUnit={result.xUnit} yUnit={result.yUnit} height={height ?? H} />
       {vectors.map((v, i) => {
         const px = sx(v.x);
         const py = sy(v.y);
@@ -614,6 +868,393 @@ function VectorFigure({ result, region, height }: { result: PlotResult; region: 
 }
 
 /* ------------------------------------------------------------------ *
+ * Contour figure (z = f(x, y) iso-bands)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Filled iso-band (or iso-line) rendering of a sampled `z = f(x, y)` field — pure
+ * SVG, hook-free, so the same figure draws in the editor, history, and the Node
+ * export path. Bands/lines come from the pure `./contour` geometry; shading is a
+ * blueprint sequential ramp (`var(--accent)` at increasing opacity → deeper blue
+ * = higher z), which honours the design system and adapts to the dark theme.
+ */
+export function ContourFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "z" | "surface">;
+  height?: number;
+}) {
+  const grid = result.contour;
+  if (!grid) return null;
+  if (grid.error) return <ContourErrorNote error={grid.error} />;
+
+  const showScale = region.surface?.showScale ?? true;
+  const filled = region.surface?.filled ?? true;
+  const SCALE_W = showScale ? 40 : 0;
+  const PX1 = X1 - SCALE_W; // plot right edge (leaves a gutter for the colour scale)
+
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (PX1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+
+  const bands = filled ? contourBands(grid) : [];
+  const lines = contourLines(grid);
+  const xticks = niceTicks(xMin, xMax, 6);
+  const yticks = niceTicks(yMin, yMax, 5);
+
+  const toPath = (poly: ReadonlyArray<readonly [number, number]>) =>
+    poly.map(([px, py], i) => `${i ? "L" : "M"}${sx(px).toFixed(1)} ${sy(py).toFixed(1)}`).join(" ") + " Z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Contour plot">
+      {/* faint interior gridlines (visible in lines-only mode; mostly under the fill) */}
+      {yticks.map((v, i) => (
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={PX1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      {xticks.map((v, i) => (
+        <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+
+      {/* filled iso-bands */}
+      {filled &&
+        bands.map((b, i) => (
+          <g key={`b${i}`} fill="var(--accent)" fillOpacity={bandOpacity(b.t)}>
+            {b.polygons.map((poly, j) => (
+              <path key={j} d={toPath(poly)} />
+            ))}
+          </g>
+        ))}
+
+      {/* iso-lines — faint hairlines between bands when filled, blueprint strokes when not */}
+      {lines.map((ls, i) => (
+        <g
+          key={`l${i}`}
+          stroke={filled ? "var(--surface-paper)" : "var(--accent)"}
+          strokeOpacity={filled ? 0.55 : 0.35 + 0.5 * ls.t}
+          strokeWidth={filled ? 0.6 : 1.4}
+          strokeLinecap="round"
+        >
+          {ls.segments.map((seg, j) => (
+            <line key={j} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])} />
+          ))}
+        </g>
+      ))}
+
+      {/* axes */}
+      <line x1={X0} y1={Y0} x2={PX1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* ticks */}
+      {xticks.map((v, i) => (
+        <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      {yticks.map((v, i) => (
+        <text key={`ty${i}`} x={X0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+
+      {/* axis labels */}
+      <text x={(X0 + PX1) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.x?.label || region.xVar || "x"} unit={result.xUnit} />
+      </text>
+      <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.y?.label || "y"} unit={result.yUnit} />
+      </text>
+
+      {showScale && <ContourScale grid={grid} x={PX1 + 12} />}
+    </svg>
+  );
+}
+
+/** Blueprint sequential shade for a band at normalized position `t` (0 low → 1 high). */
+function bandOpacity(t: number): number {
+  return 0.06 + 0.8 * Math.max(0, Math.min(1, t));
+}
+
+/** Vertical colour scale (band swatches + z extent), drawn in the right-hand gutter. */
+function ContourScale({ grid, x }: { grid: ContourResult; x: number }) {
+  const { levels, zMin, zMax, zUnit, zLabel } = grid;
+  const span = zMax - zMin || 1;
+  const syz = (v: number) => Y0 - ((v - zMin) / span) * (Y0 - Y1);
+  const barW = 9;
+  return (
+    <g>
+      {levels.slice(0, -1).map((lo, i) => {
+        const hi = levels[i + 1];
+        const yTop = syz(hi);
+        const yBot = syz(lo);
+        const t = (((lo + hi) / 2 - zMin) / span);
+        return (
+          <rect key={i} x={x} y={yTop} width={barW} height={Math.max(0.5, yBot - yTop)} fill="var(--accent)" fillOpacity={bandOpacity(t)} />
+        );
+      })}
+      <rect x={x} y={Y1} width={barW} height={Y0 - Y1} fill="none" stroke="var(--border-hairline)" strokeWidth="1" />
+      <text x={x + barW + 4} y={Y1 + 4} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMax)}</text>
+      <text x={x + barW + 4} y={Y0} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMin)}</text>
+      <text x={x + barW / 2} y={Y1 - 4} textAnchor="middle" style={{ font: "10px var(--font-math)", fontStyle: "italic", fill: "var(--text-primary)" }}>
+        {zLabel}
+        {zUnit ? <tspan style={{ fontFamily: "var(--font-sans)", fontStyle: "normal" }}> [{zUnit}]</tspan> : null}
+      </text>
+    </g>
+  );
+}
+
+function ContourErrorNote({ error }: { error: CalcError }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 9,
+        padding: "10px 12px",
+        border: "1px solid var(--status-error)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--status-error-bg)",
+      }}
+    >
+      <span style={{ color: "var(--status-error)", flex: "0 0 auto", marginTop: 1 }}>
+        <Icon name="alertCirc" size={15} />
+      </span>
+      <div>
+        <div style={{ font: "600 12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>{error.message}</div>
+        {error.fixHint && <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginTop: 2 }}>{error.fixHint}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Contour 'configure' empty state — shown until a `z = f(x, y)` expression and an
+ * x/y range are set. Mirrors the XY empty state's voice and points at the inspector.
+ */
+export function ContourEmptyState({ region }: { region: Pick<PlotRegion, "z" | "xVar" | "yVar"> }) {
+  const z = region.z?.expr?.trim();
+  return (
+    <div
+      className="q-grid"
+      style={{
+        border: "1px dashed var(--border-strong)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--surface-paper)",
+        minHeight: 200,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: 24,
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 46,
+          height: 46,
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border-hairline)",
+          background: "var(--surface-raised)",
+          color: "var(--accent)",
+          marginBottom: 13,
+        }}
+      >
+        <Icon name="contour" size={24} />
+      </span>
+      <div style={{ font: "600 13.5px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 5 }}>Set a z = f(x, y) field to plot</div>
+      <div style={{ font: "12px/1.5 var(--font-sans)", color: "var(--text-muted)", maxWidth: 320 }}>
+        {z ? (
+          <>
+            Set an x and y range for{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar || "x"}</span> and{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.yVar || "y"}</span> in the inspector.
+          </>
+        ) : (
+          <>
+            Add a z expression like{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>sin(x)·cos(y)</span> and an x/y range in the inspector.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Surface figure (z = f(x, y)) — projected wireframe (cabinet projection)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Draw a sampled `z = f(x, y)` grid as a projected wireframe, ported from the
+ * mockup `plot-region.html` Thumb3D: a parallel (cabinet) projection where x spreads
+ * right, the depth axis (y) recedes up-right, and z lifts the surface. The mesh is
+ * auto-fitted into the frame so any z range stays in bounds. Row lines (constant y)
+ * are the blueprint profile — the centre row is emphasised, others are height-shaded;
+ * column lines (constant x) are faint structural depth lines. Pure SVG, hook-free, so
+ * the same figure renders in the editor, history, and the server-side export.
+ */
+export function SurfaceFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "yVar" | "z">;
+  height?: number;
+}) {
+  const s = result.surface;
+  if (!s) return null;
+  if (s.error) return <ContourErrorNote error={s.error} />;
+
+  const nx = s.xs.length;
+  const ny = s.ys.length;
+  const Hh = height ?? H;
+
+  // Drawing frame (inset for axis labels / numeric ticks).
+  const fL = 34;
+  const fR = W - 16;
+  const fT = 16;
+  const fB = Hh - 28;
+
+  // Cabinet basis (abstract, y up): x right, depth up-right, z lifts vertically.
+  const XW = 1.0;
+  const DX = 0.42;
+  const DY = 0.3;
+  const ZH = 0.55;
+  const zSpan = s.zMax - s.zMin || 1;
+  const normW = (z: number) => {
+    const w = (z - s.zMin) / zSpan;
+    return w < 0 ? 0 : w > 1 ? 1 : w;
+  };
+
+  // Auto-fit: bound the data cube's 8 corners, then uniform-scale + centre.
+  let axMin = Infinity;
+  let axMax = -Infinity;
+  let ayMin = Infinity;
+  let ayMax = -Infinity;
+  for (const u of [0, 1]) {
+    for (const v of [0, 1]) {
+      for (const w of [0, 1]) {
+        const ax = u * XW + v * DX;
+        const ay = v * DY + w * ZH;
+        if (ax < axMin) axMin = ax;
+        if (ax > axMax) axMax = ax;
+        if (ay < ayMin) ayMin = ay;
+        if (ay > ayMax) ayMax = ay;
+      }
+    }
+  }
+  const axSpan = axMax - axMin || 1;
+  const aySpan = ayMax - ayMin || 1;
+  const scale = Math.min((fR - fL) / axSpan, (fB - fT) / aySpan);
+  const padX = fL + ((fR - fL) - axSpan * scale) / 2;
+  const padY = fT + ((fB - fT) - aySpan * scale) / 2;
+  const px = (u: number, v: number) => padX + (u * XW + v * DX - axMin) * scale;
+  const py = (u: number, v: number, w: number) => padY + (ayMax - (v * DY + w * ZH)) * scale;
+
+  const U = (xi: number) => (nx > 1 ? xi / (nx - 1) : 0);
+  const V = (yi: number) => (ny > 1 ? yi / (ny - 1) : 0);
+
+  // Build a polyline path over cells, breaking the pen on null gaps.
+  const pathFor = (cells: { u: number; v: number; z: number | null }[]) => {
+    let d = "";
+    let pen = false;
+    for (const c of cells) {
+      if (c.z == null) {
+        pen = false;
+        continue;
+      }
+      const w = normW(c.z);
+      d += `${pen ? "L" : "M"}${px(c.u, c.v).toFixed(1)} ${py(c.u, c.v, w).toFixed(1)} `;
+      pen = true;
+    }
+    return d.trim();
+  };
+
+  // Column lines (constant x) — faint depth structure.
+  const cols: string[] = [];
+  for (let xi = 0; xi < nx; xi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    for (let yi = 0; yi < ny; yi += 1) cells.push({ u: U(xi), v: V(yi), z: s.z[yi]?.[xi] ?? null });
+    cols.push(pathFor(cells));
+  }
+
+  // Row lines (constant y) — the blueprint profile; centre row emphasised.
+  const centerRow = Math.floor(ny / 2);
+  const rows: { d: string; meanW: number; center: boolean }[] = [];
+  for (let yi = 0; yi < ny; yi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    let sum = 0;
+    let cnt = 0;
+    for (let xi = 0; xi < nx; xi += 1) {
+      const z = s.z[yi]?.[xi] ?? null;
+      cells.push({ u: U(xi), v: V(yi), z });
+      if (z != null) {
+        sum += normW(z);
+        cnt += 1;
+      }
+    }
+    rows.push({ d: pathFor(cells), meanW: cnt ? sum / cnt : 0, center: yi === centerRow });
+  }
+
+  // Reference corner axes (x, y, z from the near-bottom origin) read as a 3D frame.
+  const ox = px(0, 0);
+  const oy = py(0, 0, 0);
+  const xLabel = region.x?.label || region.xVar || "x";
+  const yLabel = region.y?.label || region.yVar || "y";
+  const zLabel = region.z?.label || "z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${Hh}`} style={{ display: "block" }} role="img" aria-label="3D surface plot">
+      {/* reference axes from the origin corner */}
+      <line x1={ox} y1={oy} x2={px(1, 0)} y2={py(1, 0, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 1)} y2={py(0, 1, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 0)} y2={py(0, 0, 1)} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* mesh — columns (faint) then rows (profile, on top) */}
+      {cols.map((d, i) => (d ? <path key={`c${i}`} d={d} fill="none" stroke="var(--border-strong)" strokeWidth="1" opacity={0.5} strokeLinejoin="round" strokeLinecap="round" /> : null))}
+      {rows.map((r, i) =>
+        r.d ? (
+          <path
+            key={`r${i}`}
+            d={r.d}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth={r.center ? 1.7 : 1.2}
+            opacity={r.center ? 1 : Math.min(0.95, 0.4 + 0.5 * r.meanW)}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : null,
+      )}
+
+      {/* numeric ticks at the axis ends */}
+      <text x={ox - 4} y={oy + 12} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[0])}</text>
+      <text x={px(1, 0)} y={py(1, 0, 0) + 13} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[nx - 1])}</text>
+      <text x={px(0, 1) + 5} y={py(0, 1, 0) - 3} textAnchor="start" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.ys[ny - 1])}</text>
+      <text x={px(0, 0) - 5} y={py(0, 0, 1) + 3} textAnchor="end" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.zMax)}</text>
+
+      {/* axis labels (STIX symbol + [unit]) */}
+      <text x={(ox + px(1, 0)) / 2} y={Hh - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={xLabel} unit={result.xUnit} />
+      </text>
+      <text x={px(1, 0.5) + 8} y={py(1, 0.5, 0)} textAnchor="start" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={yLabel} unit={result.yUnit} />
+      </text>
+      <text x={px(0, 0) - 4} y={py(0, 0, 1) - 6} textAnchor="end" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={zLabel} unit={s.zUnit} />
+      </text>
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Legend
  * ------------------------------------------------------------------ */
 
@@ -621,20 +1262,35 @@ export function PlotLegend({
   traces,
   boundLabel,
   onToggle,
+  theme,
+  vertical = false,
 }: {
   traces: TraceResult[];
   boundLabel?: string | null;
   onToggle?: (id: string) => void;
+  theme?: string;
+  /** Stack chips in a column (for a left/right legend position). */
+  vertical?: boolean;
 }) {
   if (traces.length === 0) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: vertical ? "column" : "row",
+        alignItems: vertical ? "flex-start" : "center",
+        gap: 8,
+        marginTop: vertical ? 0 : 9,
+        flexWrap: vertical ? "nowrap" : "wrap",
+        justifyContent: vertical ? "center" : undefined,
+      }}
+    >
       <span style={{ font: "10px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>Series</span>
       {traces.map((t, i) => (
-        <LegendChip key={t.id} trace={t} color={traceColor(i, t.color)} onClick={onToggle ? () => onToggle(t.id) : undefined} />
+        <LegendChip key={t.id} trace={t} color={traceColor(i, t.color, theme)} onClick={onToggle ? () => onToggle(t.id) : undefined} />
       ))}
       {boundLabel && (
-        <span style={{ marginLeft: "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+        <span style={{ marginLeft: vertical ? 0 : "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
           bound to <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{boundLabel}</span>
         </span>
       )}
@@ -777,7 +1433,7 @@ export function PlotPlaceholder({ region }: { region: PlotRegion }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 2 }}>{label} — configure in the inspector</div>
         <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginBottom: 8 }}>
-          Rendering ships next; your settings are saved with the worksheet.
+          3D surface rendering ships next; your settings are saved with the worksheet.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 3 }}>
           {rows.map(([k, v]) => (

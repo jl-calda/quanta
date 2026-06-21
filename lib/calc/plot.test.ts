@@ -78,6 +78,56 @@ describe("evaluatePlot — data mode (ranges / table columns)", () => {
   });
 });
 
+describe("evaluatePlot — per-trace styling + data source", () => {
+  it("carries the per-trace line width through to the result", () => {
+    const res = evaluatePlot(
+      xy({ traces: [{ id: "a", expr: "x", width: 3.5 }, { id: "b", expr: "2*x" }] }),
+    );
+    expect(res.traces[0].width).toBe(3.5);
+    expect(res.traces[1].width).toBeUndefined(); // renderer applies its default
+  });
+
+  it("gives each trace its OWN x data when xData is set (multiple data sources)", () => {
+    const res = evaluatePlot(
+      {
+        kind: "xy",
+        x: {},
+        y: {},
+        xData: "ax", // plot-level x for traces that don't override
+        traces: [
+          { id: "a", expr: "ay" }, // uses plot-level ax
+          { id: "b", expr: "by", xData: "bx" }, // its own source
+        ],
+      },
+      { ax: [1, 2, 3], ay: [10, 20, 30], bx: [5, 6], by: [50, 60] },
+    );
+    expect(res.traces[0].points).toEqual([
+      { x: 1, y: 10 },
+      { x: 2, y: 20 },
+      { x: 3, y: 30 },
+    ]);
+    expect(res.traces[1].points).toEqual([
+      { x: 5, y: 50 },
+      { x: 6, y: 60 },
+    ]);
+  });
+
+  it("spans x bounds across an override trace instead of clipping it to the sweep span", () => {
+    // Plot is a sweep over x∈[0,6], but a trace overrides with data out past 6.
+    const res = evaluatePlot(
+      xy({
+        x: {}, // unpinned x so bounds are derived
+        traces: [
+          { id: "sweep", expr: "x" },
+          { id: "data", expr: "ys", xData: "xs" },
+        ],
+      }),
+      { xs: [10, 20], ys: [1, 2] },
+    );
+    expect(res.bounds.xMax).toBeGreaterThanOrEqual(20); // override trace not clipped
+  });
+});
+
 describe("evaluatePlot — bounds", () => {
   it("honors pinned axis bounds exactly", () => {
     const res = evaluatePlot(xy({ y: { min: 0, max: 100 }, traces: [{ id: "t", expr: "x" }] }));
@@ -140,6 +190,103 @@ describe("evaluatePlot — empty + hidden", () => {
   });
 });
 
+describe("evaluatePlot — log scale", () => {
+  it("drops non-positive y as gaps (no log of ≤ 0) without erroring the trace", () => {
+    const res = evaluatePlot(xy({ x: { min: -3, max: 3 }, y: { scale: "log" }, traces: [{ id: "t", expr: "x" }], samples: 7 }));
+    const t = res.traces[0];
+    expect(t.error).toBeUndefined();
+    // x = -3..-1, 0 are dropped; only 1,2,3 remain.
+    expect(t.points.every((p) => p.y > 0)).toBe(true);
+    expect(t.points.map((p) => p.x)).toEqual([1, 2, 3]);
+  });
+
+  it("snaps auto y-bounds to powers of 10 on a log axis", () => {
+    const res = evaluatePlot(xy({ x: { min: 1, max: 5 }, y: { scale: "log" }, traces: [{ id: "t", expr: "x^3" }], samples: 5 }));
+    // y-extent is 1..125 → [1, 1000].
+    expect(res.bounds.yMin).toBe(1);
+    expect(res.bounds.yMax).toBe(1000);
+  });
+
+  it("honours a legacy log:true flag", () => {
+    const res = evaluatePlot(xy({ x: { min: -2, max: 2 }, y: { log: true }, traces: [{ id: "t", expr: "x" }], samples: 5 }));
+    expect(res.traces[0].points.every((p) => p.y > 0)).toBe(true);
+  });
+});
+
+describe("evaluatePlot — secondary y-axis", () => {
+  it("converts a y2-bound trace to the y2 unit and computes separate bounds", () => {
+    const res = evaluatePlot(
+      xy({
+        x: { min: 0, max: 4 },
+        y: { unit: "kN" },
+        y2: { unit: "MPa" },
+        traces: [
+          { id: "a", expr: "x", axis: "y" },
+          { id: "b", expr: "100*x", axis: "y2" },
+        ],
+        samples: 5,
+      }),
+    );
+    expect(res.traces[0].axis).toBe("y");
+    expect(res.traces[1].axis).toBe("y2");
+    expect(res.y2Unit).toBe("MPa");
+    // y2 data is 0..400, far above the primary axis' 0..4 — proves a separate scale.
+    expect(res.bounds.y2Max).toBeGreaterThanOrEqual(400);
+    expect(res.bounds.yMax).toBeLessThan(50);
+  });
+
+  it("omits y2 bounds when no trace binds to the secondary axis", () => {
+    const res = evaluatePlot(xy({ y2: { unit: "MPa" }, traces: [{ id: "a", expr: "x" }] }));
+    expect(res.bounds.y2Min).toBeUndefined();
+    expect(res.bounds.y2Max).toBeUndefined();
+  });
+});
+
+describe("evaluatePlot — reference lines", () => {
+  it("passes through a literal value in the target axis unit", () => {
+    const res = evaluatePlot(xy({ references: [{ id: "r", axis: "y", value: 45 }], traces: [{ id: "t", expr: "x" }] }));
+    expect(res.references).toHaveLength(1);
+    expect(res.references[0]).toMatchObject({ axis: "y", value: 45 });
+  });
+
+  it("resolves an expression against worksheet scope, unit-aware", () => {
+    const res = evaluatePlot(
+      { kind: "xy", x: { min: 0, max: 4 }, y: { unit: "kN" }, references: [{ id: "r", axis: "y", expr: "phi*Rn" }], traces: [{ id: "t", expr: "x" }], samples: 3 },
+      { phi: 0.9, Rn: math.unit("100 kN") },
+    );
+    expect(res.references[0].value).toBeCloseTo(90); // 0.9 · 100 kN → 90 kN
+  });
+
+  it("drops an unresolvable reference rather than sinking the plot", () => {
+    const res = evaluatePlot(xy({ references: [{ id: "r", axis: "y", expr: "undefined_name" }], traces: [{ id: "t", expr: "x" }] }));
+    expect(res.references).toHaveLength(0);
+    expect(res.empty).toBe(false);
+  });
+});
+
+describe("evaluatePlot — error bars", () => {
+  it("samples an error expression into a per-point ± half-width", () => {
+    const res = evaluatePlot(xy({ x: { min: 0, max: 4 }, traces: [{ id: "t", expr: "x^2", errorExpr: "x", errorMode: "bar" }], samples: 5 }));
+    const t = res.traces[0];
+    expect(t.errorMode).toBe("bar");
+    expect(t.points.find((p) => p.x === 3)?.err).toBe(3);
+    expect(t.points.every((p) => p.err != null)).toBe(true);
+  });
+
+  it("converts error magnitudes to the y-axis unit", () => {
+    const res = evaluatePlot(
+      { kind: "xy", x: { min: 0, max: 2 }, y: { unit: "kN" }, traces: [{ id: "t", expr: "10*x kN", errorExpr: "1 kN" }], samples: 3 },
+    );
+    expect(res.traces[0].points.every((p) => p.err === 1)).toBe(true);
+  });
+
+  it("treats a bad error expression as no bars (never errors the trace)", () => {
+    const res = evaluatePlot(xy({ traces: [{ id: "t", expr: "x", errorExpr: "(" }] }));
+    expect(res.traces[0].error).toBeUndefined();
+    expect(res.traces[0].points.every((p) => p.err == null)).toBe(true);
+  });
+});
+
 describe("evaluatePlot — polar", () => {
   it("sweeps θ over a full turn by default and pins the radius from the centre", () => {
     const res = evaluatePlot({ kind: "polar", xVar: "theta", x: {}, y: {}, samples: 9, traces: [{ id: "r", expr: "1" }] });
@@ -153,14 +300,191 @@ describe("evaluatePlot — polar", () => {
   });
 });
 
-describe("evaluatePlot — contour / surface are typed-but-inert this pass", () => {
-  it("returns empty (placeholder) without sampling", () => {
-    for (const kind of ["contour", "surface"] as const) {
-      const res = evaluatePlot({ kind, x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, traces: [{ id: "t", expr: "x*y" }] });
-      expect(res.empty).toBe(true);
-      expect(res.traces).toHaveLength(0);
-      expect(res.kind).toBe(kind);
-    }
+describe("evaluatePlot — contour (2D z = f(x, y) sampling)", () => {
+  const contour = (over: Partial<PlotSpec> = {}): PlotSpec => ({
+    kind: "contour",
+    xVar: "x",
+    yVar: "y",
+    x: { min: 0, max: 2 },
+    y: { min: 0, max: 2 },
+    grid: { x: 3, y: 3 },
+    z: { expr: "x + y" },
+    traces: [],
+    ...over,
+  });
+
+  it("samples z = f(x, y) on a regular grid (rows by y, cols by x)", () => {
+    const res = evaluatePlot(contour());
+    expect(res.kind).toBe("contour");
+    expect(res.empty).toBe(false);
+    const g = res.contour;
+    expect(g).toBeDefined();
+    expect(g!.x).toEqual([0, 1, 2]);
+    expect(g!.y).toEqual([0, 1, 2]);
+    expect(g!.z).toHaveLength(3); // ny rows
+    expect(g!.z[0]).toHaveLength(3); // nx cols
+    expect(g!.z[0][0]).toBe(0); // x=0, y=0
+    expect(g!.z[2][2]).toBe(4); // x=2, y=2
+    expect(g!.z[1][2]).toBe(3); // x=2 (col), y=1 (row)
+    expect(g!.error).toBeUndefined();
+  });
+
+  it("attaches x/y units and converts z to the z unit", () => {
+    const res = evaluatePlot(
+      contour({
+        x: { min: 0, max: 2, unit: "m" },
+        y: { min: 0, max: 2, unit: "m" },
+        z: { expr: "x * y", unit: "m^2" },
+      }),
+    );
+    const g = res.contour!;
+    expect(g.zUnit).toBe("m^2");
+    expect(g.z[2][2]).toBe(4); // (2 m)·(2 m) = 4 m²
+  });
+
+  it("marks non-finite samples as NaN gaps without erroring", () => {
+    const res = evaluatePlot(contour({ z: { expr: "1/(x-y)" } }));
+    const g = res.contour!;
+    expect(g.error).toBeUndefined();
+    expect(Number.isNaN(g.z[0][0])).toBe(true); // x==y → 1/0 → gap
+    expect(Number.isFinite(g.z[0][2])).toBe(true); // x=2, y=0 → 1/2
+  });
+
+  it("surfaces an undefined name (every point fails) as a typed error", () => {
+    const res = evaluatePlot(contour({ z: { expr: "k * x" } }));
+    expect(res.contour?.error).toBeDefined();
+    expect(res.empty).toBe(true);
+  });
+
+  it("computes ascending band levels spanning the z scale", () => {
+    const g = evaluatePlot(contour({ surface: { levels: 4 } })).contour!;
+    expect(g.levels.length).toBe(5); // nBands + 1
+    for (let i = 1; i < g.levels.length; i += 1) expect(g.levels[i]).toBeGreaterThan(g.levels[i - 1]);
+    expect(g.levels[0]).toBeCloseTo(g.zMin);
+    expect(g.levels.at(-1)).toBeCloseTo(g.zMax);
+  });
+
+  it("honors pinned z.min / z.max as the colour scale", () => {
+    const g = evaluatePlot(contour({ z: { expr: "x + y", min: 0, max: 10 } })).contour!;
+    expect(g.zMin).toBe(0);
+    expect(g.zMax).toBe(10);
+  });
+
+  it("is empty (no grid) when the z expression is blank", () => {
+    const res = evaluatePlot(contour({ z: { expr: "" } }));
+    expect(res.empty).toBe(true);
+    expect(res.contour).toBeUndefined();
+  });
+
+  it("is empty (no grid) when the x or y range is unset", () => {
+    expect(evaluatePlot(contour({ x: {} })).contour).toBeUndefined();
+    expect(evaluatePlot(contour({ y: {} })).empty).toBe(true);
+  });
+});
+
+describe("evaluatePlot — surface (projected-wireframe sampling)", () => {
+  /** A configured surface spec; override per test. */
+  function surf(over: Partial<PlotSpec> = {}): PlotSpec {
+    return { kind: "surface", xVar: "x", yVar: "y", x: { min: 0, max: 2 }, y: { min: 0, max: 2 }, grid: { x: 3, y: 3 }, z: { expr: "x+y" }, ...over };
+  }
+
+  it("samples z = f(x, y) over the grid", () => {
+    const res = evaluatePlot(surf());
+    const s = res.surface!;
+    expect(s).toBeDefined();
+    expect(res.kind).toBe("surface");
+    expect(res.empty).toBe(false);
+    expect(res.contour).toBeUndefined();
+    expect(s.xs).toEqual([0, 1, 2]);
+    expect(s.ys).toEqual([0, 1, 2]);
+    expect(s.z).toHaveLength(3); // ny rows
+    expect(s.z[0]).toHaveLength(3); // nx cols
+    expect(s.z[0][0]).toBe(0); // x=0, y=0
+    expect(s.z[1][1]).toBe(2); // x=1, y=1
+    expect(s.z[2][2]).toBe(4); // x=2, y=2
+    expect(s.zMin).toBe(0);
+    expect(s.zMax).toBe(4);
+    expect(s.error).toBeUndefined();
+  });
+
+  it("honors the grid resolution per axis", () => {
+    const s = evaluatePlot(surf({ grid: { x: 5, y: 2 } })).surface!;
+    expect(s.xs).toHaveLength(5);
+    expect(s.ys).toHaveLength(2);
+    expect(s.z).toHaveLength(2);
+    expect(s.z[0]).toHaveLength(5);
+  });
+
+  it("is unit-aware on x, y, and z", () => {
+    const s = evaluatePlot(
+      surf({ x: { min: 0, max: 2, unit: "m" }, y: { min: 0, max: 2, unit: "m" }, z: { expr: "x*y", unit: "m^2" } }),
+    ).surface!;
+    expect(s.z[2][2]).toBe(4); // 2 m · 2 m = 4 m²
+    expect(s.zUnit).toBe("m^2");
+    expect(evaluatePlot(surf({ x: { min: 0, max: 2, unit: "m" } })).xUnit).toBe("m");
+  });
+
+  it("drops non-finite cells as gaps without erroring the surface", () => {
+    const s = evaluatePlot(surf({ z: { expr: "sqrt(x-1)" }, x: { min: 0, max: 2 }, grid: { x: 3, y: 2 } })).surface!;
+    expect(s.error).toBeUndefined();
+    expect(s.z[0][0]).toBeNull(); // sqrt(-1) ⇒ complex ⇒ gap
+    expect(s.z[0][2]).toBe(1); // sqrt(1)
+    expect(s.empty).toBe(false);
+  });
+
+  it("leaves the surface unset when z is blank (placeholder fallback)", () => {
+    const res = evaluatePlot(surf({ z: { expr: "" } }));
+    expect(res.surface).toBeUndefined();
+    expect(res.empty).toBe(true);
+  });
+
+  it("leaves the surface unset when an x/y range is missing", () => {
+    expect(evaluatePlot(surf({ x: {} })).surface).toBeUndefined();
+    expect(evaluatePlot(surf({ y: { min: 0 } })).surface).toBeUndefined();
+  });
+
+  it("samples against the worksheet scope", () => {
+    const s = evaluatePlot(surf({ z: { expr: "k*x+y" } }), { k: 2 }).surface!;
+    expect(s.z[0][2]).toBe(4); // 2·2 + 0
+    expect(s.z[2][0]).toBe(2); // 2·0 + 2
+  });
+
+  it("errors when z references an undefined name on every cell", () => {
+    const res = evaluatePlot(surf({ z: { expr: "k*x+y" } })); // no scope
+    expect(res.surface?.error).toBeDefined();
+    expect(res.surface?.empty).toBe(true);
+    expect(res.errorCount).toBe(1);
+  });
+
+  it("carries a parse error on the surface", () => {
+    const res = evaluatePlot(surf({ z: { expr: "x +" } }));
+    expect(res.surface?.error?.kind).toBe("parse");
+    expect(res.surface?.empty).toBe(true);
+  });
+
+  it("errors on a z unit mismatch (every cell)", () => {
+    const res = evaluatePlot(surf({ x: { min: 0, max: 2, unit: "m" }, z: { expr: "x", unit: "kN" } }));
+    expect(res.surface?.error?.kind).toBe("unit-mismatch");
+  });
+
+  it("honors a pinned z.min / z.max for the height scale", () => {
+    const s = evaluatePlot(surf({ z: { expr: "x*y", min: 0, max: 10 } })).surface!;
+    expect(s.zMin).toBe(0);
+    expect(s.zMax).toBe(10);
+  });
+
+  it("reports a constant z as a flat sheet (zMin === zMax)", () => {
+    const s = evaluatePlot(surf({ z: { expr: "5" } })).surface!;
+    expect(s.empty).toBe(false);
+    expect(s.zMin).toBe(5);
+    expect(s.zMax).toBe(5);
+    expect(s.z[0][0]).toBe(5);
+  });
+
+  it("clamps the grid resolution to 2..200", () => {
+    const s = evaluatePlot(surf({ grid: { x: 1, y: 500 } })).surface!;
+    expect(s.xs).toHaveLength(2);
+    expect(s.ys).toHaveLength(200);
   });
 });
 

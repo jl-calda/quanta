@@ -10,10 +10,14 @@ import type { EditorAction } from "../state/editor-reducer";
 import { IconButton } from "@/components/ds";
 import { Icon } from "../icons";
 import {
+  ContourEmptyState,
+  ContourFigure,
+  legendFlex,
   PlotEmptyState,
   PlotFigure,
   PlotLegend,
   PlotPlaceholder,
+  SurfaceFigure,
 } from "./plot-present";
 import type { RegionRenderProps } from "./types";
 
@@ -23,14 +27,22 @@ import type { RegionRenderProps } from "./types";
  * engine (read from the provider so it stays reactive on recalc) and drawn by the
  * shared `PlotFigure`. This view owns the editing chrome: an inline-editable
  * title, editable + draggable axis ranges, a hover read-out, and legend toggles.
- * contour/3D are selectable now but render the typed 'configure' placeholder.
+ * contour (iso-bands) and surface (projected wireframe) render once their z = f(x, y)
+ * field and x/y ranges are set, else a typed 'configure' state.
  */
 export function PlotRegionView({ region, canEdit, dispatch }: RegionRenderProps<PlotRegion>) {
   const { plotResults } = useEditor();
   const result = plotResults.get(region.id);
 
-  if (region.kind === "contour" || region.kind === "surface") {
-    return <PlotPlaceholder region={region} />;
+  // Surface: a projected wireframe once z = f(x, y) + an x/y range are set, else the card.
+  if (region.kind === "surface") {
+    if (!result?.surface) return <PlotPlaceholder region={region} />;
+    return <SurfaceEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
+  }
+  // Contour: real iso-bands once z = f(x, y) + an x/y range are set, else a hint.
+  if (region.kind === "contour") {
+    if (!result?.contour) return <ContourEmptyState region={region} />;
+    return <ContourEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
   }
   if (!result) return <PlotEmptyState />;
   // A vector field is configured through `vector.u`/`v`, not the trace list, so its
@@ -44,6 +56,143 @@ export function PlotRegionView({ region, canEdit, dispatch }: RegionRenderProps<
   }
 
   return <PlotEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
+}
+
+/**
+ * Contour editing chrome — an inline-editable title, x/y range controls, and the
+ * shared `ContourFigure` (iso-bands). No trace legend / hover read-out: the field
+ * is a z = f(x, y) surface, so the figure carries its own colour scale.
+ */
+function ContourEditor({
+  region,
+  result,
+  canEdit,
+  dispatch,
+}: {
+  region: PlotRegion;
+  result: PlotResult;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const { state, dispatch: rawDispatch } = useEditor();
+
+  const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
+    dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
+
+  const openInspector = () => {
+    dispatch({ type: "SELECT", id: region.id });
+    if (!state.ui.rightOpen) rawDispatch({ type: "TOGGLE_RIGHT" });
+  };
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+      {/* title row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <TitleInput
+          key={region.id}
+          value={region.title ?? ""}
+          canEdit={canEdit}
+          onCommit={(title) => dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: title || undefined } })}
+        />
+        {canEdit && <span style={{ display: "inline-flex", color: "var(--text-muted)", flex: "0 0 auto" }}><Icon name="sketch" size={13} /></span>}
+        <IconButton label="Plot settings" size="sm" onClick={openInspector}>
+          <Icon name="gear" size={16} />
+        </IconButton>
+        <IconButton label="More" size="sm" onClick={() => dispatch({ type: "SELECT", id: region.id })}>
+          <Icon name="kebab" size={16} />
+        </IconButton>
+      </div>
+
+      {/* axis range controls */}
+      {canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px", flexWrap: "wrap" }}>
+          <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          <AxisRange label="y range" axis={region.y} onMin={(v) => setAxis("y", { min: v })} onMax={(v) => setAxis("y", { max: v })} />
+        </div>
+      )}
+
+      {/* the contour */}
+      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+        <ContourFigure result={result} region={region} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Surface editing chrome — mirrors the contour editor (title, x/y range controls)
+ * but draws the shared `SurfaceFigure` (a projected wireframe) and a z = f(x, y)
+ * caption. No trace legend / hover read-out: the figure is a z surface, not series.
+ */
+function SurfaceEditor({
+  region,
+  result,
+  canEdit,
+  dispatch,
+}: {
+  region: PlotRegion;
+  result: PlotResult;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const { state, dispatch: rawDispatch } = useEditor();
+
+  const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
+    dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
+
+  const openInspector = () => {
+    dispatch({ type: "SELECT", id: region.id });
+    if (!state.ui.rightOpen) rawDispatch({ type: "TOGGLE_RIGHT" });
+  };
+
+  const zExpr = region.z?.expr?.trim();
+  const zUnit = result.surface?.zUnit;
+  const zCaption = zExpr ? `${region.z?.label || "z"} := ${prettyExpr(zExpr)}${zUnit ? `  [${zUnit}]` : ""}` : null;
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+      {/* title row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <TitleInput
+          key={region.id}
+          value={region.title ?? ""}
+          canEdit={canEdit}
+          onCommit={(title) => dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: title || undefined } })}
+        />
+        {canEdit && <span style={{ display: "inline-flex", color: "var(--text-muted)", flex: "0 0 auto" }}><Icon name="sketch" size={13} /></span>}
+        <IconButton label="Plot settings" size="sm" onClick={openInspector}>
+          <Icon name="gear" size={16} />
+        </IconButton>
+        <IconButton label="More" size="sm" onClick={() => dispatch({ type: "SELECT", id: region.id })}>
+          <Icon name="kebab" size={16} />
+        </IconButton>
+      </div>
+
+      {/* axis range controls (x & y span the surface grid) */}
+      {canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px", flexWrap: "wrap" }}>
+          <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          <AxisRange label="y range" axis={region.y} onMin={(v) => setAxis("y", { min: v })} onMax={(v) => setAxis("y", { max: v })} />
+        </div>
+      )}
+
+      {/* the wireframe */}
+      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+        <SurfaceFigure result={result} region={region} />
+      </div>
+
+      {/* caption — z definition + grid resolution */}
+      {zCaption && !result.surface?.error && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+          <span style={{ font: "10px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>Surface</span>
+          <span style={{ font: "11px/1 var(--font-mono)", color: "var(--accent)" }}>{zCaption}</span>
+          <span style={{ marginLeft: "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+            {region.grid?.x ?? 24} × {region.grid?.y ?? 24} grid
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PlotEditor({
@@ -79,6 +228,7 @@ function PlotEditor({
 
   const sweepNoRange = region.kind === "xy" && !region.xData && (region.x.min == null || region.x.max == null);
   const boundLabel = region.traces[0]?.expr ? prettyExpr(region.traces[0].expr) : null;
+  const { flexDirection, vertical } = legendFlex(region.legendPos);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
@@ -110,28 +260,35 @@ function PlotEditor({
         </div>
       )}
 
-      {/* the plot */}
-      <div ref={containerRef} style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
-        <PlotFigure
-          result={result}
-          region={region}
-          hoverIndex={canEdit ? hoverIndex : null}
-          onHoverIndex={canEdit ? setHoverIndex : undefined}
-          onPan={canEdit ? pan : undefined}
-        />
-        {sweepNoRange && (
-          <div style={{ font: "10.5px/1.4 var(--font-sans)", color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px" }}>
-            Set an x range to plot <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar}</span>.
-          </div>
+      {/* figure + legend, arranged per legendPos */}
+      <div style={{ display: "flex", flexDirection, alignItems: vertical ? "center" : "stretch", gap: vertical ? 12 : 0 }}>
+        {/* the plot */}
+        <div ref={containerRef} style={{ flex: vertical ? 1 : undefined, minWidth: 0, border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+          <PlotFigure
+            result={result}
+            region={region}
+            hoverIndex={canEdit ? hoverIndex : null}
+            onHoverIndex={canEdit ? setHoverIndex : undefined}
+            onPan={canEdit ? pan : undefined}
+          />
+          {sweepNoRange && (
+            <div style={{ font: "10.5px/1.4 var(--font-sans)", color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px" }}>
+              Set an x range to plot <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar}</span>.
+            </div>
+          )}
+        </div>
+
+        {/* legend */}
+        {region.legend && (
+          <PlotLegend
+            traces={result.traces}
+            boundLabel={boundLabel}
+            theme={region.theme}
+            vertical={vertical}
+            onToggle={canEdit ? (id) => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: id }) : undefined}
+          />
         )}
       </div>
-
-      {/* legend */}
-      <PlotLegend
-        traces={result.traces}
-        boundLabel={boundLabel}
-        onToggle={canEdit ? (id) => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: id }) : undefined}
-      />
     </div>
   );
 }

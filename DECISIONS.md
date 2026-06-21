@@ -2,6 +2,48 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Plot — 3D surface rendering (projected wireframe, Phase 2)
+
+- **Fills the surface seam, renderer-only — no schema/picker change.** The `surface`
+  config (`kind`, `z`, `grid`, `xVar`/`yVar`, `x`/`y`, `surface.wireframe`) already
+  round-tripped through the content schema and the inspector; this pass only adds the
+  pure sampler + the SVG renderer, so no migration is needed. `evaluatePlot`
+  (`lib/calc/plot.ts`) now samples `z = f(x, y)` over the grid into a new
+  `PlotSurface` (`xs`, `ys`, `z:(number|null)[][]` row-major `[yi][xi]`, `zMin/zMax`,
+  `zUnit`, `wireframe`, `empty`, `error?`) carried on `PlotResult.surface` (alongside
+  the contour PR's `contour?: ContourResult`). It stays a **clean superset** —
+  `traces:[]`/`bounds`/`xUnit`/`yUnit`/`empty` remain populated so nothing downstream
+  breaks. `surface.filled`/`colormap`/`showScale` stay config-only — the wireframe
+  ignores them.
+- **Merged with the parallel contour PR (#54).** `surface` sampling mirrors that PR's
+  `sampleGrid` exactly — a sibling `sampleSurface` reusing the same helpers
+  (`attachUnit`, `toAxisNumber`, `linspace`, `clampInt`, `realUnit`) and the same
+  error/gap model — so the two 2D kinds read consistently: **contour → iso-bands,
+  surface → projected wireframe**, both real samplers now (neither is inert).
+- **Grid sampling kept pure & synchronous** in `/lib/calc`, exactly the class of work
+  `sweep` does (closed-form `node.evaluate` per cell — parsed once, never per-cell).
+  Clamped 2..200 per axis to **match the schema clamp** so a configured 200 actually
+  renders; no hidden product cap (default 24×24 = 576 cells is trivial; the 200×200
+  ceiling is the engineer's explicit choice). Gap/error parity with `sampleGrid`: a
+  per-cell throw or non-finite value → a `null` cell; a throw on **every** cell (undefined
+  name / unit mismatch) → a single structural `surface.error`. Pinned `z.min`/`z.max`
+  fix the height scale; else it's the finite-cell extent.
+- **Cabinet (parallel/axonometric) projection, auto-fit — no camera fields added.**
+  `SurfaceFigure` (`plot-present.tsx`, pure SVG, no hooks — renders in editor, history,
+  and the server-side export) projects normalized `(u, v, w)` with fixed basis weights
+  (x right `1.0`, depth up-right `0.42`/`0.30`, height `0.55`), echoing the mockup's
+  `Thumb3D`, then **auto-fits** the data cube's 8 corners into the frame so any z range
+  stays in bounds. Deliberately **no azimuth/elevation/zoom schema fields** — "the
+  deferred renderer adds only the renderer." Row lines (constant y) are the blueprint
+  profile (centre row emphasised, others height-shaded via accent opacity); column lines
+  (constant x) are faint depth structure; polylines split on `null` gaps. No painter's
+  sort — transparent stroke compositing is order-independent.
+- **Export mirrors the contour print path.** Like the contour PR's hand-rolled
+  `ContourBlock` (fixed print ink, not CSS vars), `lib/export/document.tsx` gets a
+  `SurfaceBlock` that re-projects the wireframe with the same cabinet math in print
+  hexes; a worksheet-name-bound `z` has no live scope in export, so it falls back to a
+  compact "set z / range" note.
+
 ## Table import & paste from Excel/CSV + copy a selection (Phase 2)
 
 - **Import surface = dialog only this phase.** A dedicated Import-data dialog on the
@@ -529,6 +571,23 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   `sel.plotLegend`). Controls with no backing field yet (trace-style dropdown, gridlines, scale,
   axis-labels, title, frame, "Chart") stay `disabled` with the existing "coming soon" treatment
   rather than faking behaviour.
+- **Contour now renders real iso-bands; only 3D surface stays inert.** The deferred 2D renderer
+  shipped for `contour`: `evaluatePlot` runs a new pure, synchronous `sampleGrid` (a default 24×24
+  grid = ~576 closed-form evals, the same order as a 1D sweep — no worker, the worker stays for
+  symbolic/heavy SciPy) that binds `xVar`/`yVar` carrying their axis units and converts each `z` to
+  the z display unit, returning a `ContourResult` (`x`/`y`/`z` grid, `zMin`/`zMax`, `levels`,
+  `zUnit`/`zLabel`) on `PlotResult.contour`. Per-point throws / non-finite results are NaN gaps; a
+  z-expr that fails to parse, throws everywhere, or never converts surfaces one typed error —
+  mirroring the 1D trace model. Iso-band geometry lives in pure `lib/calc/contour.ts`, computed
+  **per cell with no global stitching**: `contourBands` clips each cell quad to `z≥lo` then `z≤hi`
+  (Sutherland–Hodgman, linear edge crossings = the marching-squares chord), and `contourLines` is
+  per-cell marching squares (16-case table; saddles resolved by the cell-centre average) — both
+  emit data-space geometry, so they're unit-tested and the renderer just projects. `ContourFigure`
+  (still hook-free in `plot-present.tsx`, shared by editor/history/export) fills bands with a
+  **blueprint sequential ramp** — `var(--accent)` at increasing opacity (deeper = higher z),
+  theme-aware and design-system-faithful (no rainbow gradient) — with hairline band boundaries, a
+  lines-only mode (`filled === false`), and a compact colour scale (`showScale`). 3D `surface`
+  keeps the typed 'configure' placeholder (needs WebGL — next pass). No schema/entity change.
 
 ## Table / spreadsheet region (Func §6.3 + Claude Design `table-region.html`)
 
@@ -1711,3 +1770,37 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   nav collapses), with a translucent overlay that layers over conditional/spill fills.
   The head cell stays `sel` so the formula bar, cell editing, and its remount `key`
   are unchanged; read mode (`TablePresent`) and neighbouring regions are untouched.
+
+## Plot trace styling, themes, legend positioning & multiple data sources (Phase 2)
+
+- **Per-trace styling added to `plotTraceSchema`; no new reducer action.** `width`
+  (Zod-clamped 0.5–6 px) joins the pre-existing `color`/`dash`, and the inspector's
+  `TraceEditor` finally exposes all three (color swatch picker + custom well + reset,
+  a dashed `Switch`, a width input). `dash` stays a boolean (renderer maps it to the
+  `"5 3"` pattern) for back-compat with existing worksheets. Every field flows through
+  the existing `SET_PLOT_TRACE` (`Object.assign(trace, patch)`), so the reducer is
+  untouched. Renderer defaults are preserved (`width ?? 2` line, `?? 1.75` polar,
+  `?? 1.5` stem) so unstyled traces look exactly as before.
+- **Per-trace `xData` = multiple data sources.** A trace may carry its own `xData`
+  vector/range; `evaluatePlot` resolves a per-trace `Sampling` for it (reusing the
+  unchanged `resolveSampling`) and otherwise falls back to the plot-level `xData` —
+  so one plot can overlay traces from different table ranges, each with its own x.
+  `computeBounds` takes an `anyTraceXData` flag and prefers the union point extent
+  over the sweep span when any trace overrides x, so an override trace is never
+  clipped; a pinned `x.min`/`x.max` always wins. `lib/calc` stays pure; `graph.ts`/
+  `recalc.ts` untouched.
+- **`theme` + `legendPos` are presentation-only.** They live on `plotRegionSchema`
+  (NOT on the engine `PlotSpec`/`TraceResult`), since colors and layout are not part
+  of the deterministic value model. `legendPos` defaults `"bottom"`; the editor view
+  (`plot-region.tsx`) and read-only view (`render-only.tsx`) arrange the figure +
+  legend with a shared `legendFlex(pos)` helper (column for bottom/top, row with
+  vertically-stacked chips for left/right). The same change finally gates the legend
+  on `region.legend` (the on/off Switch was previously inert on the canvas).
+- **Theme palettes live in one pure module (`lib/worksheet/plot-theme.ts`).** It holds
+  the named palettes as print-safe hex so all THREE plot renderers share one table:
+  the on-screen `PlotFigure`/`PolarFigure`, the read-only `render-only` path, and the
+  framework-agnostic PDF/print path (`lib/export/document.tsx`, which is intentionally
+  free of client imports). On screen the `default` theme is swapped for design-system
+  CSS variables (`--accent`, `--status-pass`, …) so it tracks the light/dark theme;
+  the curated `blueprint`/`earth`/`contrast` themes are intentional fixed hues from
+  the locked base palette. An explicit per-trace `color` always overrides the theme.

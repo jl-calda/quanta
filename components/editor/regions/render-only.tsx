@@ -5,7 +5,7 @@ import { evaluatePlot, evaluateTable, type PlotSpec, type TableSpec } from "@/li
 import type { PlotRegion, RenderOnlyRegion, TableRegion } from "@/lib/worksheet/content";
 import { Icon, type IconName } from "../icons";
 import { TablePresent } from "./table-present";
-import { PlotEmptyState, PlotFigure, PlotLegend, PlotPlaceholder } from "./plot-present";
+import { ContourEmptyState, ContourFigure, legendFlex, PlotEmptyState, PlotFigure, PlotLegend, PlotPlaceholder } from "./plot-present";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -59,20 +59,36 @@ export function TableRegionView({ region }: RegionRenderProps<TableRegion>) {
  */
 export function PlotRegionView({ region }: RegionRenderProps<PlotRegion>) {
   const result = useMemo(() => evaluatePlot(region as PlotSpec, {}), [region]);
-  if (region.kind === "contour" || region.kind === "surface") return <PlotPlaceholder region={region} />;
+  if (region.kind === "surface") return <PlotPlaceholder region={region} />;
+  if (region.kind === "contour") {
+    if (!result.contour) return <ContourEmptyState region={region} />;
+    return (
+      <div style={{ maxWidth: 560 }}>
+        {region.title && <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 8 }}>{region.title}</div>}
+        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+          <ContourFigure result={result} region={region} />
+        </div>
+      </div>
+    );
+  }
   if (region.kind === "vector") {
     const configured = !!region.vector?.u?.trim() && !!region.vector?.v?.trim();
     if (!configured) return <PlotEmptyState />;
   } else if (region.traces.length === 0) {
     return <PlotEmptyState />;
   }
+  const { flexDirection, vertical } = legendFlex(region.legendPos);
   return (
     <div style={{ maxWidth: 560 }}>
       {region.title && <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 8 }}>{region.title}</div>}
-      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
-        <PlotFigure result={result} region={region} />
+      <div style={{ display: "flex", flexDirection, alignItems: vertical ? "center" : "stretch", gap: vertical ? 12 : 0 }}>
+        <div style={{ flex: vertical ? 1 : undefined, minWidth: 0, border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+          <PlotFigure result={result} region={region} />
+        </div>
+        {region.legend && (
+          <PlotLegend traces={result.traces} boundLabel={region.traces[0]?.expr ?? null} theme={region.theme} vertical={vertical} />
+        )}
       </div>
-      <PlotLegend traces={result.traces} boundLabel={region.traces[0]?.expr ?? null} />
     </div>
   );
 }
