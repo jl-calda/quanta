@@ -7,9 +7,11 @@ import {
   formatKeys,
   formatKeyToken,
   groupBindings,
+  SYMBOL_GROUPS,
   type KeyBinding,
   type KeyBindingGroup,
   type Platform,
+  type SymbolEntry,
 } from "@/lib/keymap";
 
 /**
@@ -109,6 +111,19 @@ function Row({ it, q, platform }: { it: KeyBinding; q: string; platform: Platfor
   );
 }
 
+/** A symbol reference row: STIX glyph + label, with the typed source as a chip. */
+function SymRow({ sym, q }: { sym: SymbolEntry; q: string }) {
+  return (
+    <div className="sc-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 8px", borderRadius: "var(--radius-sm)" }}>
+      <span style={{ flex: "0 0 auto", width: 26, textAlign: "center", font: "16px/1 var(--font-math)", color: "var(--text-math)" }}>{sym.glyph}</span>
+      <span style={{ flex: 1, minWidth: 0, font: "12.5px/1.4 var(--font-sans)", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <Highlight text={sym.label} q={q} />
+      </span>
+      <Key wide={sym.source.length > 2}>{sym.source}</Key>
+    </div>
+  );
+}
+
 export interface ShortcutsReferenceProps {
   /** Renders the close button + footer hint when provided (the modal case). */
   onClose?: () => void;
@@ -137,7 +152,28 @@ export function ShortcutsReference({ onClose, embedded }: ShortcutsReferenceProp
       }))
       .filter((g) => g.items.length);
   }, [groups, q, platform]);
-  const count = filtered.reduce((n, g) => n + g.items.length, 0);
+
+  // The math-symbol catalog (Greek, operators, relational, logic, sets…) — the
+  // SAME `/lib/keymap` table the symbol palette inserts from, so the modal stays
+  // a complete, drift-free reference.
+  const filteredSymbols = useMemo(() => {
+    const lc = q.trim().toLowerCase();
+    if (!lc) return SYMBOL_GROUPS;
+    return SYMBOL_GROUPS.map((g) => ({
+      ...g,
+      entries: g.entries.filter(
+        (s) =>
+          s.label.toLowerCase().includes(lc) ||
+          s.id.toLowerCase().includes(lc) ||
+          s.glyph === q.trim() ||
+          g.group.toLowerCase().includes(lc),
+      ),
+    })).filter((g) => g.entries.length);
+  }, [q]);
+
+  const bindingCount = filtered.reduce((n, g) => n + g.items.length, 0);
+  const symbolCount = filteredSymbols.reduce((n, g) => n + g.entries.length, 0);
+  const count = bindingCount + symbolCount;
 
   return (
     <div
@@ -198,21 +234,46 @@ export function ShortcutsReference({ onClose, embedded }: ShortcutsReferenceProp
             <div style={{ font: "12.5px/1.5 var(--font-sans)" }}>Try a different term, or clear the search.</div>
           </div>
         ) : (
-          <div style={{ columnWidth: 380, columnGap: 28 }}>
-            {filtered.map((g) => (
-              <div key={g.group} style={{ breakInside: "avoid", marginBottom: 18 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 8px 6px", borderBottom: "1px solid var(--border-hairline)", marginBottom: 4 }}>
-                  <span style={{ font: "600 11px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>{g.group}</span>
-                  {GROUP_NOTES[g.group] && (
-                    <span style={{ font: "11px/1.3 var(--font-sans)", color: "var(--text-muted)" }}>{GROUP_NOTES[g.group]}</span>
-                  )}
-                </div>
-                {g.items.map((it, i) => (
-                  <Row key={it.action + i} it={it} q={q} platform={platform} />
+          <>
+            {bindingCount > 0 && (
+              <div style={{ columnWidth: 380, columnGap: 28 }}>
+                {filtered.map((g) => (
+                  <div key={g.group} style={{ breakInside: "avoid", marginBottom: 18 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 8px 6px", borderBottom: "1px solid var(--border-hairline)", marginBottom: 4 }}>
+                      <span style={{ font: "600 11px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>{g.group}</span>
+                      {GROUP_NOTES[g.group] && (
+                        <span style={{ font: "11px/1.3 var(--font-sans)", color: "var(--text-muted)" }}>{GROUP_NOTES[g.group]}</span>
+                      )}
+                    </div>
+                    {g.items.map((it, i) => (
+                      <Row key={it.action + i} it={it} q={q} platform={platform} />
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
+            )}
+
+            {symbolCount > 0 && (
+              <div style={{ marginTop: bindingCount > 0 ? 6 : 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "4px 8px 10px", marginBottom: 8, borderBottom: "1px solid var(--border-hairline)" }}>
+                  <span style={{ font: "600 12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Math symbols</span>
+                  <span style={{ font: "11px/1.3 var(--font-sans)", color: "var(--text-muted)" }}>Insert from the symbol palette, or type the shown source.</span>
+                </div>
+                <div style={{ columnWidth: 380, columnGap: 28 }}>
+                  {filteredSymbols.map((g) => (
+                    <div key={g.group} style={{ breakInside: "avoid", marginBottom: 18 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 8px 6px", borderBottom: "1px solid var(--border-hairline)", marginBottom: 4 }}>
+                        <span style={{ font: "600 11px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>{g.group}</span>
+                      </div>
+                      {g.entries.map((s) => (
+                        <SymRow key={s.id} sym={s} q={q} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

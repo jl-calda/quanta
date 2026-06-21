@@ -1480,3 +1480,27 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   JSONB); RLS is unchanged. New reducer actions `SET_TABLE_SORT`/`SET_TABLE_FILTER`
   use `delete` on clear so cleared state leaves no `null` noise in JSONB, and they
   only mark the doc unsaved (display-only — no recalc).
+
+## Math keymap & symbol palette expansion (Phase 2)
+
+- **One catalog, two surfaces.** Broadened the single canonical catalog
+  (`lib/keymap/symbols.ts`) — added Greek variant forms, more structural operators
+  (nth-root, norm, ceil/floor, contour integral, cross/dot product), and two new
+  symbol families (Logic, Sets) plus extensions to Relational/Arrows/Misc. Because
+  the Insert-symbol palette and the ⌘K command registry already render
+  `SYMBOL_GROUPS`/`ALL_SYMBOLS` purely, every new entry surfaces in the palette
+  with no component change.
+- **Shortcuts modal gains a data-driven "Math symbols" reference** sourced from
+  the SAME `SYMBOL_GROUPS` table (not new keymap bindings). Most new glyphs
+  (∩ ∪ ∮ ∧ ∀) have no natural chord; minting fake chords would pollute the keymap
+  and misrepresent "type-then-convert" entry as keystrokes. The section is
+  strictly additive, searchable alongside the keybindings, and stays drift-free
+  (single source). This satisfies the requirement that new operators "appear in
+  the shortcuts modal, sourced from /lib/keymap."
+- **`contourIntegral` source is a numeric proxy.** Contour integration is symbolic
+  (Pyodide/SymPy) territory; the plain-text seed reuses a numeric `integral(...)`
+  so the inserted region stays evaluable rather than seeding an unparsable token.
+- **Ribbon gained exactly one tile (nth-root).** The Insert-symbol dialog is "the
+  operator palette" for this work; only nth-root — a high-value structural
+  operator with no prior ribbon presence — warranted a tile. Norm/ceil/floor/
+  contour/cross/dot stay dialog-only to keep the ribbon edit minimal.

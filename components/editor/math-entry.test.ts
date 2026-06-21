@@ -10,8 +10,9 @@ import {
 } from "./math-entry";
 
 const OP_KEYS: OperatorKey[] = [
-  "fraction", "exponent", "root", "subscript", "absolute", "factorial",
-  "summation", "product", "integral", "derivative", "partial", "limit",
+  "fraction", "exponent", "root", "nthRoot", "subscript", "absolute", "factorial",
+  "norm", "ceil", "floor", "crossProduct", "dotProduct",
+  "summation", "product", "integral", "contourIntegral", "derivative", "partial", "limit",
   "range", "index", "assign", "evaluate", "global",
 ];
 
