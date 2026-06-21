@@ -24,9 +24,12 @@ import {
   type PlotAnnotation,
   type PlotAxis,
   type PlotGrid,
+  type PlotHistogram,
   type PlotKind,
+  type PlotParam,
   type PlotReference,
   type PlotTrace,
+  type PlotVector,
   type PlotZ,
   type ProgramStatement,
   type Region,
@@ -148,6 +151,9 @@ export interface RegionPatch {
   z?: PlotZ;
   grid?: PlotGrid;
   surface?: SurfaceOptions;
+  histogram?: PlotHistogram;
+  vector?: PlotVector;
+  param?: PlotParam;
   /** Input-control fields (Mockup §6.7). `kind`/`unit`/`label` shared above. */
   bind?: string;
   label?: string;

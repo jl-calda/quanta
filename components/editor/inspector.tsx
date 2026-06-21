@@ -547,29 +547,65 @@ function PlotInspector({
     dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
   const setTrace = (traceId: string, patch: Partial<PlotTrace>) =>
     dispatch({ type: "SET_PLOT_TRACE", id: region.id, traceId, patch });
-  const is2D = region.kind === "contour" || region.kind === "surface";
-  const isXY = region.kind === "xy";
+  const kind = region.kind;
+  const is2D = kind === "contour" || kind === "surface";
+  const isXY = kind === "xy";
+  const isHistogram = kind === "histogram";
+  const isBoxplot = kind === "boxplot";
+  const isParametric = kind === "parametric";
+  const isVector = kind === "vector";
+  const isSweepXY = kind === "xy" || kind === "polar";
+  const dataKind = isHistogram || isBoxplot;
+
+  const setVector = (patch: Partial<PlotRegion["vector"]>) =>
+    set({ vector: { u: region.vector?.u ?? "", v: region.vector?.v ?? "", normalize: region.vector?.normalize, ...patch } });
+  const setParam = (patch: Partial<PlotRegion["param"]>) =>
+    set({ param: { var: region.param?.var ?? "t", min: region.param?.min, max: region.param?.max, ...patch } });
+
+  const onChangeKind = (k: PlotKind) => {
+    const patch: RegionPatch = { kind: k };
+    if (k === "parametric" && region.param?.min == null && region.param?.max == null) {
+      patch.param = { var: region.param?.var || "t", min: 0, max: 6.283185 };
+    }
+    if (k === "vector" && !region.vector) patch.vector = { u: "", v: "" };
+    set(patch);
+  };
+
+  const pvar = region.param?.var?.trim() || "t";
+  const addTrace = (
+    <button onClick={() => dispatch({ type: "ADD_PLOT_TRACE", id: region.id })} style={ADD_TRACE_BTN}>
+      <Icon name="plusSm" size={13} /> Add {dataKind ? "series" : isParametric ? "curve" : "trace"}
+    </button>
+  );
 
   return (
     <>
       <Group eyebrow="Plot type">
-        <PlotTypeGrid value={region.kind} onChange={(kind) => set({ kind })} />
+        <PlotTypeGrid value={kind} onChange={onChangeKind} />
       </Group>
 
-      <Group eyebrow="Independent variable">
-        <Row label={region.kind === "polar" ? "Angle θ" : "x variable"}>
-          <div style={{ width: 96 }}>
-            <Input key={`${region.id}:xvar`} mono defaultValue={region.xVar} placeholder="x" onBlur={(e) => set({ xVar: e.target.value.trim() || "x" })} />
-          </div>
-        </Row>
-        {is2D && (
+      {is2D && (
+        <Group eyebrow="Independent variables">
+          <Row label="x variable">
+            <div style={{ width: 96 }}>
+              <Input key={`${region.id}:xvar`} mono defaultValue={region.xVar} placeholder="x" onBlur={(e) => set({ xVar: e.target.value.trim() || "x" })} />
+            </div>
+          </Row>
           <Row label="y variable">
             <div style={{ width: 96 }}>
               <Input key={`${region.id}:yvar`} mono defaultValue={region.yVar} placeholder="y" onBlur={(e) => set({ yVar: e.target.value.trim() || "y" })} />
             </div>
           </Row>
-        )}
-        {!is2D && (
+        </Group>
+      )}
+
+      {isSweepXY && (
+        <Group eyebrow="Independent variable">
+          <Row label={kind === "polar" ? "Angle θ" : "x variable"}>
+            <div style={{ width: 96 }}>
+              <Input key={`${region.id}:xvar`} mono defaultValue={region.xVar} placeholder="x" onBlur={(e) => set({ xVar: e.target.value.trim() || "x" })} />
+            </div>
+          </Row>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>X data (optional)</span>
             <Input key={`${region.id}:xdata`} mono defaultValue={region.xData ?? ""} placeholder="e.g. anchor_dia" onBlur={(e) => set({ xData: e.target.value.trim() })} />
@@ -577,11 +613,34 @@ function PlotInspector({
               Set to plot against a range / table column; leave blank to sweep the x range.
             </span>
           </div>
-        )}
-      </Group>
+        </Group>
+      )}
 
-      <AxisInspector eyebrow={is2D ? "X axis" : "X axis (sweep)"} region={region} axisKey="x" axis={region.x} setAxis={setAxis} />
-      <AxisInspector eyebrow="Y axis" region={region} axisKey="y" axis={region.y} setAxis={setAxis} />
+      {isVector && (
+        <Group eyebrow="Grid variables">
+          <Row label="x variable">
+            <div style={{ width: 96 }}>
+              <Input key={`${region.id}:xvar`} mono defaultValue={region.xVar} placeholder="x" onBlur={(e) => set({ xVar: e.target.value.trim() || "x" })} />
+            </div>
+          </Row>
+          <Row label="y variable">
+            <div style={{ width: 96 }}>
+              <Input key={`${region.id}:yvar`} mono defaultValue={region.yVar} placeholder="y" onBlur={(e) => set({ yVar: e.target.value.trim() || "y" })} />
+            </div>
+          </Row>
+        </Group>
+      )}
+
+      {!isBoxplot && (
+        <AxisInspector
+          eyebrow={isHistogram ? "X axis (value)" : isVector ? "X axis (domain)" : isParametric || is2D ? "X axis" : "X axis (sweep)"}
+          region={region}
+          axisKey="x"
+          axis={region.x}
+          setAxis={setAxis}
+        />
+      )}
+      <AxisInspector eyebrow={isHistogram ? "Y axis (count)" : "Y axis"} region={region} axisKey="y" axis={region.y} setAxis={setAxis} />
       {isXY && (
         <AxisInspector
           eyebrow="Secondary Y axis (y₂)"
@@ -593,7 +652,96 @@ function PlotInspector({
         />
       )}
 
-      {is2D ? (
+      {isHistogram && (
+        <>
+          <Group eyebrow="Histogram">
+            <Row label="Bins">
+              <div style={{ width: 64 }}>
+                <Input key={`${region.id}:bins`} mono defaultValue={region.histogram?.bins != null ? String(region.histogram.bins) : ""} placeholder="auto" onBlur={(e) => set({ histogram: { bins: e.target.value.trim() === "" ? undefined : clampBins(e.target.value) } })} />
+              </div>
+            </Row>
+            <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+              Leave blank to choose the bin count automatically (Freedman–Diaconis).
+            </div>
+          </Group>
+          <Group eyebrow="Data series">
+            {region.traces.map((t) => (
+              <DataTraceEditor key={t.id} trace={t} setTrace={setTrace} onToggle={() => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: t.id })} onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })} />
+            ))}
+            {addTrace}
+          </Group>
+        </>
+      )}
+
+      {isBoxplot && (
+        <Group eyebrow="Data series">
+          {region.traces.map((t) => (
+            <DataTraceEditor key={t.id} trace={t} setTrace={setTrace} onToggle={() => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: t.id })} onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })} />
+          ))}
+          {addTrace}
+        </Group>
+      )}
+
+      {isParametric && (
+        <>
+          <Group eyebrow="Parameter">
+            <Row label="Parameter">
+              <div style={{ width: 96 }}>
+                <Input key={`${region.id}:pvar`} mono defaultValue={region.param?.var ?? "t"} placeholder="t" onBlur={(e) => setParam({ var: e.target.value.trim() || "t" })} />
+              </div>
+            </Row>
+            <Row label="Range">
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 60 }}>
+                  <Input key={`${region.id}:pmin`} mono defaultValue={region.param?.min != null ? String(region.param.min) : ""} placeholder="0" onBlur={(e) => setParam({ min: optionalNum(e.target.value) })} />
+                </div>
+                <span style={{ color: "var(--text-muted)" }}>–</span>
+                <div style={{ width: 60 }}>
+                  <Input key={`${region.id}:pmax`} mono defaultValue={region.param?.max != null ? String(region.param.max) : ""} placeholder="2π" onBlur={(e) => setParam({ max: optionalNum(e.target.value) })} />
+                </div>
+              </div>
+            </Row>
+            <Row label="Samples">
+              <SampleStepper value={region.samples ?? 80} set={(v) => set({ samples: v })} />
+            </Row>
+          </Group>
+          <Group eyebrow="Curves">
+            {region.traces.map((t) => (
+              <ParametricTraceEditor key={t.id} trace={t} pvar={pvar} setTrace={setTrace} onToggle={() => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: t.id })} onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })} />
+            ))}
+            {addTrace}
+          </Group>
+        </>
+      )}
+
+      {isVector && (
+        <Group eyebrow="Field — F(x, y) = (u, v)">
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>u — x-component</span>
+            <Input key={`${region.id}:vu`} mono defaultValue={region.vector?.u ?? ""} placeholder="-y" onBlur={(e) => setVector({ u: e.target.value })} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>v — y-component</span>
+            <Input key={`${region.id}:vv`} mono defaultValue={region.vector?.v ?? ""} placeholder="x" onBlur={(e) => setVector({ v: e.target.value })} />
+          </div>
+          <Row label="Grid resolution">
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 54 }}>
+                <Input key={`${region.id}:vgx`} mono defaultValue={String(region.grid?.x ?? 12)} onBlur={(e) => set({ grid: { x: clampGrid(e.target.value, region.grid?.x ?? 12), y: region.grid?.y ?? 12 } })} />
+              </div>
+              <span style={{ color: "var(--text-muted)" }}>×</span>
+              <div style={{ width: 54 }}>
+                <Input key={`${region.id}:vgy`} mono defaultValue={String(region.grid?.y ?? 12)} onBlur={(e) => set({ grid: { x: region.grid?.x ?? 12, y: clampGrid(e.target.value, region.grid?.y ?? 12) } })} />
+              </div>
+            </div>
+          </Row>
+          <Row label="Unit arrows">
+            <Switch checked={!!region.vector?.normalize} onChange={(e) => setVector({ normalize: e.target.checked })} />
+          </Row>
+        </Group>
+      )}
+
+      {is2D && (
         <Group eyebrow="Surface — z = f(x, y)">
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>z expression</span>
@@ -630,7 +778,9 @@ function PlotInspector({
             Saved with the worksheet; the {region.kind === "surface" ? "3D" : "contour"} renderer ships next.
           </div>
         </Group>
-      ) : (
+      )}
+
+      {isSweepXY && (
         <>
           <Group eyebrow="Chart">
             <Row label="Samples">
@@ -669,7 +819,7 @@ function PlotInspector({
                 onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })}
               />
             ))}
-            <AddRowButton label="Add trace" onClick={() => dispatch({ type: "ADD_PLOT_TRACE", id: region.id })} />
+            {addTrace}
           </Group>
 
           {isXY && (
@@ -992,6 +1142,18 @@ function PlotTypeGrid({ value, onChange }: { value: PlotKind; onChange: (kind: P
       <TypeTile label="3D surface" active={value === "surface"} onClick={() => onChange("surface")}>
         <Thumb3D />
       </TypeTile>
+      <TypeTile label="Histogram" active={value === "histogram"} onClick={() => onChange("histogram")}>
+        <ThumbHistogram />
+      </TypeTile>
+      <TypeTile label="Box plot" active={value === "boxplot"} onClick={() => onChange("boxplot")}>
+        <ThumbBoxplot />
+      </TypeTile>
+      <TypeTile label="Parametric" active={value === "parametric"} onClick={() => onChange("parametric")}>
+        <ThumbParametric />
+      </TypeTile>
+      <TypeTile label="Vector field" active={value === "vector"} onClick={() => onChange("vector")}>
+        <ThumbVector />
+      </TypeTile>
     </div>
   );
 }
@@ -1097,6 +1259,183 @@ function Thumb3D() {
       ))}
     </svg>
   );
+}
+
+function ThumbHistogram() {
+  const heights = [18, 30, 44, 38, 26, 14];
+  return (
+    <svg width="100%" viewBox="0 0 120 80" style={{ display: "block" }}>
+      <line x1="16" y1="64" x2="112" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      <line x1="16" y1="12" x2="16" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      {heights.map((h, i) => (
+        <rect key={i} x={18 + i * 15.5} y={64 - h} width="13" height={h} fill="#1F5FBF" opacity="0.22" stroke="#1F5FBF" strokeWidth="1.1" />
+      ))}
+    </svg>
+  );
+}
+
+function ThumbBoxplot() {
+  const box = (cx: number, lo: number, q1: number, med: number, q3: number, hi: number) => (
+    <g>
+      <line x1={cx} y1={hi} x2={cx} y2={q3} stroke="#1F5FBF" strokeWidth="1.2" />
+      <line x1={cx} y1={q1} x2={cx} y2={lo} stroke="#1F5FBF" strokeWidth="1.2" />
+      <rect x={cx - 9} y={q3} width="18" height={q1 - q3} fill="#1F5FBF" opacity="0.16" stroke="#1F5FBF" strokeWidth="1.2" />
+      <line x1={cx - 9} y1={med} x2={cx + 9} y2={med} stroke="#1F5FBF" strokeWidth="1.6" />
+    </g>
+  );
+  return (
+    <svg width="100%" viewBox="0 0 120 80" style={{ display: "block" }}>
+      <line x1="16" y1="64" x2="112" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      <line x1="16" y1="12" x2="16" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      {box(44, 58, 46, 38, 28, 18)}
+      {box(86, 54, 44, 34, 24, 16)}
+    </svg>
+  );
+}
+
+function ThumbParametric() {
+  const pts: string[] = [];
+  for (let a = 0; a <= 360; a += 10) {
+    const t = (a * Math.PI) / 180;
+    const x = 64 + 30 * Math.cos(t) * Math.cos(2 * t);
+    const y = 38 + 24 * Math.sin(t);
+    pts.push((a ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1));
+  }
+  return (
+    <svg width="100%" viewBox="0 0 120 80" style={{ display: "block" }}>
+      <line x1="16" y1="64" x2="112" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      <line x1="16" y1="12" x2="16" y2="64" stroke="var(--border-strong)" strokeWidth="1" />
+      <path d={pts.join(" ") + " Z"} fill="none" stroke="#1F5FBF" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function ThumbVector() {
+  const arrows: ReactNode[] = [];
+  for (let r = 0; r < 4; r += 1) {
+    for (let c = 0; c < 5; c += 1) {
+      const px = 26 + c * 18;
+      const py = 20 + r * 13;
+      const ang = Math.atan2(py - 42, px - 64) + Math.PI / 2;
+      const dx = 6 * Math.cos(ang);
+      const dy = 6 * Math.sin(ang);
+      arrows.push(<line key={`${r}-${c}`} x1={px - dx} y1={py - dy} x2={px + dx} y2={py + dy} stroke="#1F5FBF" strokeWidth="1.1" markerEnd="url(#thumb-vf)" />);
+    }
+  }
+  return (
+    <svg width="100%" viewBox="0 0 120 80" style={{ display: "block" }}>
+      <defs>
+        <marker id="thumb-vf" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+          <path d="M0 0L4 2.5L0 5z" fill="#1F5FBF" />
+        </marker>
+      </defs>
+      {arrows}
+    </svg>
+  );
+}
+
+/* ---- data-vector / parametric trace editors ---- */
+
+const TRACE_CARD: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  padding: "9px 10px",
+  border: "1px solid var(--border-hairline)",
+  borderRadius: "var(--radius-md)",
+  background: "var(--surface-raised)",
+};
+
+const ADD_TRACE_BTN: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  alignSelf: "flex-start",
+  border: "none",
+  background: "none",
+  color: "var(--accent)",
+  font: "500 12px/1 var(--font-sans)",
+  cursor: "pointer",
+  padding: 0,
+};
+
+/** Histogram / box-plot series — the expression is a data vector, so no style picker. */
+function DataTraceEditor({
+  trace,
+  setTrace,
+  onToggle,
+  onDelete,
+}: {
+  trace: PlotTrace;
+  setTrace: (traceId: string, patch: Partial<PlotTrace>) => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div style={TRACE_CARD}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11px/1 var(--font-mono)", color: "var(--accent)" }}>data</span>
+        <Input key={`${trace.id}:expr`} mono defaultValue={trace.expr} placeholder="sample_data" onBlur={(e) => setTrace(trace.id, { expr: e.target.value })} containerStyle={{ flex: 1 }} />
+        <IconButton label={trace.hidden ? "Show series" : "Hide series"} size="sm" onClick={onToggle}>
+          <Icon name="eye" size={14} />
+        </IconButton>
+        <IconButton label="Delete series" size="sm" onClick={onDelete}>
+          <Icon name="x" size={14} />
+        </IconButton>
+      </div>
+      <Input key={`${trace.id}:label`} defaultValue={trace.label ?? ""} placeholder="Label" onBlur={(e) => setTrace(trace.id, { label: e.target.value.trim() || undefined })} containerStyle={{ width: 140 }} />
+    </div>
+  );
+}
+
+/** Parametric curve — paired x(t) / y(t) expressions swept over the parameter. */
+function ParametricTraceEditor({
+  trace,
+  pvar,
+  setTrace,
+  onToggle,
+  onDelete,
+}: {
+  trace: PlotTrace;
+  pvar: string;
+  setTrace: (traceId: string, patch: Partial<PlotTrace>) => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div style={TRACE_CARD}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11px/1 var(--font-mono)", color: "var(--accent)" }}>x({pvar})</span>
+        <Input key={`${trace.id}:xexpr`} mono defaultValue={trace.xExpr ?? ""} placeholder="cos(t)" onBlur={(e) => setTrace(trace.id, { xExpr: e.target.value })} containerStyle={{ flex: 1 }} />
+        <IconButton label={trace.hidden ? "Show curve" : "Hide curve"} size="sm" onClick={onToggle}>
+          <Icon name="eye" size={14} />
+        </IconButton>
+        <IconButton label="Delete curve" size="sm" onClick={onDelete}>
+          <Icon name="x" size={14} />
+        </IconButton>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11px/1 var(--font-mono)", color: "var(--accent)" }}>y({pvar})</span>
+        <Input key={`${trace.id}:expr`} mono defaultValue={trace.expr} placeholder="sin(t)" onBlur={(e) => setTrace(trace.id, { expr: e.target.value })} containerStyle={{ flex: 1 }} />
+        <Input key={`${trace.id}:label`} defaultValue={trace.label ?? ""} placeholder="Label" onBlur={(e) => setTrace(trace.id, { label: e.target.value.trim() || undefined })} containerStyle={{ width: 96 }} />
+      </div>
+    </div>
+  );
+}
+
+/** Integer bin count, clamped to the schema's 1–200 range. */
+function clampBins(raw: string): number {
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n)) return 10;
+  return Math.max(1, Math.min(200, Math.round(n)));
+}
+
+/** Parse an optional numeric input — blank / non-finite clears the value. */
+function optionalNum(raw: string): number | undefined {
+  const t = raw.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /** Samples stepper (10–400, step 10) — distinct range from the decimals Stepper. */

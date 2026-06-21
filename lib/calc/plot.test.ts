@@ -500,3 +500,125 @@ describe("nice-number helpers", () => {
     expect(niceNum(2.1, true)).toBe(2);
   });
 });
+
+describe("evaluatePlot — histogram", () => {
+  it("bins a data vector into bars and counts every sample", () => {
+    const res = evaluatePlot({
+      kind: "histogram",
+      histogram: { bins: 4 },
+      traces: [{ id: "h", expr: "[0, 1, 2, 3, 4, 5, 6, 7]" }],
+    });
+    expect(res.kind).toBe("histogram");
+    expect(res.empty).toBe(false);
+    const bins = res.traces[0].bins!;
+    expect(bins).toHaveLength(4);
+    const total = bins.reduce((a, b) => a + b.count, 0);
+    expect(total).toBe(8);
+    // y-axis spans the count, x-axis spans the data.
+    expect(res.bounds.yMin).toBe(0);
+    expect(res.bounds.xMin).toBe(0);
+    expect(res.bounds.xMax).toBe(7);
+  });
+
+  it("errors a trace whose expression is undefined, without throwing", () => {
+    const res = evaluatePlot({ kind: "histogram", traces: [{ id: "h", expr: "missing_name" }] });
+    expect(res.traces[0].error).toBeDefined();
+    expect(res.empty).toBe(true);
+  });
+});
+
+describe("evaluatePlot — boxplot", () => {
+  it("summarises each trace's data vector as a box", () => {
+    const res = evaluatePlot({
+      kind: "boxplot",
+      traces: [{ id: "b", expr: "[1, 2, 3, 4, 5]" }],
+    });
+    expect(res.kind).toBe("boxplot");
+    const box = res.traces[0].box!;
+    expect(box.median).toBe(3);
+    expect(box.q1).toBeCloseTo(2, 10);
+    expect(box.q3).toBeCloseTo(4, 10);
+    expect(res.empty).toBe(false);
+    // x is categorical (one box), y spans the values.
+    expect(res.bounds.xMax).toBe(1);
+  });
+});
+
+describe("evaluatePlot — parametric", () => {
+  it("traces (x(t), y(t)) over the parameter range", () => {
+    const res = evaluatePlot({
+      kind: "parametric",
+      param: { var: "t", min: 0, max: 1 },
+      samples: 5,
+      traces: [{ id: "p", expr: "t", xExpr: "2*t" }],
+    });
+    expect(res.kind).toBe("parametric");
+    const pts = res.traces[0].points;
+    expect(pts).toHaveLength(5);
+    expect(pts[0]).toEqual({ x: 0, y: 0 });
+    expect(pts[4]).toEqual({ x: 2, y: 1 });
+  });
+
+  it("plots y(t) against t when x(t) is blank", () => {
+    const res = evaluatePlot({
+      kind: "parametric",
+      param: { var: "t", min: 0, max: 2 },
+      samples: 3,
+      traces: [{ id: "p", expr: "t^2" }],
+    });
+    const pts = res.traces[0].points;
+    expect(pts[0]).toEqual({ x: 0, y: 0 });
+    expect(pts[2]).toEqual({ x: 2, y: 4 });
+  });
+
+  it("does not force the bare parameter through the x-axis unit when x(t) is blank", () => {
+    const res = evaluatePlot({
+      kind: "parametric",
+      param: { var: "t", min: 0, max: 2 },
+      samples: 3,
+      x: { unit: "s" }, // a unit on x must not break the dimensionless parameter
+      traces: [{ id: "p", expr: "t" }],
+    });
+    expect(res.traces[0].error).toBeUndefined();
+    expect(res.traces[0].points).toHaveLength(3);
+    expect(res.traces[0].points[2]).toEqual({ x: 2, y: 2 });
+  });
+});
+
+describe("evaluatePlot — vector field", () => {
+  it("samples F(x, y) = (u, v) on a grid into one synthetic trace", () => {
+    const res = evaluatePlot({
+      kind: "vector",
+      vector: { u: "1", v: "0" },
+      grid: { x: 3, y: 3 },
+      x: { min: 0, max: 1 },
+      y: { min: 0, max: 1 },
+    });
+    expect(res.kind).toBe("vector");
+    const vecs = res.traces[0].vectors!;
+    expect(vecs).toHaveLength(9);
+    expect(vecs[0].u).toBe(1);
+    expect(vecs[0].v).toBe(0);
+    expect(vecs[0].mag).toBe(1);
+    expect(res.empty).toBe(false);
+  });
+
+  it("normalizes arrows to unit length while keeping the magnitude", () => {
+    const res = evaluatePlot({
+      kind: "vector",
+      vector: { u: "3", v: "4", normalize: true },
+      grid: { x: 2, y: 2 },
+      x: { min: 0, max: 1 },
+      y: { min: 0, max: 1 },
+    });
+    const v = res.traces[0].vectors![0];
+    expect(Math.hypot(v.u, v.v)).toBeCloseTo(1, 10);
+    expect(v.mag).toBeCloseTo(5, 10);
+  });
+
+  it("is empty (not thrown) when components are unset", () => {
+    const res = evaluatePlot({ kind: "vector", vector: { u: "", v: "" } });
+    expect(res.empty).toBe(true);
+    expect(res.traces[0].vectors).toEqual([]);
+  });
+});

@@ -175,6 +175,17 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
   if (result.kind === "polar") {
     return <PolarFigure result={result} theme={region.theme} height={height} />;
   }
+  if (result.kind === "histogram") {
+    return <HistogramFigure result={result} region={region} height={height} />;
+  }
+  if (result.kind === "boxplot") {
+    return <BoxplotFigure result={result} region={region} height={height} />;
+  }
+  if (result.kind === "vector") {
+    return <VectorFigure result={result} region={region} height={height} />;
+  }
+  // `parametric` falls through to the cartesian body below — its (x(t), y(t))
+  // points draw as an ordinary line/scatter trace with no special handling.
 
   const { xMin, xMax, yMin, yMax, y2Min, y2Max } = result.bounds;
 
@@ -654,6 +665,203 @@ function PolarFigure({ result, theme, height }: { result: PlotResult; theme?: st
           })
           .join(" ");
         return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth={t.width ?? 1.75} strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
+      })}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Shared cartesian frame (gridlines + axes + ticks + labels)
+ * ------------------------------------------------------------------ */
+
+function XYFrame({
+  sx,
+  sy,
+  xticks,
+  yticks,
+  xLabel,
+  yLabel,
+  xUnit,
+  yUnit,
+  height,
+}: {
+  sx: (v: number) => number;
+  sy: (v: number) => number;
+  xticks: number[];
+  yticks: number[];
+  xLabel: string;
+  yLabel: string;
+  xUnit: string | null;
+  yUnit: string | null;
+  height: number;
+}) {
+  return (
+    <>
+      {yticks.map((v, i) => (
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={X1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      {xticks.map((v, i) => (
+        <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+      {xticks.map((v, i) => (
+        <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      {yticks.map((v, i) => (
+        <text key={`ty${i}`} x={X0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      <text x={(X0 + X1) / 2} y={height - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={xLabel} unit={xUnit} />
+      </text>
+      <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={yLabel} unit={yUnit} />
+      </text>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Histogram figure (binned counts as bars)
+ * ------------------------------------------------------------------ */
+
+function HistogramFigure({ result, region, height }: { result: PlotResult; region: PlotFigureProps["region"]; height?: number }) {
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const xticks = niceTicks(xMin, xMax, 7);
+  const yticks = niceTicks(yMin, yMax, 5);
+  const drawable = result.traces.filter((t) => !t.hidden && !t.error && t.bins && t.bins.length > 0);
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Histogram">
+      <XYFrame sx={sx} sy={sy} xticks={xticks} yticks={yticks} xLabel={region.x?.label || region.xVar || "x"} yLabel={region.y?.label || "count"} xUnit={result.xUnit} yUnit={result.yUnit} height={height ?? H} />
+      {drawable.map((t, ti) => {
+        const color = traceColor(ti, t.color);
+        return (
+          <g key={t.id}>
+            {t.bins!.map((b, i) => {
+              const x0 = sx(b.x0);
+              const x1 = sx(b.x1);
+              const top = sy(b.count);
+              const w = Math.max(0.5, x1 - x0 - 1);
+              return <rect key={i} x={x0 + 0.5} y={top} width={w} height={Math.max(0, Y0 - top)} fill={color} opacity={0.22} stroke={color} strokeWidth="1.2" />;
+            })}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Box-and-whisker figure (one box per trace, categorical x)
+ * ------------------------------------------------------------------ */
+
+function BoxplotFigure({ result, region, height }: { result: PlotResult; region: PlotFigureProps["region"]; height?: number }) {
+  const { yMin, yMax } = result.bounds;
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const yticks = niceTicks(yMin, yMax, 5);
+  const boxes = result.traces.filter((t) => !t.hidden && !t.error && t.box);
+  const n = Math.max(1, boxes.length);
+  const slot = (X1 - X0) / n;
+  const boxW = Math.min(54, slot * 0.5);
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Box plot">
+      {/* y gridlines + axes */}
+      {yticks.map((v, i) => (
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={X1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+      {yticks.map((v, i) => (
+        <text key={`ty${i}`} x={X0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.y?.label || "value"} unit={result.yUnit} />
+      </text>
+      {boxes.map((t, i) => {
+        const cx = X0 + slot * (i + 0.5);
+        const color = traceColor(i, t.color);
+        const b = t.box!;
+        const q1 = sy(b.q1);
+        const q3 = sy(b.q3);
+        const med = sy(b.median);
+        const wlo = sy(b.min);
+        const whi = sy(b.max);
+        return (
+          <g key={t.id}>
+            {/* whiskers */}
+            <line x1={cx} y1={whi} x2={cx} y2={q3} stroke={color} strokeWidth="1.4" />
+            <line x1={cx} y1={q1} x2={cx} y2={wlo} stroke={color} strokeWidth="1.4" />
+            <line x1={cx - boxW / 3} y1={whi} x2={cx + boxW / 3} y2={whi} stroke={color} strokeWidth="1.4" />
+            <line x1={cx - boxW / 3} y1={wlo} x2={cx + boxW / 3} y2={wlo} stroke={color} strokeWidth="1.4" />
+            {/* box (Q1–Q3) */}
+            <rect x={cx - boxW / 2} y={q3} width={boxW} height={Math.max(0.5, q1 - q3)} fill={color} opacity={0.16} stroke={color} strokeWidth="1.4" />
+            {/* median */}
+            <line x1={cx - boxW / 2} y1={med} x2={cx + boxW / 2} y2={med} stroke={color} strokeWidth="2" />
+            {/* outliers */}
+            {b.outliers.map((o, k) => (
+              <circle key={k} cx={cx} cy={sy(o)} r="2.4" fill="var(--surface-paper)" stroke={color} strokeWidth="1.4" />
+            ))}
+            {/* category label */}
+            <text x={cx} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-sans)", fill: "var(--text-muted)" }}>
+              {t.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Vector-field figure (arrows on a grid)
+ * ------------------------------------------------------------------ */
+
+function VectorFigure({ result, region, height }: { result: PlotResult; region: PlotFigureProps["region"]; height?: number }) {
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const xticks = niceTicks(xMin, xMax, 7);
+  const yticks = niceTicks(yMin, yMax, 5);
+  const vectors = result.traces[0]?.vectors ?? [];
+  const color = traceColor(0, result.traces[0]?.color);
+
+  // Scale arrows so the longest fits within one grid cell (in screen px).
+  const cells = Math.max(1, Math.round(Math.sqrt(vectors.length)));
+  const cell = ((X1 - X0) / cells) * 0.9;
+  let maxMag = 0;
+  for (const v of vectors) if (v.mag > maxMag) maxMag = v.mag;
+  const scale = maxMag > 0 ? cell / maxMag : 0;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Vector field">
+      <defs>
+        <marker id="vf-arrow" markerWidth="6" markerHeight="6" refX="4.5" refY="3" orient="auto">
+          <path d="M0 0L5 3L0 6z" fill={color} />
+        </marker>
+      </defs>
+      <XYFrame sx={sx} sy={sy} xticks={xticks} yticks={yticks} xLabel={region.x?.label || region.xVar || "x"} yLabel={region.y?.label || "y"} xUnit={result.xUnit} yUnit={result.yUnit} height={height ?? H} />
+      {vectors.map((v, i) => {
+        const px = sx(v.x);
+        const py = sy(v.y);
+        // Arrow vector in screen px (y inverts). Half-length each side of the base point.
+        const dx = v.u * scale;
+        const dy = -v.v * scale;
+        const x1 = px - dx / 2;
+        const y1 = py - dy / 2;
+        const x2 = px + dx / 2;
+        const y2 = py + dy / 2;
+        const op = maxMag > 0 ? 0.35 + 0.55 * (v.mag / maxMag) : 0.6;
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth="1.3" opacity={op} markerEnd="url(#vf-arrow)" />;
       })}
     </svg>
   );

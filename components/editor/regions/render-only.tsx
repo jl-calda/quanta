@@ -71,7 +71,12 @@ export function PlotRegionView({ region }: RegionRenderProps<PlotRegion>) {
       </div>
     );
   }
-  if (region.traces.length === 0) return <PlotEmptyState />;
+  if (region.kind === "vector") {
+    const configured = !!region.vector?.u?.trim() && !!region.vector?.v?.trim();
+    if (!configured) return <PlotEmptyState />;
+  } else if (region.traces.length === 0) {
+    return <PlotEmptyState />;
+  }
   const { flexDirection, vertical } = legendFlex(region.legendPos);
   return (
     <div style={{ maxWidth: 560 }}>

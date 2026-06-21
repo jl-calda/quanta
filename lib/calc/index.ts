@@ -125,6 +125,9 @@ export {
   type PlotSurface,
   type TraceResult,
   type PlotBounds,
+  type VectorSample,
+  type Bin,
+  type BoxStats,
   type ResolvedReference,
   type ResolvedAnnotation,
 } from "./plot";
