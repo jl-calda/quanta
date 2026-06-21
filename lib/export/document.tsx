@@ -17,6 +17,8 @@ import type { ReactNode } from "react";
 import katex from "katex";
 import {
   constraintToLatex,
+  contourBands,
+  contourLines,
   evaluatePlot,
   evaluateProgram,
   evaluateSolve,
@@ -372,9 +374,13 @@ function PlotBlock({
     </div>
   );
 
-  // contour/3D (config-only this pass) and unconfigured plots: a compact print note.
-  if (region.kind === "contour" || region.kind === "surface") {
-    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{region.kind === "surface" ? "3D surface" : "Contour"} plot — configured.</div>);
+  // Surface: render the same projected wireframe the editor draws (pure, runs in Node).
+  if (region.kind === "surface") {
+    return wrap(<SurfaceBlock region={region} />);
+  }
+  // Contour: render the same iso-bands the editor draws (pure geometry, runs in Node).
+  if (region.kind === "contour") {
+    return wrap(<ContourBlock region={region} />);
   }
   if (region.traces.length === 0) {
     return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>No traces yet.</div>);
@@ -416,6 +422,175 @@ function PlotBlock({
         );
       })}
     </svg>,
+  );
+}
+
+/**
+ * Printed contour — the same pure `evaluatePlot` sampling + `./contour` iso-band
+ * geometry the editor uses, drawn with the page's blueprint ink (a sequential
+ * opacity ramp, deeper = higher z) plus a compact colour scale.
+ */
+function ContourBlock({ region }: { region: PlotRegion }): ReactNode {
+  const result = evaluatePlot(region, {});
+  const grid = result.contour;
+  if (!grid || grid.error) {
+    return (
+      <div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>
+        {grid?.error ? grid.error.message : "Contour plot — set z = f(x, y) and an x/y range."}
+      </div>
+    );
+  }
+  const BLUEPRINT = "#1F5FBF";
+  const filled = region.surface?.filled ?? true;
+  const X0 = 46;
+  const Y0 = 166;
+  const Y1 = 14;
+  const X1 = 454 - 38; // leave a gutter for the colour scale
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+  const op = (t: number) => 0.06 + 0.8 * Math.max(0, Math.min(1, t));
+  const toPath = (poly: ReadonlyArray<readonly [number, number]>) =>
+    poly.map(([px, py], i) => `${i ? "L" : "M"}${sx(px).toFixed(1)} ${sy(py).toFixed(1)}`).join(" ") + " Z";
+  const bands = filled ? contourBands(grid) : [];
+  const lines = contourLines(grid);
+  const span = grid.zMax - grid.zMin || 1;
+  const syz = (v: number) => Y0 - ((v - grid.zMin) / span) * (Y0 - Y1);
+  const scaleX = X1 + 10;
+
+  return (
+    <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Contour plot">
+      {filled &&
+        bands.map((b, i) => (
+          <g key={`b${i}`} fill={BLUEPRINT} fillOpacity={op(b.t)}>
+            {b.polygons.map((poly, j) => (
+              <path key={j} d={toPath(poly)} />
+            ))}
+          </g>
+        ))}
+      {lines.map((ls, i) => (
+        <g key={`l${i}`} stroke={filled ? "#FFFFFF" : BLUEPRINT} strokeOpacity={filled ? 0.6 : 0.45 + 0.4 * ls.t} strokeWidth={filled ? 0.5 : 1.2}>
+          {ls.segments.map((seg, j) => (
+            <line key={j} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])} />
+          ))}
+        </g>
+      ))}
+      <line x1={X0} y1={Y0} x2={X1} y2={Y0} stroke={STRONG_RULE} strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke={STRONG_RULE} strokeWidth="1.2" />
+      {grid.levels.slice(0, -1).map((lo, i) => {
+        const hi = grid.levels[i + 1];
+        const t = ((lo + hi) / 2 - grid.zMin) / span;
+        return <rect key={i} x={scaleX} y={syz(hi)} width="8" height={Math.max(0.5, syz(lo) - syz(hi))} fill={BLUEPRINT} fillOpacity={op(t)} />;
+      })}
+      <rect x={scaleX} y={Y1} width="8" height={Y0 - Y1} fill="none" stroke={HAIRLINE} strokeWidth="1" />
+    </svg>
+  );
+}
+
+function SurfaceBlock({ region }: { region: PlotRegion }): ReactNode {
+  const result = evaluatePlot(region, {});
+  const s = result.surface;
+  if (!s || s.error) {
+    return (
+      <div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>
+        {s?.error ? s.error.message : "3D surface plot — set z = f(x, y) and an x/y range."}
+      </div>
+    );
+  }
+  const BLUEPRINT = "#1F5FBF";
+  const nx = s.xs.length;
+  const ny = s.ys.length;
+
+  // Cabinet projection + auto-fit (mirrors the editor's SurfaceFigure; print ink).
+  const fL = 40;
+  const fR = 454;
+  const fT = 14;
+  const fB = 166;
+  const XW = 1.0;
+  const DX = 0.42;
+  const DY = 0.3;
+  const ZH = 0.55;
+  const zSpan = s.zMax - s.zMin || 1;
+  const normW = (z: number) => {
+    const w = (z - s.zMin) / zSpan;
+    return w < 0 ? 0 : w > 1 ? 1 : w;
+  };
+  let axMin = Infinity;
+  let axMax = -Infinity;
+  let ayMin = Infinity;
+  let ayMax = -Infinity;
+  for (const u of [0, 1]) {
+    for (const v of [0, 1]) {
+      for (const w of [0, 1]) {
+        const ax = u * XW + v * DX;
+        const ay = v * DY + w * ZH;
+        if (ax < axMin) axMin = ax;
+        if (ax > axMax) axMax = ax;
+        if (ay < ayMin) ayMin = ay;
+        if (ay > ayMax) ayMax = ay;
+      }
+    }
+  }
+  const axSpan = axMax - axMin || 1;
+  const aySpan = ayMax - ayMin || 1;
+  const scale = Math.min((fR - fL) / axSpan, (fB - fT) / aySpan);
+  const padX = fL + ((fR - fL) - axSpan * scale) / 2;
+  const padY = fT + ((fB - fT) - aySpan * scale) / 2;
+  const px = (u: number, v: number) => padX + (u * XW + v * DX - axMin) * scale;
+  const py = (u: number, v: number, w: number) => padY + (ayMax - (v * DY + w * ZH)) * scale;
+  const U = (xi: number) => (nx > 1 ? xi / (nx - 1) : 0);
+  const V = (yi: number) => (ny > 1 ? yi / (ny - 1) : 0);
+  const pathFor = (cells: { u: number; v: number; z: number | null }[]) => {
+    let d = "";
+    let pen = false;
+    for (const c of cells) {
+      if (c.z == null) {
+        pen = false;
+        continue;
+      }
+      const w = normW(c.z);
+      d += `${pen ? "L" : "M"}${px(c.u, c.v).toFixed(1)} ${py(c.u, c.v, w).toFixed(1)} `;
+      pen = true;
+    }
+    return d.trim();
+  };
+  const cols: string[] = [];
+  for (let xi = 0; xi < nx; xi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    for (let yi = 0; yi < ny; yi += 1) cells.push({ u: U(xi), v: V(yi), z: s.z[yi]?.[xi] ?? null });
+    cols.push(pathFor(cells));
+  }
+  const centerRow = Math.floor(ny / 2);
+  const rows: { d: string; meanW: number; center: boolean }[] = [];
+  for (let yi = 0; yi < ny; yi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    let sum = 0;
+    let cnt = 0;
+    for (let xi = 0; xi < nx; xi += 1) {
+      const z = s.z[yi]?.[xi] ?? null;
+      cells.push({ u: U(xi), v: V(yi), z });
+      if (z != null) {
+        sum += normW(z);
+        cnt += 1;
+      }
+    }
+    rows.push({ d: pathFor(cells), meanW: cnt ? sum / cnt : 0, center: yi === centerRow });
+  }
+  const ox = px(0, 0);
+  const oy = py(0, 0, 0);
+
+  return (
+    <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="3D surface plot">
+      <line x1={ox} y1={oy} x2={px(1, 0)} y2={py(1, 0, 0)} stroke={STRONG_RULE} strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 1)} y2={py(0, 1, 0)} stroke={STRONG_RULE} strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 0)} y2={py(0, 0, 1)} stroke={STRONG_RULE} strokeWidth="1.2" />
+      {cols.map((d, i) => (d ? <path key={`c${i}`} d={d} fill="none" stroke={STRONG_RULE} strokeWidth="1" strokeOpacity={0.55} /> : null))}
+      {rows.map((r, i) =>
+        r.d ? (
+          <path key={`r${i}`} d={r.d} fill="none" stroke={BLUEPRINT} strokeWidth={r.center ? 1.5 : 1.1} strokeOpacity={r.center ? 1 : Math.min(0.95, 0.4 + 0.5 * r.meanW)} />
+        ) : null,
+      )}
+    </svg>
   );
 }
 

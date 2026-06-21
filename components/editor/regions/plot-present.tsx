@@ -11,6 +11,8 @@
  */
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import {
+  contourBands,
+  contourLines,
   niceNum,
   resolveScale,
   linthreshOf,
@@ -18,6 +20,8 @@ import {
   logTicks,
   symlogTicks,
   type AxisScale,
+  type CalcError,
+  type ContourResult,
   type PlotPoint,
   type PlotResult,
   type PlotTraceStyle,
@@ -621,6 +625,393 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
 }
 
 /* ------------------------------------------------------------------ *
+ * Contour figure (z = f(x, y) iso-bands)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Filled iso-band (or iso-line) rendering of a sampled `z = f(x, y)` field — pure
+ * SVG, hook-free, so the same figure draws in the editor, history, and the Node
+ * export path. Bands/lines come from the pure `./contour` geometry; shading is a
+ * blueprint sequential ramp (`var(--accent)` at increasing opacity → deeper blue
+ * = higher z), which honours the design system and adapts to the dark theme.
+ */
+export function ContourFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "z" | "surface">;
+  height?: number;
+}) {
+  const grid = result.contour;
+  if (!grid) return null;
+  if (grid.error) return <ContourErrorNote error={grid.error} />;
+
+  const showScale = region.surface?.showScale ?? true;
+  const filled = region.surface?.filled ?? true;
+  const SCALE_W = showScale ? 40 : 0;
+  const PX1 = X1 - SCALE_W; // plot right edge (leaves a gutter for the colour scale)
+
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (PX1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+
+  const bands = filled ? contourBands(grid) : [];
+  const lines = contourLines(grid);
+  const xticks = niceTicks(xMin, xMax, 6);
+  const yticks = niceTicks(yMin, yMax, 5);
+
+  const toPath = (poly: ReadonlyArray<readonly [number, number]>) =>
+    poly.map(([px, py], i) => `${i ? "L" : "M"}${sx(px).toFixed(1)} ${sy(py).toFixed(1)}`).join(" ") + " Z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Contour plot">
+      {/* faint interior gridlines (visible in lines-only mode; mostly under the fill) */}
+      {yticks.map((v, i) => (
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={PX1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      {xticks.map((v, i) => (
+        <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+
+      {/* filled iso-bands */}
+      {filled &&
+        bands.map((b, i) => (
+          <g key={`b${i}`} fill="var(--accent)" fillOpacity={bandOpacity(b.t)}>
+            {b.polygons.map((poly, j) => (
+              <path key={j} d={toPath(poly)} />
+            ))}
+          </g>
+        ))}
+
+      {/* iso-lines — faint hairlines between bands when filled, blueprint strokes when not */}
+      {lines.map((ls, i) => (
+        <g
+          key={`l${i}`}
+          stroke={filled ? "var(--surface-paper)" : "var(--accent)"}
+          strokeOpacity={filled ? 0.55 : 0.35 + 0.5 * ls.t}
+          strokeWidth={filled ? 0.6 : 1.4}
+          strokeLinecap="round"
+        >
+          {ls.segments.map((seg, j) => (
+            <line key={j} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])} />
+          ))}
+        </g>
+      ))}
+
+      {/* axes */}
+      <line x1={X0} y1={Y0} x2={PX1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* ticks */}
+      {xticks.map((v, i) => (
+        <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      {yticks.map((v, i) => (
+        <text key={`ty${i}`} x={X0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+
+      {/* axis labels */}
+      <text x={(X0 + PX1) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.x?.label || region.xVar || "x"} unit={result.xUnit} />
+      </text>
+      <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.y?.label || "y"} unit={result.yUnit} />
+      </text>
+
+      {showScale && <ContourScale grid={grid} x={PX1 + 12} />}
+    </svg>
+  );
+}
+
+/** Blueprint sequential shade for a band at normalized position `t` (0 low → 1 high). */
+function bandOpacity(t: number): number {
+  return 0.06 + 0.8 * Math.max(0, Math.min(1, t));
+}
+
+/** Vertical colour scale (band swatches + z extent), drawn in the right-hand gutter. */
+function ContourScale({ grid, x }: { grid: ContourResult; x: number }) {
+  const { levels, zMin, zMax, zUnit, zLabel } = grid;
+  const span = zMax - zMin || 1;
+  const syz = (v: number) => Y0 - ((v - zMin) / span) * (Y0 - Y1);
+  const barW = 9;
+  return (
+    <g>
+      {levels.slice(0, -1).map((lo, i) => {
+        const hi = levels[i + 1];
+        const yTop = syz(hi);
+        const yBot = syz(lo);
+        const t = (((lo + hi) / 2 - zMin) / span);
+        return (
+          <rect key={i} x={x} y={yTop} width={barW} height={Math.max(0.5, yBot - yTop)} fill="var(--accent)" fillOpacity={bandOpacity(t)} />
+        );
+      })}
+      <rect x={x} y={Y1} width={barW} height={Y0 - Y1} fill="none" stroke="var(--border-hairline)" strokeWidth="1" />
+      <text x={x + barW + 4} y={Y1 + 4} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMax)}</text>
+      <text x={x + barW + 4} y={Y0} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMin)}</text>
+      <text x={x + barW / 2} y={Y1 - 4} textAnchor="middle" style={{ font: "10px var(--font-math)", fontStyle: "italic", fill: "var(--text-primary)" }}>
+        {zLabel}
+        {zUnit ? <tspan style={{ fontFamily: "var(--font-sans)", fontStyle: "normal" }}> [{zUnit}]</tspan> : null}
+      </text>
+    </g>
+  );
+}
+
+function ContourErrorNote({ error }: { error: CalcError }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 9,
+        padding: "10px 12px",
+        border: "1px solid var(--status-error)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--status-error-bg)",
+      }}
+    >
+      <span style={{ color: "var(--status-error)", flex: "0 0 auto", marginTop: 1 }}>
+        <Icon name="alertCirc" size={15} />
+      </span>
+      <div>
+        <div style={{ font: "600 12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>{error.message}</div>
+        {error.fixHint && <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginTop: 2 }}>{error.fixHint}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Contour 'configure' empty state — shown until a `z = f(x, y)` expression and an
+ * x/y range are set. Mirrors the XY empty state's voice and points at the inspector.
+ */
+export function ContourEmptyState({ region }: { region: Pick<PlotRegion, "z" | "xVar" | "yVar"> }) {
+  const z = region.z?.expr?.trim();
+  return (
+    <div
+      className="q-grid"
+      style={{
+        border: "1px dashed var(--border-strong)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--surface-paper)",
+        minHeight: 200,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: 24,
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 46,
+          height: 46,
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border-hairline)",
+          background: "var(--surface-raised)",
+          color: "var(--accent)",
+          marginBottom: 13,
+        }}
+      >
+        <Icon name="contour" size={24} />
+      </span>
+      <div style={{ font: "600 13.5px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 5 }}>Set a z = f(x, y) field to plot</div>
+      <div style={{ font: "12px/1.5 var(--font-sans)", color: "var(--text-muted)", maxWidth: 320 }}>
+        {z ? (
+          <>
+            Set an x and y range for{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar || "x"}</span> and{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.yVar || "y"}</span> in the inspector.
+          </>
+        ) : (
+          <>
+            Add a z expression like{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>sin(x)·cos(y)</span> and an x/y range in the inspector.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Surface figure (z = f(x, y)) — projected wireframe (cabinet projection)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Draw a sampled `z = f(x, y)` grid as a projected wireframe, ported from the
+ * mockup `plot-region.html` Thumb3D: a parallel (cabinet) projection where x spreads
+ * right, the depth axis (y) recedes up-right, and z lifts the surface. The mesh is
+ * auto-fitted into the frame so any z range stays in bounds. Row lines (constant y)
+ * are the blueprint profile — the centre row is emphasised, others are height-shaded;
+ * column lines (constant x) are faint structural depth lines. Pure SVG, hook-free, so
+ * the same figure renders in the editor, history, and the server-side export.
+ */
+export function SurfaceFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "yVar" | "z">;
+  height?: number;
+}) {
+  const s = result.surface;
+  if (!s) return null;
+  if (s.error) return <ContourErrorNote error={s.error} />;
+
+  const nx = s.xs.length;
+  const ny = s.ys.length;
+  const Hh = height ?? H;
+
+  // Drawing frame (inset for axis labels / numeric ticks).
+  const fL = 34;
+  const fR = W - 16;
+  const fT = 16;
+  const fB = Hh - 28;
+
+  // Cabinet basis (abstract, y up): x right, depth up-right, z lifts vertically.
+  const XW = 1.0;
+  const DX = 0.42;
+  const DY = 0.3;
+  const ZH = 0.55;
+  const zSpan = s.zMax - s.zMin || 1;
+  const normW = (z: number) => {
+    const w = (z - s.zMin) / zSpan;
+    return w < 0 ? 0 : w > 1 ? 1 : w;
+  };
+
+  // Auto-fit: bound the data cube's 8 corners, then uniform-scale + centre.
+  let axMin = Infinity;
+  let axMax = -Infinity;
+  let ayMin = Infinity;
+  let ayMax = -Infinity;
+  for (const u of [0, 1]) {
+    for (const v of [0, 1]) {
+      for (const w of [0, 1]) {
+        const ax = u * XW + v * DX;
+        const ay = v * DY + w * ZH;
+        if (ax < axMin) axMin = ax;
+        if (ax > axMax) axMax = ax;
+        if (ay < ayMin) ayMin = ay;
+        if (ay > ayMax) ayMax = ay;
+      }
+    }
+  }
+  const axSpan = axMax - axMin || 1;
+  const aySpan = ayMax - ayMin || 1;
+  const scale = Math.min((fR - fL) / axSpan, (fB - fT) / aySpan);
+  const padX = fL + ((fR - fL) - axSpan * scale) / 2;
+  const padY = fT + ((fB - fT) - aySpan * scale) / 2;
+  const px = (u: number, v: number) => padX + (u * XW + v * DX - axMin) * scale;
+  const py = (u: number, v: number, w: number) => padY + (ayMax - (v * DY + w * ZH)) * scale;
+
+  const U = (xi: number) => (nx > 1 ? xi / (nx - 1) : 0);
+  const V = (yi: number) => (ny > 1 ? yi / (ny - 1) : 0);
+
+  // Build a polyline path over cells, breaking the pen on null gaps.
+  const pathFor = (cells: { u: number; v: number; z: number | null }[]) => {
+    let d = "";
+    let pen = false;
+    for (const c of cells) {
+      if (c.z == null) {
+        pen = false;
+        continue;
+      }
+      const w = normW(c.z);
+      d += `${pen ? "L" : "M"}${px(c.u, c.v).toFixed(1)} ${py(c.u, c.v, w).toFixed(1)} `;
+      pen = true;
+    }
+    return d.trim();
+  };
+
+  // Column lines (constant x) — faint depth structure.
+  const cols: string[] = [];
+  for (let xi = 0; xi < nx; xi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    for (let yi = 0; yi < ny; yi += 1) cells.push({ u: U(xi), v: V(yi), z: s.z[yi]?.[xi] ?? null });
+    cols.push(pathFor(cells));
+  }
+
+  // Row lines (constant y) — the blueprint profile; centre row emphasised.
+  const centerRow = Math.floor(ny / 2);
+  const rows: { d: string; meanW: number; center: boolean }[] = [];
+  for (let yi = 0; yi < ny; yi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    let sum = 0;
+    let cnt = 0;
+    for (let xi = 0; xi < nx; xi += 1) {
+      const z = s.z[yi]?.[xi] ?? null;
+      cells.push({ u: U(xi), v: V(yi), z });
+      if (z != null) {
+        sum += normW(z);
+        cnt += 1;
+      }
+    }
+    rows.push({ d: pathFor(cells), meanW: cnt ? sum / cnt : 0, center: yi === centerRow });
+  }
+
+  // Reference corner axes (x, y, z from the near-bottom origin) read as a 3D frame.
+  const ox = px(0, 0);
+  const oy = py(0, 0, 0);
+  const xLabel = region.x?.label || region.xVar || "x";
+  const yLabel = region.y?.label || region.yVar || "y";
+  const zLabel = region.z?.label || "z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${Hh}`} style={{ display: "block" }} role="img" aria-label="3D surface plot">
+      {/* reference axes from the origin corner */}
+      <line x1={ox} y1={oy} x2={px(1, 0)} y2={py(1, 0, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 1)} y2={py(0, 1, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 0)} y2={py(0, 0, 1)} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* mesh — columns (faint) then rows (profile, on top) */}
+      {cols.map((d, i) => (d ? <path key={`c${i}`} d={d} fill="none" stroke="var(--border-strong)" strokeWidth="1" opacity={0.5} strokeLinejoin="round" strokeLinecap="round" /> : null))}
+      {rows.map((r, i) =>
+        r.d ? (
+          <path
+            key={`r${i}`}
+            d={r.d}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth={r.center ? 1.7 : 1.2}
+            opacity={r.center ? 1 : Math.min(0.95, 0.4 + 0.5 * r.meanW)}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : null,
+      )}
+
+      {/* numeric ticks at the axis ends */}
+      <text x={ox - 4} y={oy + 12} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[0])}</text>
+      <text x={px(1, 0)} y={py(1, 0, 0) + 13} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[nx - 1])}</text>
+      <text x={px(0, 1) + 5} y={py(0, 1, 0) - 3} textAnchor="start" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.ys[ny - 1])}</text>
+      <text x={px(0, 0) - 5} y={py(0, 0, 1) + 3} textAnchor="end" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.zMax)}</text>
+
+      {/* axis labels (STIX symbol + [unit]) */}
+      <text x={(ox + px(1, 0)) / 2} y={Hh - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={xLabel} unit={result.xUnit} />
+      </text>
+      <text x={px(1, 0.5) + 8} y={py(1, 0.5, 0)} textAnchor="start" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={yLabel} unit={result.yUnit} />
+      </text>
+      <text x={px(0, 0) - 4} y={py(0, 0, 1) - 6} textAnchor="end" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={zLabel} unit={s.zUnit} />
+      </text>
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Legend
  * ------------------------------------------------------------------ */
 
@@ -784,7 +1175,7 @@ export function PlotPlaceholder({ region }: { region: PlotRegion }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 2 }}>{label} — configure in the inspector</div>
         <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginBottom: 8 }}>
-          Rendering ships next; your settings are saved with the worksheet.
+          3D surface rendering ships next; your settings are saved with the worksheet.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 3 }}>
           {rows.map(([k, v]) => (

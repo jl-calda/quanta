@@ -114,10 +114,15 @@ export {
   type PlotTraceSpec,
   type PlotReferenceSpec,
   type PlotAnnotationSpec,
+  type PlotZSpec,
+  type PlotGridSpec,
+  type PlotSurfaceSpec,
   type PlotKind,
   type PlotTraceStyle,
   type PlotPoint,
   type PlotResult,
+  type ContourResult,
+  type PlotSurface,
   type TraceResult,
   type PlotBounds,
   type ResolvedReference,
@@ -135,6 +140,15 @@ export {
   niceLogBounds,
   type AxisScale,
 } from "./plot-scale";
+
+// Contour iso-band / iso-line geometry (pure — see ./contour).
+export {
+  contourBands,
+  contourLines,
+  type Point,
+  type ContourBand,
+  type ContourLineSet,
+} from "./contour";
 
 // Solve block (pure, engine-native — see ./solve).
 export {
