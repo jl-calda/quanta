@@ -10,7 +10,16 @@
  * none passed (export/history) the figure is fully static.
  */
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
-import { niceNum, type PlotResult, type PlotTraceStyle, type TraceResult } from "@/lib/calc";
+import {
+  contourBands,
+  contourLines,
+  niceNum,
+  type CalcError,
+  type ContourResult,
+  type PlotResult,
+  type PlotTraceStyle,
+  type TraceResult,
+} from "@/lib/calc";
 import type { PlotRegion } from "@/lib/worksheet/content";
 import { Icon } from "../icons";
 
@@ -98,7 +107,7 @@ function AxisLabel({ symbol, unit }: { symbol: string; unit: string | null }): R
 
 export interface PlotFigureProps {
   result: PlotResult;
-  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar" | "yVar" | "z">;
+  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar">;
   /** Index (into the primary trace) of the hovered sample, for the read-out. */
   hoverIndex?: number | null;
   /** Report the nearest sample under the cursor (omit ⇒ static, no hover). */
@@ -111,9 +120,6 @@ export interface PlotFigureProps {
 export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, height }: PlotFigureProps) {
   if (result.kind === "polar") {
     return <PolarFigure result={result} height={height} />;
-  }
-  if (result.kind === "surface" && result.surface) {
-    return <SurfaceFigure result={result} region={region} height={height} />;
   }
 
   const { xMin, xMax, yMin, yMax } = result.bounds;
@@ -409,6 +415,225 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
 }
 
 /* ------------------------------------------------------------------ *
+ * Contour figure (z = f(x, y) iso-bands)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Filled iso-band (or iso-line) rendering of a sampled `z = f(x, y)` field — pure
+ * SVG, hook-free, so the same figure draws in the editor, history, and the Node
+ * export path. Bands/lines come from the pure `./contour` geometry; shading is a
+ * blueprint sequential ramp (`var(--accent)` at increasing opacity → deeper blue
+ * = higher z), which honours the design system and adapts to the dark theme.
+ */
+export function ContourFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "z" | "surface">;
+  height?: number;
+}) {
+  const grid = result.contour;
+  if (!grid) return null;
+  if (grid.error) return <ContourErrorNote error={grid.error} />;
+
+  const showScale = region.surface?.showScale ?? true;
+  const filled = region.surface?.filled ?? true;
+  const SCALE_W = showScale ? 40 : 0;
+  const PX1 = X1 - SCALE_W; // plot right edge (leaves a gutter for the colour scale)
+
+  const { xMin, xMax, yMin, yMax } = result.bounds;
+  const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (PX1 - X0);
+  const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
+
+  const bands = filled ? contourBands(grid) : [];
+  const lines = contourLines(grid);
+  const xticks = niceTicks(xMin, xMax, 6);
+  const yticks = niceTicks(yMin, yMax, 5);
+
+  const toPath = (poly: ReadonlyArray<readonly [number, number]>) =>
+    poly.map(([px, py], i) => `${i ? "L" : "M"}${sx(px).toFixed(1)} ${sy(py).toFixed(1)}`).join(" ") + " Z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${height ?? H}`} style={{ display: "block" }} role="img" aria-label="Contour plot">
+      {/* faint interior gridlines (visible in lines-only mode; mostly under the fill) */}
+      {yticks.map((v, i) => (
+        <line key={`gy${i}`} x1={X0} y1={sy(v)} x2={PX1} y2={sy(v)} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+      {xticks.map((v, i) => (
+        <line key={`gx${i}`} x1={sx(v)} y1={Y0} x2={sx(v)} y2={Y1} stroke="var(--border-hairline)" strokeWidth="1" />
+      ))}
+
+      {/* filled iso-bands */}
+      {filled &&
+        bands.map((b, i) => (
+          <g key={`b${i}`} fill="var(--accent)" fillOpacity={bandOpacity(b.t)}>
+            {b.polygons.map((poly, j) => (
+              <path key={j} d={toPath(poly)} />
+            ))}
+          </g>
+        ))}
+
+      {/* iso-lines — faint hairlines between bands when filled, blueprint strokes when not */}
+      {lines.map((ls, i) => (
+        <g
+          key={`l${i}`}
+          stroke={filled ? "var(--surface-paper)" : "var(--accent)"}
+          strokeOpacity={filled ? 0.55 : 0.35 + 0.5 * ls.t}
+          strokeWidth={filled ? 0.6 : 1.4}
+          strokeLinecap="round"
+        >
+          {ls.segments.map((seg, j) => (
+            <line key={j} x1={sx(seg[0][0])} y1={sy(seg[0][1])} x2={sx(seg[1][0])} y2={sy(seg[1][1])} />
+          ))}
+        </g>
+      ))}
+
+      {/* axes */}
+      <line x1={X0} y1={Y0} x2={PX1} y2={Y0} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={X0} y1={Y0} x2={X0} y2={Y1} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* ticks */}
+      {xticks.map((v, i) => (
+        <text key={`tx${i}`} x={sx(v)} y={Y0 + 15} textAnchor="middle" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+      {yticks.map((v, i) => (
+        <text key={`ty${i}`} x={X0 - 7} y={sy(v) + 3} textAnchor="end" style={{ font: "10px var(--font-mono)", fill: "var(--text-muted)" }}>
+          {fmtNum(v)}
+        </text>
+      ))}
+
+      {/* axis labels */}
+      <text x={(X0 + PX1) / 2} y={H - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.x?.label || region.xVar || "x"} unit={result.xUnit} />
+      </text>
+      <text x={13} y={(Y0 + Y1) / 2} textAnchor="middle" transform={`rotate(-90 13 ${(Y0 + Y1) / 2})`} style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={region.y?.label || "y"} unit={result.yUnit} />
+      </text>
+
+      {showScale && <ContourScale grid={grid} x={PX1 + 12} />}
+    </svg>
+  );
+}
+
+/** Blueprint sequential shade for a band at normalized position `t` (0 low → 1 high). */
+function bandOpacity(t: number): number {
+  return 0.06 + 0.8 * Math.max(0, Math.min(1, t));
+}
+
+/** Vertical colour scale (band swatches + z extent), drawn in the right-hand gutter. */
+function ContourScale({ grid, x }: { grid: ContourResult; x: number }) {
+  const { levels, zMin, zMax, zUnit, zLabel } = grid;
+  const span = zMax - zMin || 1;
+  const syz = (v: number) => Y0 - ((v - zMin) / span) * (Y0 - Y1);
+  const barW = 9;
+  return (
+    <g>
+      {levels.slice(0, -1).map((lo, i) => {
+        const hi = levels[i + 1];
+        const yTop = syz(hi);
+        const yBot = syz(lo);
+        const t = (((lo + hi) / 2 - zMin) / span);
+        return (
+          <rect key={i} x={x} y={yTop} width={barW} height={Math.max(0.5, yBot - yTop)} fill="var(--accent)" fillOpacity={bandOpacity(t)} />
+        );
+      })}
+      <rect x={x} y={Y1} width={barW} height={Y0 - Y1} fill="none" stroke="var(--border-hairline)" strokeWidth="1" />
+      <text x={x + barW + 4} y={Y1 + 4} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMax)}</text>
+      <text x={x + barW + 4} y={Y0} style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(zMin)}</text>
+      <text x={x + barW / 2} y={Y1 - 4} textAnchor="middle" style={{ font: "10px var(--font-math)", fontStyle: "italic", fill: "var(--text-primary)" }}>
+        {zLabel}
+        {zUnit ? <tspan style={{ fontFamily: "var(--font-sans)", fontStyle: "normal" }}> [{zUnit}]</tspan> : null}
+      </text>
+    </g>
+  );
+}
+
+function ContourErrorNote({ error }: { error: CalcError }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 9,
+        padding: "10px 12px",
+        border: "1px solid var(--status-error)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--status-error-bg)",
+      }}
+    >
+      <span style={{ color: "var(--status-error)", flex: "0 0 auto", marginTop: 1 }}>
+        <Icon name="alertCirc" size={15} />
+      </span>
+      <div>
+        <div style={{ font: "600 12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>{error.message}</div>
+        {error.fixHint && <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginTop: 2 }}>{error.fixHint}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Contour 'configure' empty state — shown until a `z = f(x, y)` expression and an
+ * x/y range are set. Mirrors the XY empty state's voice and points at the inspector.
+ */
+export function ContourEmptyState({ region }: { region: Pick<PlotRegion, "z" | "xVar" | "yVar"> }) {
+  const z = region.z?.expr?.trim();
+  return (
+    <div
+      className="q-grid"
+      style={{
+        border: "1px dashed var(--border-strong)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--surface-paper)",
+        minHeight: 200,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: 24,
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 46,
+          height: 46,
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border-hairline)",
+          background: "var(--surface-raised)",
+          color: "var(--accent)",
+          marginBottom: 13,
+        }}
+      >
+        <Icon name="contour" size={24} />
+      </span>
+      <div style={{ font: "600 13.5px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 5 }}>Set a z = f(x, y) field to plot</div>
+      <div style={{ font: "12px/1.5 var(--font-sans)", color: "var(--text-muted)", maxWidth: 320 }}>
+        {z ? (
+          <>
+            Set an x and y range for{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar || "x"}</span> and{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.yVar || "y"}</span> in the inspector.
+          </>
+        ) : (
+          <>
+            Add a z expression like{" "}
+            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>sin(x)·cos(y)</span> and an x/y range in the inspector.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Surface figure (z = f(x, y)) — projected wireframe (cabinet projection)
  * ------------------------------------------------------------------ */
 
@@ -418,19 +643,22 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
  * right, the depth axis (y) recedes up-right, and z lifts the surface. The mesh is
  * auto-fitted into the frame so any z range stays in bounds. Row lines (constant y)
  * are the blueprint profile — the centre row is emphasised, others are height-shaded;
- * column lines (constant x) are faint structural depth lines. Pure SVG, no hooks, so
+ * column lines (constant x) are faint structural depth lines. Pure SVG, hook-free, so
  * the same figure renders in the editor, history, and the server-side export.
  */
-function SurfaceFigure({
+export function SurfaceFigure({
   result,
   region,
   height,
 }: {
   result: PlotResult;
-  region: PlotFigureProps["region"];
+  region: Pick<PlotRegion, "x" | "y" | "xVar" | "yVar" | "z">;
   height?: number;
 }) {
-  const s = result.surface!;
+  const s = result.surface;
+  if (!s) return null;
+  if (s.error) return <ContourErrorNote error={s.error} />;
+
   const nx = s.xs.length;
   const ny = s.ys.length;
   const Hh = height ?? H;
@@ -737,7 +965,7 @@ export function PlotPlaceholder({ region }: { region: PlotRegion }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 2 }}>{label} — configure in the inspector</div>
         <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)", marginBottom: 8 }}>
-          Rendering ships next; your settings are saved with the worksheet.
+          3D surface rendering ships next; your settings are saved with the worksheet.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 3 }}>
           {rows.map(([k, v]) => (

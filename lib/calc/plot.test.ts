@@ -153,13 +153,85 @@ describe("evaluatePlot — polar", () => {
   });
 });
 
-describe("evaluatePlot — contour is typed-but-inert this pass", () => {
-  it("returns empty (placeholder) without sampling, even with a z expression", () => {
-    const res = evaluatePlot({ kind: "contour", x: { min: 0, max: 1 }, y: { min: 0, max: 1 }, z: { expr: "x+y" } });
-    expect(res.empty).toBe(true);
-    expect(res.traces).toHaveLength(0);
-    expect(res.surface).toBeUndefined();
+describe("evaluatePlot — contour (2D z = f(x, y) sampling)", () => {
+  const contour = (over: Partial<PlotSpec> = {}): PlotSpec => ({
+    kind: "contour",
+    xVar: "x",
+    yVar: "y",
+    x: { min: 0, max: 2 },
+    y: { min: 0, max: 2 },
+    grid: { x: 3, y: 3 },
+    z: { expr: "x + y" },
+    traces: [],
+    ...over,
+  });
+
+  it("samples z = f(x, y) on a regular grid (rows by y, cols by x)", () => {
+    const res = evaluatePlot(contour());
     expect(res.kind).toBe("contour");
+    expect(res.empty).toBe(false);
+    const g = res.contour;
+    expect(g).toBeDefined();
+    expect(g!.x).toEqual([0, 1, 2]);
+    expect(g!.y).toEqual([0, 1, 2]);
+    expect(g!.z).toHaveLength(3); // ny rows
+    expect(g!.z[0]).toHaveLength(3); // nx cols
+    expect(g!.z[0][0]).toBe(0); // x=0, y=0
+    expect(g!.z[2][2]).toBe(4); // x=2, y=2
+    expect(g!.z[1][2]).toBe(3); // x=2 (col), y=1 (row)
+    expect(g!.error).toBeUndefined();
+  });
+
+  it("attaches x/y units and converts z to the z unit", () => {
+    const res = evaluatePlot(
+      contour({
+        x: { min: 0, max: 2, unit: "m" },
+        y: { min: 0, max: 2, unit: "m" },
+        z: { expr: "x * y", unit: "m^2" },
+      }),
+    );
+    const g = res.contour!;
+    expect(g.zUnit).toBe("m^2");
+    expect(g.z[2][2]).toBe(4); // (2 m)·(2 m) = 4 m²
+  });
+
+  it("marks non-finite samples as NaN gaps without erroring", () => {
+    const res = evaluatePlot(contour({ z: { expr: "1/(x-y)" } }));
+    const g = res.contour!;
+    expect(g.error).toBeUndefined();
+    expect(Number.isNaN(g.z[0][0])).toBe(true); // x==y → 1/0 → gap
+    expect(Number.isFinite(g.z[0][2])).toBe(true); // x=2, y=0 → 1/2
+  });
+
+  it("surfaces an undefined name (every point fails) as a typed error", () => {
+    const res = evaluatePlot(contour({ z: { expr: "k * x" } }));
+    expect(res.contour?.error).toBeDefined();
+    expect(res.empty).toBe(true);
+  });
+
+  it("computes ascending band levels spanning the z scale", () => {
+    const g = evaluatePlot(contour({ surface: { levels: 4 } })).contour!;
+    expect(g.levels.length).toBe(5); // nBands + 1
+    for (let i = 1; i < g.levels.length; i += 1) expect(g.levels[i]).toBeGreaterThan(g.levels[i - 1]);
+    expect(g.levels[0]).toBeCloseTo(g.zMin);
+    expect(g.levels.at(-1)).toBeCloseTo(g.zMax);
+  });
+
+  it("honors pinned z.min / z.max as the colour scale", () => {
+    const g = evaluatePlot(contour({ z: { expr: "x + y", min: 0, max: 10 } })).contour!;
+    expect(g.zMin).toBe(0);
+    expect(g.zMax).toBe(10);
+  });
+
+  it("is empty (no grid) when the z expression is blank", () => {
+    const res = evaluatePlot(contour({ z: { expr: "" } }));
+    expect(res.empty).toBe(true);
+    expect(res.contour).toBeUndefined();
+  });
+
+  it("is empty (no grid) when the x or y range is unset", () => {
+    expect(evaluatePlot(contour({ x: {} })).contour).toBeUndefined();
+    expect(evaluatePlot(contour({ y: {} })).empty).toBe(true);
   });
 });
 
@@ -173,7 +245,9 @@ describe("evaluatePlot — surface (projected-wireframe sampling)", () => {
     const res = evaluatePlot(surf());
     const s = res.surface!;
     expect(s).toBeDefined();
+    expect(res.kind).toBe("surface");
     expect(res.empty).toBe(false);
+    expect(res.contour).toBeUndefined();
     expect(s.xs).toEqual([0, 1, 2]);
     expect(s.ys).toEqual([0, 1, 2]);
     expect(s.z).toHaveLength(3); // ny rows
