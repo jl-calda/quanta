@@ -39,6 +39,7 @@ import {
   type TextRegion,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
+import { PlotFigure } from "@/components/editor/regions/plot-present";
 import { selectInputs } from "./inputs";
 import type { ExportOptions } from "./options";
 
@@ -372,9 +373,18 @@ function PlotBlock({
     </div>
   );
 
-  // contour/3D (config-only this pass) and unconfigured plots: a compact print note.
-  if (region.kind === "contour" || region.kind === "surface") {
-    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{region.kind === "surface" ? "3D surface" : "Contour"} plot — configured.</div>);
+  // contour stays a config-only print note this pass.
+  if (region.kind === "contour") {
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>Contour plot — configured.</div>);
+  }
+  // surface renders its projected wireframe when configured (same pure sampler); a
+  // worksheet-name-bound z has no live scope in export, so it falls back to the note.
+  if (region.kind === "surface") {
+    const surfaceResult = evaluatePlot(region, {});
+    if (surfaceResult.surface && !surfaceResult.surface.empty) {
+      return wrap(<PlotFigure result={surfaceResult} region={region} height={200} />);
+    }
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>3D surface plot — configured.</div>);
   }
   if (region.traces.length === 0) {
     return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>No traces yet.</div>);

@@ -98,7 +98,7 @@ function AxisLabel({ symbol, unit }: { symbol: string; unit: string | null }): R
 
 export interface PlotFigureProps {
   result: PlotResult;
-  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar">;
+  region: Pick<PlotRegion, "kind" | "x" | "y" | "xVar" | "yVar" | "z">;
   /** Index (into the primary trace) of the hovered sample, for the read-out. */
   hoverIndex?: number | null;
   /** Report the nearest sample under the cursor (omit ⇒ static, no hover). */
@@ -111,6 +111,9 @@ export interface PlotFigureProps {
 export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, height }: PlotFigureProps) {
   if (result.kind === "polar") {
     return <PolarFigure result={result} height={height} />;
+  }
+  if (result.kind === "surface" && result.surface) {
+    return <SurfaceFigure result={result} region={region} height={height} />;
   }
 
   const { xMin, xMax, yMin, yMax } = result.bounds;
@@ -401,6 +404,171 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
           .join(" ");
         return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
       })}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Surface figure (z = f(x, y)) — projected wireframe (cabinet projection)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Draw a sampled `z = f(x, y)` grid as a projected wireframe, ported from the
+ * mockup `plot-region.html` Thumb3D: a parallel (cabinet) projection where x spreads
+ * right, the depth axis (y) recedes up-right, and z lifts the surface. The mesh is
+ * auto-fitted into the frame so any z range stays in bounds. Row lines (constant y)
+ * are the blueprint profile — the centre row is emphasised, others are height-shaded;
+ * column lines (constant x) are faint structural depth lines. Pure SVG, no hooks, so
+ * the same figure renders in the editor, history, and the server-side export.
+ */
+function SurfaceFigure({
+  result,
+  region,
+  height,
+}: {
+  result: PlotResult;
+  region: PlotFigureProps["region"];
+  height?: number;
+}) {
+  const s = result.surface!;
+  const nx = s.xs.length;
+  const ny = s.ys.length;
+  const Hh = height ?? H;
+
+  // Drawing frame (inset for axis labels / numeric ticks).
+  const fL = 34;
+  const fR = W - 16;
+  const fT = 16;
+  const fB = Hh - 28;
+
+  // Cabinet basis (abstract, y up): x right, depth up-right, z lifts vertically.
+  const XW = 1.0;
+  const DX = 0.42;
+  const DY = 0.3;
+  const ZH = 0.55;
+  const zSpan = s.zMax - s.zMin || 1;
+  const normW = (z: number) => {
+    const w = (z - s.zMin) / zSpan;
+    return w < 0 ? 0 : w > 1 ? 1 : w;
+  };
+
+  // Auto-fit: bound the data cube's 8 corners, then uniform-scale + centre.
+  let axMin = Infinity;
+  let axMax = -Infinity;
+  let ayMin = Infinity;
+  let ayMax = -Infinity;
+  for (const u of [0, 1]) {
+    for (const v of [0, 1]) {
+      for (const w of [0, 1]) {
+        const ax = u * XW + v * DX;
+        const ay = v * DY + w * ZH;
+        if (ax < axMin) axMin = ax;
+        if (ax > axMax) axMax = ax;
+        if (ay < ayMin) ayMin = ay;
+        if (ay > ayMax) ayMax = ay;
+      }
+    }
+  }
+  const axSpan = axMax - axMin || 1;
+  const aySpan = ayMax - ayMin || 1;
+  const scale = Math.min((fR - fL) / axSpan, (fB - fT) / aySpan);
+  const padX = fL + ((fR - fL) - axSpan * scale) / 2;
+  const padY = fT + ((fB - fT) - aySpan * scale) / 2;
+  const px = (u: number, v: number) => padX + (u * XW + v * DX - axMin) * scale;
+  const py = (u: number, v: number, w: number) => padY + (ayMax - (v * DY + w * ZH)) * scale;
+
+  const U = (xi: number) => (nx > 1 ? xi / (nx - 1) : 0);
+  const V = (yi: number) => (ny > 1 ? yi / (ny - 1) : 0);
+
+  // Build a polyline path over cells, breaking the pen on null gaps.
+  const pathFor = (cells: { u: number; v: number; z: number | null }[]) => {
+    let d = "";
+    let pen = false;
+    for (const c of cells) {
+      if (c.z == null) {
+        pen = false;
+        continue;
+      }
+      const w = normW(c.z);
+      d += `${pen ? "L" : "M"}${px(c.u, c.v).toFixed(1)} ${py(c.u, c.v, w).toFixed(1)} `;
+      pen = true;
+    }
+    return d.trim();
+  };
+
+  // Column lines (constant x) — faint depth structure.
+  const cols: string[] = [];
+  for (let xi = 0; xi < nx; xi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    for (let yi = 0; yi < ny; yi += 1) cells.push({ u: U(xi), v: V(yi), z: s.z[yi]?.[xi] ?? null });
+    cols.push(pathFor(cells));
+  }
+
+  // Row lines (constant y) — the blueprint profile; centre row emphasised.
+  const centerRow = Math.floor(ny / 2);
+  const rows: { d: string; meanW: number; center: boolean }[] = [];
+  for (let yi = 0; yi < ny; yi += 1) {
+    const cells: { u: number; v: number; z: number | null }[] = [];
+    let sum = 0;
+    let cnt = 0;
+    for (let xi = 0; xi < nx; xi += 1) {
+      const z = s.z[yi]?.[xi] ?? null;
+      cells.push({ u: U(xi), v: V(yi), z });
+      if (z != null) {
+        sum += normW(z);
+        cnt += 1;
+      }
+    }
+    rows.push({ d: pathFor(cells), meanW: cnt ? sum / cnt : 0, center: yi === centerRow });
+  }
+
+  // Reference corner axes (x, y, z from the near-bottom origin) read as a 3D frame.
+  const ox = px(0, 0);
+  const oy = py(0, 0, 0);
+  const xLabel = region.x?.label || region.xVar || "x";
+  const yLabel = region.y?.label || region.yVar || "y";
+  const zLabel = region.z?.label || "z";
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${Hh}`} style={{ display: "block" }} role="img" aria-label="3D surface plot">
+      {/* reference axes from the origin corner */}
+      <line x1={ox} y1={oy} x2={px(1, 0)} y2={py(1, 0, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 1)} y2={py(0, 1, 0)} stroke="var(--border-strong)" strokeWidth="1.2" />
+      <line x1={ox} y1={oy} x2={px(0, 0)} y2={py(0, 0, 1)} stroke="var(--border-strong)" strokeWidth="1.2" />
+
+      {/* mesh — columns (faint) then rows (profile, on top) */}
+      {cols.map((d, i) => (d ? <path key={`c${i}`} d={d} fill="none" stroke="var(--border-strong)" strokeWidth="1" opacity={0.5} strokeLinejoin="round" strokeLinecap="round" /> : null))}
+      {rows.map((r, i) =>
+        r.d ? (
+          <path
+            key={`r${i}`}
+            d={r.d}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth={r.center ? 1.7 : 1.2}
+            opacity={r.center ? 1 : Math.min(0.95, 0.4 + 0.5 * r.meanW)}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : null,
+      )}
+
+      {/* numeric ticks at the axis ends */}
+      <text x={ox - 4} y={oy + 12} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[0])}</text>
+      <text x={px(1, 0)} y={py(1, 0, 0) + 13} textAnchor="middle" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.xs[nx - 1])}</text>
+      <text x={px(0, 1) + 5} y={py(0, 1, 0) - 3} textAnchor="start" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.ys[ny - 1])}</text>
+      <text x={px(0, 0) - 5} y={py(0, 0, 1) + 3} textAnchor="end" style={{ font: "9px var(--font-mono)", fill: "var(--text-muted)" }}>{fmtNum(s.zMax)}</text>
+
+      {/* axis labels (STIX symbol + [unit]) */}
+      <text x={(ox + px(1, 0)) / 2} y={Hh - 6} textAnchor="middle" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={xLabel} unit={result.xUnit} />
+      </text>
+      <text x={px(1, 0.5) + 8} y={py(1, 0.5, 0)} textAnchor="start" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={yLabel} unit={result.yUnit} />
+      </text>
+      <text x={px(0, 0) - 4} y={py(0, 0, 1) - 6} textAnchor="end" style={{ font: "11px var(--font-sans)", fill: "var(--text-primary)" }}>
+        <AxisLabel symbol={zLabel} unit={s.zUnit} />
+      </text>
     </svg>
   );
 }

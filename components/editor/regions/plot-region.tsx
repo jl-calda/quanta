@@ -28,8 +28,17 @@ export function PlotRegionView({ region, canEdit, dispatch }: RegionRenderProps<
   const { plotResults } = useEditor();
   const result = plotResults.get(region.id);
 
-  if (region.kind === "contour" || region.kind === "surface") {
+  // contour stays a placeholder this pass; surface renders a projected wireframe
+  // once it's configured (z-expression + x/y ranges), else falls back to the card.
+  if (region.kind === "contour") {
     return <PlotPlaceholder region={region} />;
+  }
+  if (region.kind === "surface") {
+    return result?.surface ? (
+      <SurfaceView region={region} result={result} canEdit={canEdit} dispatch={dispatch} />
+    ) : (
+      <PlotPlaceholder region={region} />
+    );
   }
   // No traces yet ⇒ the "pick variables" empty state (mockup (c)).
   if (region.traces.length === 0) return <PlotEmptyState />;
@@ -120,6 +129,91 @@ function PlotEditor({
         boundLabel={boundLabel}
         onToggle={canEdit ? (id) => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: id }) : undefined}
       />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Surface (3D) editor — projected-wireframe render + x/y grid ranges
+ * ------------------------------------------------------------------ */
+
+function SurfaceView({
+  region,
+  result,
+  canEdit,
+  dispatch,
+}: {
+  region: PlotRegion;
+  result: PlotResult;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const { state, dispatch: rawDispatch } = useEditor();
+  const surface = result.surface!;
+
+  const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
+    dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
+
+  const openInspector = () => {
+    dispatch({ type: "SELECT", id: region.id });
+    if (!state.ui.rightOpen) rawDispatch({ type: "TOGGLE_RIGHT" });
+  };
+
+  const zExpr = region.z?.expr?.trim();
+  const zCaption = zExpr ? `${region.z?.label || "z"} := ${prettyExpr(zExpr)}${surface.zUnit ? `  [${surface.zUnit}]` : ""}` : null;
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+      {/* title row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <TitleInput
+          key={region.id}
+          value={region.title ?? ""}
+          canEdit={canEdit}
+          onCommit={(title) => dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: title || undefined } })}
+        />
+        {canEdit && (
+          <span style={{ display: "inline-flex", color: "var(--text-muted)", flex: "0 0 auto" }}>
+            <Icon name="sketch" size={13} />
+          </span>
+        )}
+        <IconButton label="Plot settings" size="sm" onClick={openInspector}>
+          <Icon name="gear" size={16} />
+        </IconButton>
+        <IconButton label="More" size="sm" onClick={() => dispatch({ type: "SELECT", id: region.id })}>
+          <Icon name="kebab" size={16} />
+        </IconButton>
+      </div>
+
+      {/* x & y range controls (both span the surface grid) */}
+      {canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px", flexWrap: "wrap" }}>
+          <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          <AxisRange label="y range" axis={region.y} onMin={(v) => setAxis("y", { min: v })} onMax={(v) => setAxis("y", { max: v })} />
+        </div>
+      )}
+
+      {/* the wireframe */}
+      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+        <PlotFigure result={result} region={region} />
+        {surface.error && (
+          <div style={{ font: "11px/1.4 var(--font-sans)", color: "var(--status-error)", textAlign: "center", padding: "4px 6px 6px" }}>
+            {surface.error.message}
+            {surface.error.fixHint ? <span style={{ color: "var(--text-muted)" }}> {surface.error.fixHint}</span> : null}
+          </div>
+        )}
+      </div>
+
+      {/* caption — z definition + grid resolution */}
+      {zCaption && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+          <span style={{ font: "10px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>Surface</span>
+          <span style={{ font: "11px/1 var(--font-mono)", color: "var(--accent)" }}>{zCaption}</span>
+          <span style={{ marginLeft: "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+            {region.grid?.x ?? 24} × {region.grid?.y ?? 24} grid
+          </span>
+        </div>
+      )}
     </div>
   );
 }

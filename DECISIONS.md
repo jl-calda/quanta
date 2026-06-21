@@ -2,6 +2,40 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Plot — 3D surface rendering (projected wireframe, Phase 2)
+
+- **Fills the surface seam, renderer-only — no schema/picker change.** The `surface`
+  config (`kind`, `z`, `grid`, `xVar`/`yVar`, `x`/`y`, `surface.wireframe`) already
+  round-tripped through the content schema and the inspector; this pass only adds the
+  pure sampler + the SVG renderer, so no migration is needed. `evaluatePlot`
+  (`lib/calc/plot.ts`) now samples `z = f(x, y)` over the grid into a new
+  `PlotSurface` (`xs`, `ys`, `z:(number|null)[][]` row-major `[yi][xi]`, `zMin/zMax`,
+  `zUnit`, `wireframe`, `empty`, `error?`) carried on `PlotResult.surface`. It stays a
+  **clean superset** — `traces:[]`/`bounds`/`xUnit`/`yUnit`/`empty` remain populated so
+  nothing downstream breaks. **`contour` stays a placeholder** this pass (out of scope);
+  `surface.filled`/`colormap`/`showScale` remain config-only — the wireframe ignores them.
+- **Grid sampling kept pure & synchronous** in `/lib/calc`, exactly the class of work
+  `sweep` already does (closed-form `node.evaluate` per cell — parsed once, never
+  per-cell). Clamped 2..200 per axis to **match the schema clamp** so a configured 200
+  actually renders; no hidden product cap (default 24×24 = 576 cells is trivial; the
+  200×200 ceiling is the engineer's explicit choice). Gap/error parity with `sweep`: a
+  per-cell throw or non-finite value → a `null` cell; a throw on **every** cell (undefined
+  name / unit mismatch) → a single structural `surface.error`. Pinned `z.min`/`z.max`
+  fix the height scale; else it's the finite-cell extent.
+- **Cabinet (parallel/axonometric) projection, auto-fit — no camera fields added.**
+  `SurfaceFigure` (`plot-present.tsx`, pure SVG, no hooks — renders in editor, history,
+  and the server-side export) projects normalized `(u, v, w)` with fixed basis weights
+  (x right `1.0`, depth up-right `0.42`/`0.30`, height `0.55`), echoing the mockup's
+  `Thumb3D`, then **auto-fits** the data cube's 8 corners into the frame so any z range
+  stays in bounds. Deliberately **no azimuth/elevation/zoom schema fields** — "the
+  deferred renderer adds only the renderer." Row lines (constant y) are the blueprint
+  profile (centre row emphasised, others height-shaded via accent opacity); column lines
+  (constant x) are faint depth structure; polylines split on `null` gaps. No painter's
+  sort — transparent stroke compositing is order-independent.
+- **Export reuses the same pure figure.** `lib/export/document.tsx` renders the wireframe
+  via `PlotFigure` for a configured surface; a worksheet-name-bound `z` has no live scope
+  in export, so it gracefully falls back to the existing "configured" print note.
+
 ## Table import & paste from Excel/CSV + copy a selection (Phase 2)
 
 - **Import surface = dialog only this phase.** A dedicated Import-data dialog on the

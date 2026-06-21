@@ -114,6 +114,7 @@ export {
   type PlotTraceStyle,
   type PlotPoint,
   type PlotResult,
+  type PlotSurface,
   type TraceResult,
   type PlotBounds,
 } from "./plot";
