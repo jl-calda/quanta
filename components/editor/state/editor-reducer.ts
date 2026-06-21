@@ -20,6 +20,7 @@ import {
   type ControlValueType,
   type DisplayFlags,
   type OdeConfig,
+  type LegendPos,
   type PlotAxis,
   type PlotGrid,
   type PlotKind,
@@ -139,6 +140,8 @@ export interface RegionPatch {
   xData?: string;
   samples?: number;
   legend?: boolean;
+  legendPos?: LegendPos;
+  theme?: string;
   frame?: boolean;
   z?: PlotZ;
   grid?: PlotGrid;

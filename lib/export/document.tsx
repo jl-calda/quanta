@@ -39,6 +39,7 @@ import {
   type TextRegion,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
+import { themePalette } from "@/lib/worksheet/plot-theme";
 import { selectInputs } from "./inputs";
 import type { ExportOptions } from "./options";
 
@@ -391,7 +392,8 @@ function PlotBlock({
   const sx = (v: number) => X0 + ((v - xMin) / (xMax - xMin || 1)) * (X1 - X0);
   const sy = (v: number) => Y0 - ((v - yMin) / (yMax - yMin || 1)) * (Y0 - Y1);
   const drawable = result.traces.filter((t) => !t.hidden && !t.error && t.points.length > 0);
-  const lineColor = ["#1F5FBF", "#1E8E5A", "#C6890B"];
+  // Print-safe hex palette (the on-screen renderer swaps the default for CSS vars).
+  const lineColor = themePalette(region.theme);
 
   return wrap(
     <svg width="100%" viewBox="0 0 470 200" style={{ display: "block" }} aria-label="Plot">
@@ -408,7 +410,7 @@ function PlotBlock({
             d={d}
             fill="none"
             stroke={t.color || lineColor[i % lineColor.length]}
-            strokeWidth="2"
+            strokeWidth={t.width ?? 2}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeDasharray={t.dash ? "5 3" : undefined}

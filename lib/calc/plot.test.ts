@@ -78,6 +78,56 @@ describe("evaluatePlot — data mode (ranges / table columns)", () => {
   });
 });
 
+describe("evaluatePlot — per-trace styling + data source", () => {
+  it("carries the per-trace line width through to the result", () => {
+    const res = evaluatePlot(
+      xy({ traces: [{ id: "a", expr: "x", width: 3.5 }, { id: "b", expr: "2*x" }] }),
+    );
+    expect(res.traces[0].width).toBe(3.5);
+    expect(res.traces[1].width).toBeUndefined(); // renderer applies its default
+  });
+
+  it("gives each trace its OWN x data when xData is set (multiple data sources)", () => {
+    const res = evaluatePlot(
+      {
+        kind: "xy",
+        x: {},
+        y: {},
+        xData: "ax", // plot-level x for traces that don't override
+        traces: [
+          { id: "a", expr: "ay" }, // uses plot-level ax
+          { id: "b", expr: "by", xData: "bx" }, // its own source
+        ],
+      },
+      { ax: [1, 2, 3], ay: [10, 20, 30], bx: [5, 6], by: [50, 60] },
+    );
+    expect(res.traces[0].points).toEqual([
+      { x: 1, y: 10 },
+      { x: 2, y: 20 },
+      { x: 3, y: 30 },
+    ]);
+    expect(res.traces[1].points).toEqual([
+      { x: 5, y: 50 },
+      { x: 6, y: 60 },
+    ]);
+  });
+
+  it("spans x bounds across an override trace instead of clipping it to the sweep span", () => {
+    // Plot is a sweep over x∈[0,6], but a trace overrides with data out past 6.
+    const res = evaluatePlot(
+      xy({
+        x: {}, // unpinned x so bounds are derived
+        traces: [
+          { id: "sweep", expr: "x" },
+          { id: "data", expr: "ys", xData: "xs" },
+        ],
+      }),
+      { xs: [10, 20], ys: [1, 2] },
+    );
+    expect(res.bounds.xMax).toBeGreaterThanOrEqual(20); // override trace not clipped
+  });
+});
+
 describe("evaluatePlot — bounds", () => {
   it("honors pinned axis bounds exactly", () => {
     const res = evaluatePlot(xy({ y: { min: 0, max: 100 }, traces: [{ id: "t", expr: "x" }] }));

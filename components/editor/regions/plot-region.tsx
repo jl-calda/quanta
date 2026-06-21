@@ -9,6 +9,7 @@ import type { EditorAction } from "../state/editor-reducer";
 import { IconButton } from "@/components/ds";
 import { Icon } from "../icons";
 import {
+  legendFlex,
   PlotEmptyState,
   PlotFigure,
   PlotLegend,
@@ -70,6 +71,7 @@ function PlotEditor({
 
   const sweepNoRange = !region.xData && (region.x.min == null || region.x.max == null) && region.kind !== "polar";
   const boundLabel = region.traces[0]?.expr ? prettyExpr(region.traces[0].expr) : null;
+  const { flexDirection, vertical } = legendFlex(region.legendPos);
 
   return (
     <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
@@ -98,28 +100,35 @@ function PlotEditor({
         </div>
       )}
 
-      {/* the plot */}
-      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
-        <PlotFigure
-          result={result}
-          region={region}
-          hoverIndex={canEdit ? hoverIndex : null}
-          onHoverIndex={canEdit ? setHoverIndex : undefined}
-          onPan={canEdit ? pan : undefined}
-        />
-        {sweepNoRange && (
-          <div style={{ font: "10.5px/1.4 var(--font-sans)", color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px" }}>
-            Set an x range to plot <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar}</span>.
-          </div>
+      {/* figure + legend, arranged per legendPos */}
+      <div style={{ display: "flex", flexDirection, alignItems: vertical ? "center" : "stretch", gap: vertical ? 12 : 0 }}>
+        {/* the plot */}
+        <div style={{ flex: vertical ? 1 : undefined, minWidth: 0, border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+          <PlotFigure
+            result={result}
+            region={region}
+            hoverIndex={canEdit ? hoverIndex : null}
+            onHoverIndex={canEdit ? setHoverIndex : undefined}
+            onPan={canEdit ? pan : undefined}
+          />
+          {sweepNoRange && (
+            <div style={{ font: "10.5px/1.4 var(--font-sans)", color: "var(--text-muted)", textAlign: "center", padding: "4px 0 6px" }}>
+              Set an x range to plot <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{region.xVar}</span>.
+            </div>
+          )}
+        </div>
+
+        {/* legend */}
+        {region.legend && (
+          <PlotLegend
+            traces={result.traces}
+            boundLabel={boundLabel}
+            theme={region.theme}
+            vertical={vertical}
+            onToggle={canEdit ? (id) => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: id }) : undefined}
+          />
         )}
       </div>
-
-      {/* legend */}
-      <PlotLegend
-        traces={result.traces}
-        boundLabel={boundLabel}
-        onToggle={canEdit ? (id) => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: id }) : undefined}
-      />
     </div>
   );
 }

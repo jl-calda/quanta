@@ -254,8 +254,13 @@ const plotTraceSchema = z.object({
   style: traceStyleSchema.default("line"),
   color: z.string().optional(),
   dash: z.boolean().optional(),
+  /** Line weight in px (renderer default 2); independent per trace. */
+  width: z.number().min(0.5).max(6).optional(),
+  /** Per-trace x override (a vector/range name) — its own data source; falls back to the plot's `xData`. */
+  xData: z.string().optional(),
   hidden: z.boolean().optional(),
 });
+const legendPosSchema = z.enum(["bottom", "top", "left", "right"]);
 /** z = f(x, y) surface, for contour/3D (typed-but-inert until the renderer ships). */
 const plotZSchema = z.object({
   expr: z.string().default(""),
@@ -298,6 +303,10 @@ const plotRegionSchema = z
     /** Sweep sample count (plot-by-formula); engine clamps to 2–400. */
     samples: z.number().int().min(2).max(400).optional(),
     legend: z.boolean().default(true),
+    /** Where the legend sits relative to the figure (presentation-only). */
+    legendPos: legendPosSchema.default("bottom"),
+    /** Named trace palette (see `plot-theme.ts`); presentation-only. */
+    theme: z.string().optional(),
     frame: z.boolean().optional(),
   })
   .passthrough();
@@ -542,6 +551,7 @@ export type TableGroup = z.infer<typeof tableGroupSchema>;
 export type TablePivot = z.infer<typeof tablePivotSchema>;
 export type PlotKind = z.infer<typeof plotKindSchema>;
 export type TraceStyle = z.infer<typeof traceStyleSchema>;
+export type LegendPos = z.infer<typeof legendPosSchema>;
 export type PlotAxis = z.infer<typeof plotAxisSchema>;
 export type PlotTrace = z.infer<typeof plotTraceSchema>;
 export type PlotZ = z.infer<typeof plotZSchema>;
@@ -635,6 +645,10 @@ export interface PlotRegion extends RegionBase {
   traces: PlotTrace[];
   samples?: number;
   legend: boolean;
+  /** Legend placement relative to the figure (defaults to "bottom" when unset). */
+  legendPos?: LegendPos;
+  /** Named trace palette id (see `plot-theme.ts`); falls back to "default". */
+  theme?: string;
   frame?: boolean;
   [key: string]: unknown;
 }

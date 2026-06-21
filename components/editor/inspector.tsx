@@ -30,6 +30,7 @@ import type {
   TraceStyle,
 } from "@/lib/worksheet/content";
 import { DEFAULT_DISPLAY } from "@/lib/worksheet/content";
+import { PLOT_THEME_OPTIONS, themePalette } from "@/lib/worksheet/plot-theme";
 import { parseProgramBody, programBodyToText } from "@/lib/worksheet/program-text";
 import { useEditor } from "./state/editor-provider";
 import type { EditorAction, RegionPatch, TableColumnPatch } from "./state/editor-reducer";
@@ -492,6 +493,22 @@ const TRACE_STYLES: { value: TraceStyle; label: string }[] = [
   { value: "box", label: "Box" },
 ];
 
+const LEGEND_POSITIONS: { value: NonNullable<PlotRegion["legendPos"]>; label: string }[] = [
+  { value: "bottom", label: "Bottom" },
+  { value: "top", label: "Top" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+];
+
+/** Clamp a line-width entry to the schema's 0.5–6 px (blank ⇒ default). */
+function clampWidth(raw: string): number | undefined {
+  const t = raw.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0.5, Math.min(6, n));
+}
+
 function PlotInspector({
   region,
   set,
@@ -583,9 +600,25 @@ function PlotInspector({
             <Row label="Samples">
               <SampleStepper value={region.samples ?? 80} set={(v) => set({ samples: v })} />
             </Row>
+            <Row label="Theme">
+              <div style={{ width: 140 }}>
+                <Select value={region.theme ?? "default"} onChange={(e) => set({ theme: e.target.value })} options={PLOT_THEME_OPTIONS} />
+              </div>
+            </Row>
             <Row label="Legend">
               <Switch checked={region.legend} onChange={(e) => set({ legend: e.target.checked })} />
             </Row>
+            {region.legend && (
+              <Row label="Legend position">
+                <div style={{ width: 140 }}>
+                  <Select
+                    value={region.legendPos ?? "bottom"}
+                    onChange={(e) => set({ legendPos: e.target.value as PlotRegion["legendPos"] })}
+                    options={LEGEND_POSITIONS}
+                  />
+                </div>
+              </Row>
+            )}
           </Group>
 
           <Group eyebrow="Traces">
@@ -593,6 +626,7 @@ function PlotInspector({
               <TraceEditor
                 key={t.id}
                 trace={t}
+                theme={region.theme}
                 setTrace={setTrace}
                 onToggle={() => dispatch({ type: "TOGGLE_PLOT_TRACE", id: region.id, traceId: t.id })}
                 onDelete={() => dispatch({ type: "DELETE_PLOT_TRACE", id: region.id, traceId: t.id })}
@@ -659,11 +693,13 @@ function AxisInspector({
 
 function TraceEditor({
   trace,
+  theme,
   setTrace,
   onToggle,
   onDelete,
 }: {
   trace: PlotTrace;
+  theme?: string;
   setTrace: (traceId: string, patch: Partial<PlotTrace>) => void;
   onToggle: () => void;
   onDelete: () => void;
@@ -686,6 +722,75 @@ function TraceEditor({
         </div>
         <Input key={`${trace.id}:label`} defaultValue={trace.label ?? ""} placeholder="Label" onBlur={(e) => setTrace(trace.id, { label: e.target.value.trim() || undefined })} containerStyle={{ width: 96 }} />
       </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <TraceColorPicker trace={trace} theme={theme} onColor={(color) => setTrace(trace.id, { color })} />
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          <Switch checked={!!trace.dash} onChange={(e) => setTrace(trace.id, { dash: e.target.checked || undefined })} /> Dashed
+        </label>
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, font: "11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          Width
+          <Input key={`${trace.id}:width`} mono defaultValue={trace.width != null ? String(trace.width) : ""} placeholder="2" onBlur={(e) => setTrace(trace.id, { width: clampWidth(e.target.value) })} containerStyle={{ width: 52 }} />
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ font: "11px/1 var(--font-mono)", color: "var(--text-muted)" }}>x =</span>
+        <Input key={`${trace.id}:xdata`} mono defaultValue={trace.xData ?? ""} placeholder="Plot x (default)" onBlur={(e) => setTrace(trace.id, { xData: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Per-trace color: theme swatches + a custom color well + a reset to the theme
+ * default. An unset color (`undefined`) means "follow the theme palette".
+ */
+function TraceColorPicker({
+  trace,
+  theme,
+  onColor,
+}: {
+  trace: PlotTrace;
+  theme?: string;
+  onColor: (color: string | undefined) => void;
+}) {
+  const swatches = themePalette(theme);
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      {swatches.map((c) => {
+        const active = trace.color?.toLowerCase() === c.toLowerCase();
+        return (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Use color ${c}`}
+            aria-pressed={active}
+            onClick={() => onColor(c)}
+            style={{
+              width: 16,
+              height: 16,
+              padding: 0,
+              borderRadius: "var(--radius-sm)",
+              border: active ? "2px solid var(--text-primary)" : "1px solid var(--border-strong)",
+              background: c,
+              cursor: "pointer",
+            }}
+          />
+        );
+      })}
+      <label
+        title="Custom color"
+        style={{ display: "inline-flex", width: 16, height: 16, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-strong)", overflow: "hidden", cursor: "pointer" }}
+      >
+        <input
+          type="color"
+          value={trace.color ?? "#1F5FBF"}
+          onChange={(e) => onColor(e.target.value)}
+          style={{ width: 24, height: 24, margin: -4, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+        />
+      </label>
+      <IconButton label="Use theme color" size="sm" onClick={() => onColor(undefined)}>
+        <Icon name="x" size={12} />
+      </IconButton>
     </div>
   );
 }
