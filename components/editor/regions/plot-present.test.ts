@@ -16,12 +16,15 @@ function render(spec: PlotSpec, region: PlotFigureProps["region"]): string {
 
 describe("PlotFigure — Phase 2 refinements", () => {
   it("renders a secondary log axis + reference line + error bars without throwing", () => {
+    const x = { min: 1, max: 100 };
+    const y = { label: "force", unit: "kN" };
+    const y2 = { label: "stress", unit: "MPa", scale: "log" as const };
     const spec: PlotSpec = {
       kind: "xy",
       xVar: "x",
-      x: { min: 1, max: 100 },
-      y: { label: "force", unit: "kN" },
-      y2: { label: "stress", unit: "MPa", scale: "log" },
+      x,
+      y,
+      y2,
       samples: 12,
       traces: [
         { id: "a", expr: "x", axis: "y" },
@@ -30,13 +33,7 @@ describe("PlotFigure — Phase 2 refinements", () => {
       references: [{ id: "r", axis: "y", value: 40, label: "capacity" }],
       annotations: [{ id: "n", x: 50, y: 50, text: "peak" }],
     };
-    const region: PlotFigureProps["region"] = {
-      kind: "xy",
-      xVar: "x",
-      x: spec.x,
-      y: spec.y,
-      y2: spec.y2,
-    };
+    const region: PlotFigureProps["region"] = { kind: "xy", xVar: "x", x, y, y2 };
 
     const svg = render(spec, region);
 
@@ -59,14 +56,16 @@ describe("PlotFigure — Phase 2 refinements", () => {
   });
 
   it("renders an error band variant", () => {
+    const x = { min: 0, max: 5 };
+    const y = {};
     const spec: PlotSpec = {
       kind: "xy",
-      x: { min: 0, max: 5 },
-      y: {},
+      x,
+      y,
       samples: 8,
       traces: [{ id: "t", expr: "x^2", errorExpr: "2", errorMode: "band" }],
     };
-    const svg = render(spec, { kind: "xy", xVar: "x", x: spec.x, y: spec.y });
+    const svg = render(spec, { kind: "xy", xVar: "x", x, y });
     expect(svg).toContain("<svg");
     expect(svg).not.toContain("NaN");
   });
