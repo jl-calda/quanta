@@ -57,6 +57,8 @@ export type CalcResult = CalcOk | CalcErr;
 
 export type Notation = "auto" | "decimal" | "sci" | "eng";
 export type Radix = "dec" | "bin" | "oct" | "hex";
+/** How a complex result is written: rectangular `a + b i` or polar `r ∠ θ`. */
+export type ComplexForm = "rect" | "polar";
 
 export interface ResultFormat {
   /** Fixed number of decimal places. Mutually exclusive with `sigfigs`. */
@@ -75,16 +77,19 @@ export interface ResultFormat {
   zeroThreshold?: number;
   /** Render rationals as stacked fractions instead of decimals. */
   fraction?: boolean;
+  /** Display form for complex results (rectangular `a + b i` vs polar `r ∠ θ`). */
+  complex?: ComplexForm;
 }
 
 /** Default formatting when a region specifies none. */
 export const DEFAULT_FORMAT: Required<
-  Pick<ResultFormat, "notation" | "radix">
+  Pick<ResultFormat, "notation" | "radix" | "complex">
 > &
   ResultFormat = {
   notation: "auto",
   radix: "dec",
   sigfigs: 6,
+  complex: "rect",
 };
 
 /* ------------------------------------------------------------------ *
@@ -111,7 +116,7 @@ export interface CondRule {
  * Unit system (Functional Brief §2 — display-unit mapping)
  * ------------------------------------------------------------------ */
 
-export type UnitSystemId = "SI" | "custom";
+export type UnitSystemId = "SI" | "USCS" | "CGS" | "custom";
 
 export interface UnitSystem {
   id: UnitSystemId;

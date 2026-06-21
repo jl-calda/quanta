@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button, Dialog, Select, Switch } from "@/components/ds";
 import { findRegion } from "@/lib/worksheet/flatten";
 import { applyResultFormat, previewResult } from "@/lib/worksheet/formatting";
-import type { Notation, Radix, ResultFormat } from "@/lib/worksheet/content";
+import type { ComplexForm, Notation, Radix, ResultFormat } from "@/lib/worksheet/content";
 import { useEditor } from "../state/editor-provider";
 import { Field, InlineRow, ScopeToggle, Section, Stepper } from "./parts";
 
@@ -132,6 +132,16 @@ export function ResultFormatDialog({ regionId, onClose }: { regionId: string | n
           <InlineRow label="Keep trailing zeros">
             <Switch checked={!!fmt.trailingZeros} onChange={(e) => set({ trailingZeros: e.target.checked })} />
           </InlineRow>
+          <Field label="Complex form" hint="How complex results are written.">
+            <Select
+              value={fmt.complex ?? "rect"}
+              onChange={(e) => set({ complex: e.target.value as ComplexForm })}
+              options={[
+                { value: "rect", label: "a + b i" },
+                { value: "polar", label: "Polar (r∠θ)" },
+              ]}
+            />
+          </Field>
         </Section>
 
         <Section eyebrow="Apply to">

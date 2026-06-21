@@ -15,13 +15,29 @@
  * keeps export on a single deterministic Node path (no Pyodide server-side) while
  * still showing the same symbolic result as the app.
  */
-import { evaluateSheet, SI_SYSTEM, type RegionResult } from "@/lib/calc";
+import {
+  evaluateSheet,
+  registerUserUnits,
+  unitSystemFor,
+  type RegionResult,
+  type WorksheetUnitSystem,
+} from "@/lib/calc";
 import { flattenToRegionInputs, mapResults } from "@/lib/worksheet/flatten";
 import { applySymbolicCache } from "@/lib/worksheet/symbolic-cache";
 import type { WorksheetContent } from "@/lib/worksheet/content";
 
-/** Evaluate a worksheet's content and index the results by region id. */
-export function evaluateForExport(content: WorksheetContent): Map<string, RegionResult> {
-  const sheet = evaluateSheet(flattenToRegionInputs(content), { unitSystem: SI_SYSTEM });
+/**
+ * Evaluate a worksheet's content and index the results by region id. The
+ * worksheet's custom units are registered first (so they resolve), and its
+ * display unit-system (`si` default) re-displays results exactly as the editor —
+ * display-only, stored values untouched.
+ */
+export function evaluateForExport(
+  content: WorksheetContent,
+  unitSystem: WorksheetUnitSystem = "si",
+): Map<string, RegionResult> {
+  registerUserUnits(content.units?.defs ?? []);
+  const system = unitSystemFor(unitSystem, content.units?.preferred ?? []);
+  const sheet = evaluateSheet(flattenToRegionInputs(content), { unitSystem: system });
   return applySymbolicCache(content, mapResults(sheet));
 }

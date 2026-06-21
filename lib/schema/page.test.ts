@@ -41,4 +41,10 @@ describe("layoutSettingsSchema", () => {
     expect(custom.textStyles.note.label).toBe("Note");
     expect(layoutSettingsSchema.safeParse({ columns: 9 }).success).toBe(false);
   });
+
+  it("carries the worksheet unit-system selection (defaults to si)", () => {
+    expect(parseLayoutSettings({}).unitSystem).toBe("si");
+    expect(parseLayoutSettings({ unitSystem: "uscs" }).unitSystem).toBe("uscs");
+    expect(layoutSettingsSchema.safeParse({ unitSystem: "nope" }).success).toBe(false);
+  });
 });

@@ -79,6 +79,8 @@ export const layoutSettingsSchema = z.object({
   gutter: z.number().int().min(8).max(96).default(24),
   /** Named text styles, keyed by id (`title`, `heading1`, `body`, …). */
   textStyles: z.record(textStyleSchema).default({}),
+  /** Worksheet-level display unit-system selection (display-only re-convert). */
+  unitSystem: z.enum(["si", "uscs", "cgs", "custom"]).default("si"),
 });
 
 export type LayoutSettings = z.infer<typeof layoutSettingsSchema>;

@@ -33,7 +33,21 @@ export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";
 export { applyConditional } from "./conditional";
 export { buildSubstitutedTex } from "./show-steps";
-export { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
+export {
+  toDisplayUnit,
+  SI_SYSTEM,
+  USCS_SYSTEM,
+  CGS_SYSTEM,
+  unitSystemFor,
+  isUnit,
+  type WorksheetUnitSystem,
+} from "./units";
+export {
+  registerUserUnits,
+  type UserUnitDef,
+  type UserUnitError,
+  type RegisterResult,
+} from "./user-units";
 export { math } from "./math";
 
 // Table / spreadsheet region (pure, engine-native — see ./table, ./lookups).
@@ -112,6 +126,7 @@ export type {
   ResultFormat,
   Notation,
   Radix,
+  ComplexForm,
   CondRule,
   CondOp,
   CondStyle,

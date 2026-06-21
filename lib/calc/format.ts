@@ -19,7 +19,9 @@ export function formatValue(value: unknown, format?: ResultFormat): string {
   if (isUnit(value)) {
     const unitLabel = value.formatUnits();
     const num = value.toNumber(unitLabel);
-    const numStr = formatNumber(num, fmt);
+    // A unit can carry a complex magnitude (e.g. some eigenvalues); format the
+    // magnitude with the same rules, then append the unit.
+    const numStr = typeof num === "number" ? formatNumber(num, fmt) : formatValue(num, fmt);
     return unitLabel ? `${numStr} ${prettyUnit(unitLabel)}` : numStr;
   }
 
@@ -28,11 +30,44 @@ export function formatValue(value: unknown, format?: ResultFormat): string {
   if (typeof value === "string") return value;
   if (value === null || value === undefined) return "";
 
-  // Complex, matrices, fractions, etc. — defer to mathjs with the notation hint.
+  if (math.isComplex(value)) return formatComplex(value.re, value.im, fmt);
+
+  // Matrices, fractions, etc. — defer to mathjs with the notation hint.
   return math.format(value, {
     notation: mathjsNotation(fmt.notation),
     precision: fmt.sigfigs ?? 6,
   });
+}
+
+/** Snap a magnitude within the zero threshold to exactly 0 (mirrors formatNumber). */
+function snapZero(num: number, fmt: ResultFormat): number {
+  return fmt.zeroThreshold != null && Math.abs(num) <= fmt.zeroThreshold ? 0 : num;
+}
+
+/**
+ * Format a complex result. Rectangular shows `a + b i` (signs split, pure-real
+ * and pure-imaginary tidied, `±1 i` → `±i`); polar shows `r ∠ θ°` with the angle
+ * in degrees. Each numeric part runs through {@link formatNumber} so decimals /
+ * significant figures / notation apply — radix and fraction don't apply to a
+ * complex value, so they're dropped for the parts.
+ */
+function formatComplex(reRaw: number, imRaw: number, fmt: ResultFormat): string {
+  const partFmt: ResultFormat = { ...fmt, radix: "dec", fraction: false };
+  const re = snapZero(reRaw, fmt);
+  const im = snapZero(imRaw, fmt);
+
+  if (fmt.complex === "polar") {
+    const r = Math.hypot(re, im);
+    const deg = (Math.atan2(im, re) * 180) / Math.PI;
+    return `${formatNumber(r, partFmt)} ∠ ${formatNumber(deg, partFmt)}°`;
+  }
+
+  // Rectangular a + b i.
+  if (im === 0) return formatNumber(re, partFmt);
+  const mag = Math.abs(im);
+  const imStr = mag === 1 ? "i" : `${formatNumber(mag, partFmt)} i`;
+  if (re === 0) return im < 0 ? `-${imStr}` : imStr;
+  return `${formatNumber(re, partFmt)} ${im < 0 ? "-" : "+"} ${imStr}`;
 }
 
 function formatNumber(input: number, fmt: ResultFormat): string {

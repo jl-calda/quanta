@@ -11,6 +11,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseContent } from "@/lib/worksheet/content";
+import { parseLayoutSettings } from "@/lib/schema/page";
 import { parseWorkspaceSettings } from "@/lib/schema/settings";
 import type { ExportDocumentProps } from "./document";
 import { evaluateForExport } from "./evaluate";
@@ -62,7 +63,7 @@ export async function runExport(
 
   const { data: worksheet } = await supabase
     .from("worksheets")
-    .select("id, title, content, workspace_id")
+    .select("id, title, content, workspace_id, layout_settings")
     .eq("id", worksheetId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -93,7 +94,7 @@ export async function runExport(
   }
 
   const content = parseContent(worksheet.content);
-  const results = evaluateForExport(content);
+  const results = evaluateForExport(content, parseLayoutSettings(worksheet.layout_settings).unitSystem);
   const props: ExportDocumentProps = { title: worksheet.title, content, results, options };
 
   try {

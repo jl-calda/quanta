@@ -13,7 +13,8 @@ import {
 } from "react";
 import {
   CalcEngine,
-  SI_SYSTEM,
+  registerUserUnits,
+  unitSystemFor,
   type PlotResult,
   type ProgramResult,
   type RegionResult,
@@ -30,6 +31,7 @@ import {
   saveWorksheetVersion,
   setCalcMode as setCalcModeAction,
 } from "@/server/actions/worksheet";
+import { updateLayoutSettings } from "@/server/actions/page";
 import {
   editorReducer,
   initEditorState,
@@ -132,16 +134,14 @@ export function EditorProvider({
     initEditorState,
   );
 
-  // The calc engine lives beside the reducer (a pure, synchronous core). We keep
-  // it in a ref and reconcile it from `content`. Engine evaluation always uses
-  // SI display this pass; USCS/CGS are display-only selections (see plan).
+  // The calc engine lives beside the reducer (a pure, synchronous core), kept in
+  // a ref and reconciled from `content`. Its DISPLAY unit-system is derived from
+  // the worksheet selection + custom units; switching it re-displays results and
+  // NEVER mutates stored values. The engine's display system is fixed at
+  // construction and recalc.ts is untouched, so we rebuild the engine (keyed by
+  // selection + custom units) when either changes.
   const engineRef = useRef<CalcEngine | null>(null);
-  if (engineRef.current === null) {
-    engineRef.current = new CalcEngine(buildEngineInputs(initialContent), {
-      unitSystem: SI_SYSTEM,
-      mode: initialCalcMode,
-    });
-  }
+  const engineKeyRef = useRef<string>("");
 
   const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
   const [plotResults, setPlotResults] = useState<Map<string, PlotResult>>(() => new Map());
@@ -155,8 +155,23 @@ export function EditorProvider({
 
   // Run the engine + tables to a settled fixpoint (the scope-bridge); `settleTables`
   // is pure and unit-tested in `lib/worksheet/flatten`. Plots sample the settled
-  // scope in the same pass, so they stay reactive on every recalc.
-  const reconcile = (content: WorksheetContent) => settleTables(content, engineRef.current!);
+  // scope in the same pass, so they stay reactive on every recalc. We first
+  // register the worksheet's custom units (so `kip` resolves at parse & display
+  // time) and build the display unit-system, rebuilding the engine when the
+  // selection or custom units change.
+  const reconcile = (content: WorksheetContent) => {
+    registerUserUnits(content.units?.defs ?? []);
+    const system = unitSystemFor(state.unitsSystem, content.units?.preferred ?? []);
+    const key = `${state.unitsSystem}|${JSON.stringify(content.units ?? {})}`;
+    if (engineRef.current === null || engineKeyRef.current !== key) {
+      engineRef.current = new CalcEngine(buildEngineInputs(content), {
+        unitSystem: system,
+        mode: state.calcMode,
+      });
+      engineKeyRef.current = key;
+    }
+    return settleTables(content, engineRef.current, system);
+  };
 
   const publishReconcile = (content: WorksheetContent) => {
     const { sheet, tables, plots, solves, programs } = reconcile(content);
@@ -187,6 +202,24 @@ export function EditorProvider({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.content]);
+
+  // A unit-system switch is display-only: re-display immediately (even in Manual
+  // mode, since stored values don't change) and persist the worksheet selection
+  // to layout_settings via the existing Zod Server Action.
+  const unitsMounted = useRef(false);
+  useEffect(() => {
+    if (!unitsMounted.current) {
+      unitsMounted.current = true;
+      return;
+    }
+    publishReconcile(state.content);
+    if (canEdit) {
+      const next = { ...layoutSettings, unitSystem: state.unitsSystem };
+      setLayoutSettings(next);
+      void updateLayoutSettings({ id: worksheetId, layoutSettings: next });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.unitsSystem]);
 
   const recalculate = () => publishReconcile(state.content);
 

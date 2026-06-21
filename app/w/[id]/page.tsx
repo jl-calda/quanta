@@ -83,6 +83,11 @@ export default async function WorksheetEditorPage({
     getEditorProjectTree(worksheet.workspace_id),
   ]);
 
+  // The worksheet's display unit-system is persisted in layout_settings (the
+  // status-bar selector writes it there); legacy sheets fall back to SI, which is
+  // what they displayed before the selector was wired to re-convert.
+  const layoutSettings = parseLayoutSettings(worksheet.layout_settings);
+
   return (
     <EditorApp
       worksheet={{
@@ -90,11 +95,11 @@ export default async function WorksheetEditorPage({
         title: worksheet.title,
         content: parseContent(worksheet.content),
         calcMode: worksheet.calc_mode,
-        unitsSystem: worksheet.units_system,
+        unitsSystem: layoutSettings.unitSystem,
         projectId: worksheet.project_id,
         workspaceId: worksheet.workspace_id,
         pageSettings: parsePageSettings(worksheet.page_settings),
-        layoutSettings: parseLayoutSettings(worksheet.layout_settings),
+        layoutSettings,
       }}
       projectTree={projectTree}
       canEdit={canEdit}
