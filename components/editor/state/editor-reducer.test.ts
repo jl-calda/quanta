@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SheetResult } from "@/lib/calc";
-import { parseContent, type ControlRegion, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
+import { parseContent, type ControlRegion, type PlotRegion, type TableRegion, type WorksheetContent } from "@/lib/worksheet/content";
 import { findRegion, flattenToRegionInputs, readingOrderIds } from "@/lib/worksheet/flatten";
 import {
   editorReducer,
@@ -768,5 +768,133 @@ describe("input controls", () => {
     expect(c.kind).toBe("combo");
     expect(c.options).toEqual([{ value: "S275" }, { value: "S355" }]);
     expect(c.value).toBe("S275");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Table cell formatting (per-cell styles, table style, merge)
+ * ------------------------------------------------------------------ */
+
+const tableDoc: WorksheetContent = {
+  version: 1,
+  rows: [
+    {
+      id: "r1",
+      columns: 1,
+      cells: [
+        {
+          regions: [
+            {
+              id: "T",
+              type: "table",
+              indent: 0,
+              columns: [{ key: "a", label: "A" }, { key: "b", label: "B" }],
+              rows: [["1", "2"], ["3", "4"], ["5", "6"]],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+const getTable = (s: EditorState) => findRegion(s.content, "T") as TableRegion;
+
+describe("SET_TABLE_SELECTION", () => {
+  it("sets the active cell without marking the document dirty", () => {
+    const s = editorReducer(freshState(tableDoc), {
+      type: "SET_TABLE_SELECTION",
+      sel: { id: "T", r: 1, c: 0 },
+    });
+    expect(s.tableSel).toEqual({ id: "T", r: 1, c: 0 });
+    expect(s.saveState).toBe("saved"); // UI-only — never touches content
+  });
+});
+
+describe("SET_TABLE_CELL_STYLE", () => {
+  it("sets, merges, and prunes a per-cell style entry", () => {
+    let s = editorReducer(freshState(tableDoc), {
+      type: "SET_TABLE_CELL_STYLE",
+      id: "T",
+      r: 0,
+      c: 1,
+      patch: { align: "center", format: { decimals: 3 } },
+    });
+    expect(getTable(s).cellStyles).toEqual({ "0,1": { align: "center", format: { decimals: 3 } } });
+    expect(s.saveState).toBe("unsaved");
+
+    // A second patch merges into the same cell entry.
+    s = editorReducer(s, { type: "SET_TABLE_CELL_STYLE", id: "T", r: 0, c: 1, patch: { bold: true } });
+    expect(getTable(s).cellStyles!["0,1"]).toEqual({ align: "center", format: { decimals: 3 }, bold: true });
+
+    // `null` clears individual keys; emptying the entry drops it, then the map.
+    s = editorReducer(s, {
+      type: "SET_TABLE_CELL_STYLE",
+      id: "T",
+      r: 0,
+      c: 1,
+      patch: { align: null, format: null, bold: null },
+    });
+    expect(getTable(s).cellStyles).toBeUndefined();
+  });
+
+  it("drops an emptied border object (all edges off)", () => {
+    let s = editorReducer(freshState(tableDoc), {
+      type: "SET_TABLE_CELL_STYLE",
+      id: "T",
+      r: 0,
+      c: 0,
+      patch: { border: { top: true } },
+    });
+    expect(getTable(s).cellStyles!["0,0"].border).toEqual({ top: true });
+    s = editorReducer(s, { type: "SET_TABLE_CELL_STYLE", id: "T", r: 0, c: 0, patch: { border: {} } });
+    expect(getTable(s).cellStyles).toBeUndefined();
+  });
+});
+
+describe("SET_TABLE_STYLE", () => {
+  it("sets a preset and clears it back to the implicit default", () => {
+    let s = editorReducer(freshState(tableDoc), { type: "SET_TABLE_STYLE", id: "T", style: "grid" });
+    expect(getTable(s).tableStyle).toBe("grid");
+    s = editorReducer(s, { type: "SET_TABLE_STYLE", id: "T", style: "default" });
+    expect(getTable(s).tableStyle).toBeUndefined(); // "default" stays out of JSONB
+    s = editorReducer(s, { type: "SET_TABLE_STYLE", id: "T", style: "bordered" });
+    s = editorReducer(s, { type: "SET_TABLE_STYLE", id: "T", style: null });
+    expect(getTable(s).tableStyle).toBeUndefined();
+  });
+});
+
+describe("MERGE_TABLE_CELLS / UNMERGE_TABLE_CELLS", () => {
+  it("adds a normalized merge, replaces overlapping ones, and ignores 1×1", () => {
+    let s = editorReducer(freshState(tableDoc), {
+      type: "MERGE_TABLE_CELLS",
+      id: "T",
+      r0: 1,
+      c0: 0,
+      r1: 0, // reversed corners normalize to anchor (0,0)
+      c1: 1,
+    });
+    expect(getTable(s).merges).toEqual([{ r: 0, c: 0, rowSpan: 2, colSpan: 2 }]);
+
+    // A new merge overlapping the first replaces it.
+    s = editorReducer(s, { type: "MERGE_TABLE_CELLS", id: "T", r0: 0, c0: 0, r1: 0, c1: 1 });
+    expect(getTable(s).merges).toEqual([{ r: 0, c: 0, rowSpan: 1, colSpan: 2 }]);
+
+    // A 1×1 "merge" is a no-op.
+    s = editorReducer(s, { type: "MERGE_TABLE_CELLS", id: "T", r0: 2, c0: 0, r1: 2, c1: 0 });
+    expect(getTable(s).merges).toEqual([{ r: 0, c: 0, rowSpan: 1, colSpan: 2 }]);
+  });
+
+  it("unmerges by a covered coordinate and drops the empty array", () => {
+    let s = editorReducer(freshState(tableDoc), {
+      type: "MERGE_TABLE_CELLS",
+      id: "T",
+      r0: 0,
+      c0: 0,
+      r1: 1,
+      c1: 1,
+    });
+    // (1,1) is covered by the merge anchored at (0,0).
+    s = editorReducer(s, { type: "UNMERGE_TABLE_CELLS", id: "T", r: 1, c: 1 });
+    expect(getTable(s).merges).toBeUndefined();
   });
 });

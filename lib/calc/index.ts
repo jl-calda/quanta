@@ -60,6 +60,7 @@ export {
   cellAddress,
   type TableSpec,
   type TableColumnSpec,
+  type TableCellFormat,
   type TableResult,
   type TableCellResult,
   type TableCellKind,

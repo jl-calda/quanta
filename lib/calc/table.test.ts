@@ -119,6 +119,36 @@ describe("evaluateTable — formulas, refs & conditional formatting", () => {
   });
 });
 
+describe("evaluateTable — per-cell number format overlay", () => {
+  it("a per-cell format overrides the column format for that cell only", () => {
+    const table = anchorSchedule();
+    // Column "ur" formats to 2 decimals; pin A3's utilization to 4 decimals.
+    table.cellStyles = { "2,4": { format: { decimals: 4, trailingZeros: true } } };
+    const res = evaluateTable(table);
+    expect(res.cells[2][4].formatted).toBe("1.3805"); // 41.0 / 29.7, 4 dp
+    expect(res.cells[0][4].formatted).toBe("0.23"); // other rows keep the column's 2 dp
+  });
+
+  it("merges the cell format over the column format (inherits unspecified keys)", () => {
+    const table: TableSpec = {
+      columns: [{ key: "x", label: "X", format: { decimals: 1, trailingZeros: true } }],
+      rows: [["3.14159"]],
+      cellStyles: { "0,0": { format: { decimals: 3 } } },
+    };
+    const res = evaluateTable(table);
+    // decimals overridden to 3; trailingZeros inherited from the column format.
+    expect(res.cells[0][0].formatted).toBe("3.142");
+  });
+
+  it("leaves cells without an overlay entry untouched", () => {
+    const table = anchorSchedule();
+    table.cellStyles = { "0,4": { format: { decimals: 3, trailingZeros: true } } };
+    const res = evaluateTable(table);
+    expect(res.cells[0][4].formatted).toBe("0.227");
+    expect(res.cells[1][4].formatted).toBe("0.35");
+  });
+});
+
 describe("evaluateTable — ranges, lookups & named refs", () => {
   it("reads an A1 range with a reducer like mean()", () => {
     const res = evaluateTable({

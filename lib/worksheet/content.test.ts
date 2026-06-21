@@ -156,6 +156,59 @@ describe("typed table region", () => {
     expect(table.rows).toEqual([["A1", "120"], ["A2", "=B2*2"]]);
   });
 
+  it("round-trips per-cell styles, a table-style preset, and cell merges", () => {
+    const input = tableDoc({
+      id: "t1",
+      type: "table",
+      indent: 0,
+      columns: [{ key: "a", label: "A" }, { key: "b", label: "B" }],
+      rows: [["1", "2"], ["3", "4"]],
+      cellStyles: {
+        "0,0": {
+          format: { decimals: 3 },
+          align: "center",
+          bold: true,
+          italic: true,
+          color: "var(--status-error)",
+          fill: "var(--accent-tint)",
+          border: { top: true, left: true },
+        },
+      },
+      tableStyle: "grid",
+      merges: [{ r: 0, c: 0, rowSpan: 2, colSpan: 1 }],
+    });
+    const out = validateContent(input) as WorksheetContent;
+    const table = out.rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(table.cellStyles).toEqual({
+      "0,0": {
+        format: { decimals: 3 },
+        align: "center",
+        bold: true,
+        italic: true,
+        color: "var(--status-error)",
+        fill: "var(--accent-tint)",
+        border: { top: true, left: true },
+      },
+    });
+    expect(table.tableStyle).toBe("grid");
+    expect(table.merges).toEqual([{ r: 0, c: 0, rowSpan: 2, colSpan: 1 }]);
+  });
+
+  it("validates a table that has no cell formatting (fields stay absent)", () => {
+    const input = tableDoc({
+      id: "t1",
+      type: "table",
+      indent: 0,
+      columns: [{ key: "a", label: "A" }],
+      rows: [["1"]],
+    });
+    const out = validateContent(input) as WorksheetContent;
+    const table = out.rows[0].cells[0].regions[0] as Record<string, unknown>;
+    expect(table.cellStyles).toBeUndefined();
+    expect(table.tableStyle).toBeUndefined();
+    expect(table.merges).toBeUndefined();
+  });
+
   it("migrates a legacy {rows: count, cells, columnUnits} table without nulling the document", () => {
     const input = tableDoc({
       id: "t1",

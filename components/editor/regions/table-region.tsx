@@ -13,9 +13,13 @@ import { Icon } from "../icons";
 import {
   TablePresent,
   cellOf,
+  cellAlignFor,
+  cellBorderCss,
+  cellStyleOf,
   colAlign,
   colFontFamily,
   columnLabel,
+  mergeLayout,
   numericColumn,
 } from "./table-present";
 import type { RegionRenderProps } from "./types";
@@ -48,11 +52,20 @@ function TableEditor({
   result?: TableResult;
   dispatch: Dispatch<EditorAction>;
 }) {
+  const { state } = useEditor();
   const cols = region.columns;
   const nRows = region.rows.length;
   const nCols = cols.length;
-  const [sel, setSel] = useState<{ r: number; c: number }>({ r: 0, c: 0 });
   const gridRef = useRef<HTMLDivElement>(null);
+  const { covered, anchor } = mergeLayout(region);
+
+  // The active cell lives in editor state so the inspector can format it. Clamp
+  // to the live grid so a stale selection (after deleting rows) stays valid.
+  const active = state.tableSel && state.tableSel.id === region.id ? state.tableSel : null;
+  const sel = {
+    r: Math.max(0, Math.min(nRows - 1, active?.r ?? 0)),
+    c: Math.max(0, Math.min(nCols - 1, active?.c ?? 0)),
+  };
 
   const clamp = (r: number, c: number) => ({
     r: Math.max(0, Math.min(nRows - 1, r)),
@@ -61,17 +74,31 @@ function TableEditor({
   const rawAt = (r: number, c: number) => region.rows[r]?.[c] ?? "";
   const errorCount = result?.errorCount ?? 0;
 
+  const setSel = (r: number, c: number) => {
+    const cl = clamp(r, c);
+    dispatch({ type: "SET_TABLE_SELECTION", sel: { id: region.id, r: cl.r, c: cl.c } });
+  };
+
+  // Establish a default active cell on entering edit mode, so the inspector has a
+  // target. Keyed on the region id → runs once per table, not on every nav.
+  useEffect(() => {
+    if (nRows > 0 && nCols > 0 && (!state.tableSel || state.tableSel.id !== region.id)) {
+      dispatch({ type: "SET_TABLE_SELECTION", sel: { id: region.id, r: 0, c: 0 } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [region.id]);
+
   const select = (r: number, c: number) => {
-    setSel(clamp(r, c));
     dispatch({ type: "SELECT", id: region.id });
+    setSel(r, c);
     gridRef.current?.focus();
   };
 
   const onGridKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => clamp(s.r - 1, s.c)); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => clamp(s.r + 1, s.c)); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setSel((s) => clamp(s.r, s.c - 1)); }
-    else if (e.key === "ArrowRight" || e.key === "Tab") { e.preventDefault(); setSel((s) => clamp(s.r, s.c + 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setSel(sel.r - 1, sel.c); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setSel(sel.r + 1, sel.c); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); setSel(sel.r, sel.c - 1); }
+    else if (e.key === "ArrowRight" || e.key === "Tab") { e.preventDefault(); setSel(sel.r, sel.c + 1); }
   };
 
   const commitCell = (source: string) => {
@@ -127,7 +154,7 @@ function TableEditor({
           onCommit={commitCell}
           onCommitNext={(source) => {
             commitCell(source);
-            setSel((s) => clamp(s.r + 1, s.c));
+            setSel(sel.r + 1, sel.c);
             gridRef.current?.focus();
           }}
         />
@@ -226,21 +253,27 @@ function TableEditor({
                   </button>
                 </td>
                 {cols.map((col, c) => {
+                  // A cell hidden under a merge renders nothing; the anchor spans it.
+                  if (covered.has(`${r},${c}`)) return null;
+                  const span = anchor.get(`${r},${c}`);
                   const isSel = sel.r === r && sel.c === c;
                   const cell = cellOf(result, r, c);
                   const style = cell?.style;
+                  const cs = cellStyleOf(region, r, c);
                   return (
                     <td
                       key={col.key}
                       className="cell"
                       onClick={() => select(r, c)}
+                      rowSpan={span?.rowSpan}
+                      colSpan={span?.colSpan}
                       style={{
                         position: "relative",
                         padding: "5px 10px",
-                        textAlign: colAlign(col),
+                        textAlign: cellAlignFor(region, col, r, c),
                         font: `${numericColumn(col) ? "" : "600 "}12px/1.3 ${colFontFamily(col)}`,
-                        color: cell?.error ? "var(--status-error)" : style?.color ?? "var(--text-primary)",
-                        background: isSel ? "transparent" : style?.fill ?? "transparent",
+                        color: cell?.error ? "var(--status-error)" : cs?.color ?? style?.color ?? "var(--text-primary)",
+                        background: isSel ? "transparent" : cs?.fill ?? style?.fill ?? "transparent",
                         borderRight: c < nCols - 1 ? "1px solid var(--border-hairline)" : "none",
                         borderTop: r ? "1px solid var(--border-hairline)" : "none",
                         cursor: "cell",
@@ -249,6 +282,9 @@ function TableEditor({
                         boxShadow: isSel ? "inset 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)" : "none",
                         whiteSpace: "nowrap",
                         transition: "background var(--dur-fast) var(--ease-out)",
+                        ...(cs?.bold ? { fontWeight: 700 } : null),
+                        ...(cs?.italic ? { fontStyle: "italic" } : null),
+                        ...cellBorderCss(cs?.border),
                       }}
                     >
                       <EditCellContent region={region} cell={cell} r={r} c={c} />

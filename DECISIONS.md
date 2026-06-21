@@ -1504,3 +1504,37 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   operator palette" for this work; only nth-root — a high-value structural
   operator with no prior ribbon presence — warranted a tile. Norm/ceil/floor/
   contour/cross/dot stay dialog-only to keep the ribbon edit minimal.
+
+## Table cell formatting (Phase 2)
+
+- **One per-cell overlay carries everything; the engine reads only `format`.**
+  `TableRegion` gained a sparse `cellStyles: Record<"r,c", TableCellStyle>`
+  (`format`/`align`/`bold`/`italic`/`color`/`fill`/`border`), plus a `tableStyle`
+  preset enum and a `merges[]` list — all optional and `.passthrough()`-safe, so a
+  table with no cell formatting round-trips byte-identical. Only **number format**
+  affects computed output, so `evaluateTable` is the sole `/lib/calc` change
+  (`table.ts`, pure; `graph.ts`/`recalc.ts` untouched): a per-cell `format` is
+  merged OVER the column format for that cell's display string. Alignment, borders,
+  fill/colour/bold/italic, merge, and table style are pure presentation read at
+  render time — no engine, no recalc.
+- **Cell selection lives in editor UI state, not the content tree.** Added
+  `EditorState.tableSel` + a UI-only `SET_TABLE_SELECTION` action (never marks the
+  doc dirty) so the inspector can target the active cell — the established home for
+  formatting (columns/conditional/result-format already live there). The table grid
+  reads/writes `tableSel`; the inspector shows a "Cell A_n" group for it.
+- **Merge is display-only (like sort/filter).** Covered cells keep their values and
+  formulas, so A1 references stay honest; the renderers skip covered `<td>`s and
+  span the anchor. Merges render only in data order, so the read view suppresses
+  them under an active sort/filter. `MERGE_TABLE_CELLS` normalizes reversed corners,
+  replaces overlapping merges, and ignores 1×1; clears use `delete` to keep JSONB
+  free of empty arrays/nulls (matching the sort/filter precedent).
+- **Number format round-trips to every output for free.** `tableRegions()` and the
+  PDF/XLSX exporters pass the real `TableRegion` straight into `evaluateTable`, so a
+  per-cell `format` reaches the screen, PDF, and Excel cell text with no plumbing.
+  The PDF `TableBlock` additionally renders cell align/fill/border/bold/italic +
+  merges. XLSX/DOCX keep today's value round-trip (native Excel number-format /
+  cell shading is a later enhancement).
+- **No new entity, table, server action, or migration.** Everything persists via
+  the existing Zod `contentSchema` → `worksheets.content` JSONB autosave; RLS is
+  unchanged. The inspector's merge stepper reuses the shared `Stepper` (caps span at
+  6) since rectangular range-selection in the grid is a later refinement.

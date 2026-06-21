@@ -279,9 +279,23 @@ function TableBlock({ region }: { region: TableRegion }): ReactNode {
   const cols = region.columns;
   if (cols.length === 0) return null;
   // Pure, deterministic — same evaluator the editor uses; runs in Node for export.
+  // The cell number format already lands in `cell.formatted` via the engine.
   const result = evaluateTable(region, {});
   const ncols = cols.length;
   const align = (col: TableColumn) => col.align ?? (col.unit || col.format ? "right" : "left");
+  const cellStyle = (r: number, c: number) => region.cellStyles?.[`${r},${c}`];
+
+  // Resolve merges (data-order; the export never sorts/filters) into a covered
+  // set + anchor lookup, mirroring the editor/read renderers.
+  const covered = new Set<string>();
+  const anchor = new Map<string, { rowSpan: number; colSpan: number }>();
+  for (const m of region.merges ?? []) {
+    anchor.set(`${m.r},${m.c}`, { rowSpan: m.rowSpan, colSpan: m.colSpan });
+    for (let r = m.r; r < m.r + m.rowSpan; r += 1)
+      for (let c = m.c; c < m.c + m.colSpan; c += 1)
+        if (r !== m.r || c !== m.c) covered.add(`${r},${c}`);
+  }
+  const edge = (on: boolean | undefined) => (on ? `1px solid ${STRONG_RULE}` : undefined);
 
   return (
     <div
@@ -321,17 +335,31 @@ function TableBlock({ region }: { region: TableRegion }): ReactNode {
           {region.rows.map((_, ri) => (
             <tr key={ri} style={{ borderTop: ri ? `1px solid ${ROW_RULE}` : "none" }}>
               {cols.map((col, ci) => {
+                if (covered.has(`${ri},${ci}`)) return null;
+                const span = anchor.get(`${ri},${ci}`);
                 const cell = result.cells[ri]?.[ci];
+                const cs = cellStyle(ri, ci);
                 return (
                   <td
                     key={col.key}
+                    rowSpan={span?.rowSpan}
+                    colSpan={span?.colSpan}
                     style={{
                       padding: "5px 9px",
                       font: "10.5px/1.2 var(--font-mono)",
-                      color: cell?.style?.color ?? INK,
-                      textAlign: align(col),
-                      fontWeight: ci === 0 ? 600 : 400,
-                      borderRight: ci < ncols - 1 ? `1px solid ${ROW_RULE}` : "none",
+                      color: cs?.color ?? cell?.style?.color ?? INK,
+                      background: cs?.fill ?? undefined,
+                      textAlign: cs?.align ?? align(col),
+                      fontWeight: cs?.bold ? 700 : ci === 0 ? 600 : 400,
+                      fontStyle: cs?.italic ? "italic" : undefined,
+                      borderRight: cs?.border?.right
+                        ? edge(true)
+                        : ci < ncols - 1
+                          ? `1px solid ${ROW_RULE}`
+                          : "none",
+                      borderTop: edge(cs?.border?.top),
+                      borderBottom: edge(cs?.border?.bottom),
+                      borderLeft: edge(cs?.border?.left),
                     }}
                   >
                     {cell?.error ? "#error" : cell?.formatted ?? ""}

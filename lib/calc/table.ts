@@ -43,6 +43,16 @@ export interface TableColumnSpec {
   conditional?: CondRule[];
 }
 
+/**
+ * Per-cell formatting the engine consumes. Only `format` affects the computed
+ * display string (it overrides the column number format); the content tree's
+ * cell style carries extra render-only fields (align/bold/fill/border) the
+ * engine ignores, so a `TableRegion` is structurally a valid `TableSpec`.
+ */
+export interface TableCellFormat {
+  format?: ResultFormat;
+}
+
 export interface TableSpec {
   /** Named range for the whole grid; exported to the worksheet scope. */
   name?: string;
@@ -51,6 +61,8 @@ export interface TableSpec {
   rows: string[][];
   /** Named A1 sub-ranges, e.g. `{ anchor_db: "A2:C5" }`. */
   ranges?: Record<string, string>;
+  /** Per-cell formatting overlay, keyed `"r,c"` (0-based data coords). */
+  cellStyles?: Record<string, TableCellFormat>;
 }
 
 export type TableCellKind = "literal" | "formula" | "empty";
@@ -184,19 +196,24 @@ function resolveLiteral(
   return { value: text };
 }
 
-/** Format a value for a cell: magnitude only when the column carries a unit. */
+/**
+ * Format a value for a cell: magnitude only when the column carries a unit.
+ * `format` defaults to the column number format; a per-cell override (already
+ * merged over the column format by the caller) takes its place when present.
+ */
 function displayCell(
   value: unknown,
   col: TableColumnSpec | undefined,
   system: UnitSystem,
+  format: ResultFormat | undefined = col?.format,
 ): { formatted: string; displayValue: unknown } {
   const unit = realUnit(col?.unit);
   const displayValue = toDisplayUnit(value, unit, system);
   if (unit && isUnit(displayValue)) {
     const u = displayValue as Unit;
-    return { formatted: formatValue(u.toNumber(u.formatUnits()), col?.format), displayValue };
+    return { formatted: formatValue(u.toNumber(u.formatUnits()), format), displayValue };
   }
-  return { formatted: formatValue(displayValue, col?.format), displayValue };
+  return { formatted: formatValue(displayValue, format), displayValue };
 }
 
 /* ------------------------------------------------------------------ *
@@ -385,7 +402,10 @@ export function evaluateTable(
       }
       const value = values.get(self);
       try {
-        const { formatted, displayValue } = displayCell(value, col(c), system);
+        // A per-cell number format overrides the column format for this cell only.
+        const cellFmt = table.cellStyles?.[`${r},${c}`]?.format;
+        const fmt = cellFmt ? { ...col(c)?.format, ...cellFmt } : col(c)?.format;
+        const { formatted, displayValue } = displayCell(value, col(c), system, fmt);
         row.push({
           value,
           formatted,

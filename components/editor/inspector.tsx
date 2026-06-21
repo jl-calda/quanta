@@ -1,7 +1,8 @@
 "use client";
 
-import type { Dispatch, ReactNode } from "react";
+import { useState, type Dispatch, type ReactNode } from "react";
 import { Badge, IconButton, Input, Select, Switch } from "@/components/ds";
+import { cellAddress } from "@/lib/calc";
 import { findRegion } from "@/lib/worksheet/flatten";
 import type {
   CellAlign,
@@ -24,13 +25,19 @@ import type {
   SolveRegion,
   TableColumn,
   TableRegion,
+  TableStyle,
   TextRegion,
   TraceStyle,
 } from "@/lib/worksheet/content";
 import { DEFAULT_DISPLAY } from "@/lib/worksheet/content";
 import { parseProgramBody, programBodyToText } from "@/lib/worksheet/program-text";
 import { useEditor } from "./state/editor-provider";
-import type { EditorAction, RegionPatch, TableColumnPatch } from "./state/editor-reducer";
+import type {
+  EditorAction,
+  RegionPatch,
+  TableCellStylePatch,
+  TableColumnPatch,
+} from "./state/editor-reducer";
 import { Icon } from "./icons";
 
 /**
@@ -193,6 +200,14 @@ function TextInspector({ region, set }: { region: TextRegion; set: (p: RegionPat
   );
 }
 
+const TABLE_STYLES: { value: TableStyle; label: string }[] = [
+  { value: "default", label: "Banded" },
+  { value: "plain", label: "Plain" },
+  { value: "grid", label: "Grid" },
+  { value: "bordered", label: "Bordered" },
+  { value: "minimal", label: "Minimal" },
+];
+
 function TableInspector({
   region,
   set,
@@ -202,8 +217,11 @@ function TableInspector({
   set: (p: RegionPatch) => void;
   dispatch: Dispatch<EditorAction>;
 }) {
+  const { state } = useEditor();
   const setCol = (key: string, patch: TableColumnPatch) =>
     dispatch({ type: "SET_TABLE_COLUMN", id: region.id, key, patch });
+  const sel = state.tableSel && state.tableSel.id === region.id ? state.tableSel : null;
+  const inBounds = sel != null && sel.r < region.rows.length && sel.c < region.columns.length;
   return (
     <>
       <Group eyebrow="Table">
@@ -215,6 +233,15 @@ function TableInspector({
           <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Read-mode title</span>
           <Input defaultValue={region.eyebrow ?? ""} placeholder={region.name ?? "Optional title"} onBlur={(e) => set({ eyebrow: e.target.value || undefined })} />
         </div>
+        <Row label="Table style">
+          <div style={{ width: 120 }}>
+            <Select
+              value={region.tableStyle ?? "default"}
+              onChange={(e) => dispatch({ type: "SET_TABLE_STYLE", id: region.id, style: e.target.value as TableStyle })}
+              options={TABLE_STYLES}
+            />
+          </div>
+        </Row>
         <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
           Cells hold values or <code style={{ fontFamily: "var(--font-mono)" }}>=formulas</code> with A1 (
           <code style={{ fontFamily: "var(--font-mono)" }}>A2</code>), named-range, and worksheet references.
@@ -238,8 +265,219 @@ function TableInspector({
           <Icon name="plusSm" size={13} /> Add column
         </button>
       </Group>
+
+      {inBounds && <CellInspector region={region} sel={{ r: sel!.r, c: sel!.c }} dispatch={dispatch} />}
     </>
   );
+}
+
+const TEXT_SWATCHES: { value: string | null; label: string; color: string }[] = [
+  { value: null, label: "Default", color: "var(--text-primary)" },
+  { value: "var(--accent)", label: "Blueprint", color: "var(--accent)" },
+  { value: "var(--status-pass)", label: "Pass green", color: "var(--status-pass)" },
+  { value: "var(--status-warning)", label: "Warning", color: "var(--status-warning)" },
+  { value: "var(--status-error)", label: "Error red", color: "var(--status-error)" },
+];
+const FILL_SWATCHES: { value: string | null; label: string; color: string }[] = [
+  { value: null, label: "None", color: "transparent" },
+  { value: "var(--accent-tint)", label: "Blueprint tint", color: "var(--accent-tint)" },
+  { value: "var(--status-pass-bg)", label: "Pass tint", color: "var(--status-pass-bg)" },
+  { value: "var(--status-warning-bg)", label: "Warning tint", color: "var(--status-warning-bg)" },
+  { value: "var(--status-error-bg)", label: "Error tint", color: "var(--status-error-bg)" },
+];
+const EDGES = [
+  { key: "top", label: "T" },
+  { key: "right", label: "R" },
+  { key: "bottom", label: "B" },
+  { key: "left", label: "L" },
+] as const;
+
+/**
+ * Per-cell formatting (and merge) for the active table cell. Format overrides the
+ * column number format; align/bold/italic/colour/fill/border are presentation.
+ */
+function CellInspector({
+  region,
+  sel,
+  dispatch,
+}: {
+  region: TableRegion;
+  sel: { r: number; c: number };
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const [mergeRows, setMergeRows] = useState(2);
+  const [mergeCols, setMergeCols] = useState(1);
+  const cs = region.cellStyles?.[`${sel.r},${sel.c}`];
+  const fmt = cs?.format ?? {};
+  const border = cs?.border ?? {};
+  const setCell = (patch: TableCellStylePatch) =>
+    dispatch({ type: "SET_TABLE_CELL_STYLE", id: region.id, r: sel.r, c: sel.c, patch });
+  const mergeAt = (region.merges ?? []).find(
+    (m) => sel.r >= m.r && sel.r < m.r + m.rowSpan && sel.c >= m.c && sel.c < m.c + m.colSpan,
+  );
+  const toggleEdge = (edge: "top" | "right" | "bottom" | "left") => {
+    const next = { ...border };
+    if (next[edge]) delete next[edge];
+    else next[edge] = true;
+    setCell({ border: Object.keys(next).length ? next : null });
+  };
+  const noMerge = mergeRows <= 1 && mergeCols <= 1;
+
+  return (
+    <>
+      <Group eyebrow={`Cell ${cellAddress(sel.r, sel.c)}`}>
+        <Row label="Align">
+          <Segmented
+            options={["left", "center", "right"]}
+            value={cs?.align ?? ""}
+            set={(v) => setCell({ align: cs?.align === v ? null : (v as CellAlign) })}
+          />
+        </Row>
+        <Row label="Decimals">
+          <Stepper value={fmt.decimals ?? 2} set={(v) => setCell({ format: { ...fmt, decimals: v } })} />
+        </Row>
+        <Row label="Notation">
+          <div style={{ width: 120 }}>
+            <Select
+              value={fmt.notation ?? "auto"}
+              onChange={(e) => setCell({ format: { ...fmt, notation: e.target.value as Notation } })}
+              options={[{ value: "auto", label: "Auto" }, { value: "sci", label: "Scientific" }, { value: "eng", label: "Engineering" }]}
+            />
+          </div>
+        </Row>
+        <Row label="Bold">
+          <Switch checked={!!cs?.bold} onChange={(e) => setCell({ bold: e.target.checked ? true : null })} />
+        </Row>
+        <Row label="Italic">
+          <Switch checked={!!cs?.italic} onChange={(e) => setCell({ italic: e.target.checked ? true : null })} />
+        </Row>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Text colour</span>
+          <SwatchRow swatches={TEXT_SWATCHES} active={cs?.color ?? null} onPick={(v) => setCell({ color: v })} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Fill</span>
+          <SwatchRow swatches={FILL_SWATCHES} active={cs?.fill ?? null} onPick={(v) => setCell({ fill: v })} />
+        </div>
+        <Row label="Borders">
+          <div style={{ display: "inline-flex", gap: 4 }}>
+            {EDGES.map((e) => (
+              <button
+                key={e.key}
+                type="button"
+                onClick={() => toggleEdge(e.key)}
+                aria-pressed={!!border[e.key]}
+                title={`${e.key} border`}
+                style={edgeBtn(!!border[e.key])}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </Row>
+        <button
+          onClick={() => setCell({ format: null, align: null, bold: null, italic: null, color: null, fill: null, border: null })}
+          style={ruleBtn}
+        >
+          <Icon name="x" size={12} /> Clear cell formatting
+        </button>
+      </Group>
+
+      <Group eyebrow="Merge">
+        {mergeAt ? (
+          <>
+            <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+              This cell is in a {mergeAt.rowSpan} × {mergeAt.colSpan} merge.
+            </div>
+            <button onClick={() => dispatch({ type: "UNMERGE_TABLE_CELLS", id: region.id, r: sel.r, c: sel.c })} style={ruleBtn}>
+              <Icon name="x" size={12} /> Unmerge
+            </button>
+          </>
+        ) : (
+          <>
+            <Row label="Span (rows × cols)">
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Stepper value={mergeRows} set={(v) => setMergeRows(Math.max(1, v))} />
+                <span style={{ color: "var(--text-muted)" }}>×</span>
+                <Stepper value={mergeCols} set={(v) => setMergeCols(Math.max(1, v))} />
+              </div>
+            </Row>
+            <button
+              disabled={noMerge}
+              onClick={() =>
+                dispatch({
+                  type: "MERGE_TABLE_CELLS",
+                  id: region.id,
+                  r0: sel.r,
+                  c0: sel.c,
+                  r1: Math.min(region.rows.length - 1, sel.r + mergeRows - 1),
+                  c1: Math.min(region.columns.length - 1, sel.c + mergeCols - 1),
+                })
+              }
+              style={{ ...ruleBtn, opacity: noMerge ? 0.5 : 1, cursor: noMerge ? "default" : "pointer" }}
+            >
+              <Icon name="plusSm" size={12} /> Merge cells
+            </button>
+          </>
+        )}
+      </Group>
+    </>
+  );
+}
+
+function SwatchRow({
+  swatches,
+  active,
+  onPick,
+}: {
+  swatches: { value: string | null; label: string; color: string }[];
+  active: string | null;
+  onPick: (v: string | null) => void;
+}) {
+  return (
+    <div style={{ display: "inline-flex", gap: 6 }}>
+      {swatches.map((s) => {
+        const on = active === s.value;
+        const empty = s.value === null;
+        return (
+          <button
+            key={s.label}
+            type="button"
+            title={s.label}
+            aria-pressed={on}
+            onClick={() => onPick(s.value)}
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: "var(--radius-sm)",
+              cursor: "pointer",
+              border: on ? "2px solid var(--accent)" : "1px solid var(--border-strong)",
+              background: empty ? "var(--surface-raised)" : s.color,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-muted)",
+            }}
+          >
+            {empty && <Icon name="x" size={12} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function edgeBtn(active: boolean): React.CSSProperties {
+  return {
+    width: 26,
+    height: 24,
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+    border: "1px solid var(--border-strong)",
+    background: active ? "var(--accent-tint)" : "var(--surface-raised)",
+    color: active ? "var(--accent)" : "var(--text-muted)",
+    font: "600 11px/1 var(--font-mono)",
+  };
 }
 
 const FAIL_RULE = { op: ">" as const, value: 1, style: { color: "var(--status-error)", fill: "var(--status-error-bg)", label: "FAIL" } };

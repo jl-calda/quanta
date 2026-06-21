@@ -34,8 +34,12 @@ import {
   type SolveGuess,
   type SurfaceOptions,
   type SymbolicCache,
+  type TableCellBorder,
+  type TableCellStyle,
   type TableFilter,
+  type TableMerge,
   type TableSort,
+  type TableStyle,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
@@ -101,6 +105,12 @@ export interface EditorState {
    */
   selectedIds: string[];
   editingId: string | null;
+  /**
+   * The active table cell selection, for the inspector's per-cell formatting.
+   * `r2`/`c2` (when set) mark the opposite corner of a rectangular selection,
+   * used for borders and cell merge. UI-only — never marks the document dirty.
+   */
+  tableSel: { id: string; r: number; c: number; r2?: number; c2?: number } | null;
   calcMode: CalcMode;
   calcStatus: CalcStatus;
   errorCount: number;
@@ -172,6 +182,21 @@ export interface TableColumnPatch {
   conditional?: CondRule[];
 }
 
+/**
+ * Inspector-editable per-cell formatting. `undefined` leaves a key untouched;
+ * `null` clears it (so a key can be reset to "inherit the column"). Empty cell
+ * styles are pruned from the content tree.
+ */
+export interface TableCellStylePatch {
+  format?: ResultFormat | null;
+  align?: CellAlign | null;
+  bold?: boolean | null;
+  italic?: boolean | null;
+  color?: string | null;
+  fill?: string | null;
+  border?: TableCellBorder | null;
+}
+
 export type EditorAction =
   | { type: "SELECT"; id: string | null }
   | { type: "TOGGLE_SELECT"; id: string }
@@ -191,6 +216,14 @@ export type EditorAction =
   | { type: "SET_TABLE_COLUMN"; id: string; key: string; patch: TableColumnPatch }
   | { type: "SET_TABLE_SORT"; id: string; sort: TableSort | null }
   | { type: "SET_TABLE_FILTER"; id: string; filter: TableFilter | null }
+  | {
+      type: "SET_TABLE_SELECTION";
+      sel: { id: string; r: number; c: number; r2?: number; c2?: number } | null;
+    }
+  | { type: "SET_TABLE_CELL_STYLE"; id: string; r: number; c: number; patch: TableCellStylePatch }
+  | { type: "SET_TABLE_STYLE"; id: string; style: TableStyle | null }
+  | { type: "MERGE_TABLE_CELLS"; id: string; r0: number; c0: number; r1: number; c1: number }
+  | { type: "UNMERGE_TABLE_CELLS"; id: string; r: number; c: number }
   | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
   | { type: "ADD_PLOT_TRACE"; id: string }
   | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
@@ -348,6 +381,21 @@ function mutate(
   const next: WorksheetContent = structuredClone(content);
   fn(next);
   return next;
+}
+
+/** Whether two merged rectangles share any cell. */
+function mergesOverlap(a: TableMerge, b: TableMerge): boolean {
+  return (
+    a.r < b.r + b.rowSpan &&
+    b.r < a.r + a.rowSpan &&
+    a.c < b.c + b.colSpan &&
+    b.c < a.c + a.colSpan
+  );
+}
+
+/** Whether a merge's rectangle covers the cell `(r, c)`. */
+function mergeCovers(m: TableMerge, r: number, c: number): boolean {
+  return r >= m.r && r < m.r + m.rowSpan && c >= m.c && c < m.c + m.colSpan;
 }
 
 /* ------------------------------------------------------------------ *
@@ -564,6 +612,66 @@ export function editorReducer(
         if (!region || region.type !== "table") return;
         if (action.filter) region.filter = action.filter;
         else delete region.filter;
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_SELECTION":
+      // UI-only — the active cell drives the inspector, never the document.
+      return { ...state, tableSel: action.sel };
+    case "SET_TABLE_CELL_STYLE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const key = `${action.r},${action.c}`;
+        const styles = { ...(region.cellStyles ?? {}) };
+        const cell: Record<string, unknown> = { ...(styles[key] ?? {}) };
+        for (const [k, v] of Object.entries(action.patch)) {
+          // `null` (or an emptied object, e.g. all-false borders) clears the key;
+          // `undefined` leaves it untouched.
+          const emptyObj =
+            v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0;
+          if (v === null || emptyObj) delete cell[k];
+          else if (v !== undefined) cell[k] = v;
+        }
+        if (Object.keys(cell).length === 0) delete styles[key];
+        else styles[key] = cell as TableCellStyle;
+        if (Object.keys(styles).length === 0) delete region.cellStyles;
+        else region.cellStyles = styles;
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_STYLE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        // "default" is the implicit look — keep it out of JSONB.
+        if (action.style && action.style !== "default") region.tableStyle = action.style;
+        else delete region.tableStyle;
+      });
+      return touched(state, content);
+    }
+    case "MERGE_TABLE_CELLS": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const r = Math.min(action.r0, action.r1);
+        const c = Math.min(action.c0, action.c1);
+        const rowSpan = Math.abs(action.r1 - action.r0) + 1;
+        const colSpan = Math.abs(action.c1 - action.c0) + 1;
+        if (rowSpan <= 1 && colSpan <= 1) return; // nothing to merge
+        const rect: TableMerge = { r, c, rowSpan, colSpan };
+        const kept = (region.merges ?? []).filter((m) => !mergesOverlap(rect, m));
+        region.merges = [...kept, rect];
+      });
+      return touched(state, content);
+    }
+    case "UNMERGE_TABLE_CELLS": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        const merges = (region.merges ?? []).filter((m) => !mergeCovers(m, action.r, action.c));
+        if (merges.length === 0) delete region.merges;
+        else region.merges = merges;
       });
       return touched(state, content);
     }
@@ -980,6 +1088,7 @@ export function initEditorState(args: {
     selectedId: null,
     selectedIds: [],
     editingId: null,
+    tableSel: null,
     calcMode: args.calcMode,
     calcStatus: "current",
     errorCount: 0,

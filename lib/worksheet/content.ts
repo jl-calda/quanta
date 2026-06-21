@@ -158,6 +158,38 @@ const tableFilterSchema = z.object({
   op: condOpSchema,
   value: z.union([z.number(), z.string()]),
 });
+/*
+ * Per-cell formatting overlay (Phase-2 refinement). Sparse map keyed `"r,c"`
+ * (0-based DATA coords matching `rows[r][c]`). Only `format` reaches the engine
+ * (it overrides the column number format when producing the cell's display
+ * string); align/bold/italic/color/fill/border are pure presentation read at
+ * render time. Optional + sparse so a table with no cell formatting round-trips
+ * byte-identical.
+ */
+const tableCellBorderSchema = z.object({
+  top: z.boolean().optional(),
+  right: z.boolean().optional(),
+  bottom: z.boolean().optional(),
+  left: z.boolean().optional(),
+});
+const tableCellStyleSchema = z.object({
+  format: resultFormatSchema.optional(),
+  align: cellAlignSchema.optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  color: z.string().optional(),
+  fill: z.string().optional(),
+  border: tableCellBorderSchema.optional(),
+});
+/** Whole-table style preset — chrome for read/print mode (default = today's look). */
+const tableStyleSchema = z.enum(["default", "plain", "grid", "bordered", "minimal"]);
+/** A merged rectangle anchored at top-left `(r,c)`; covered cells keep their data. */
+const tableMergeSchema = z.object({
+  r: z.number().int().min(0),
+  c: z.number().int().min(0),
+  rowSpan: z.number().int().min(1),
+  colSpan: z.number().int().min(1),
+});
 const tableRegionSchema = z
   .object({
     ...regionBase,
@@ -169,6 +201,12 @@ const tableRegionSchema = z
     ranges: z.record(z.string()).optional(),
     sort: tableSortSchema.optional(),
     filter: tableFilterSchema.optional(),
+    /** Per-cell formatting overlay, keyed `"r,c"`. */
+    cellStyles: z.record(tableCellStyleSchema).optional(),
+    /** Whole-table style preset (read/print chrome). */
+    tableStyle: tableStyleSchema.optional(),
+    /** Display-only merged rectangles; data/formulas are unaffected. */
+    merges: z.array(tableMergeSchema).optional(),
   })
   .passthrough();
 /*
@@ -493,6 +531,10 @@ export type CellAlign = z.infer<typeof cellAlignSchema>;
 export type TableColumn = z.infer<typeof tableColumnSchema>;
 export type TableSort = z.infer<typeof tableSortSchema>;
 export type TableFilter = z.infer<typeof tableFilterSchema>;
+export type TableCellBorder = z.infer<typeof tableCellBorderSchema>;
+export type TableCellStyle = z.infer<typeof tableCellStyleSchema>;
+export type TableStyle = z.infer<typeof tableStyleSchema>;
+export type TableMerge = z.infer<typeof tableMergeSchema>;
 export type PlotKind = z.infer<typeof plotKindSchema>;
 export type TraceStyle = z.infer<typeof traceStyleSchema>;
 export type PlotAxis = z.infer<typeof plotAxisSchema>;
@@ -560,6 +602,12 @@ export interface TableRegion extends RegionBase {
   /** Typed-but-inert seams (sort/filter ship in the follow-up). */
   sort?: TableSort;
   filter?: TableFilter;
+  /** Per-cell formatting overlay, keyed `"r,c"` (0-based data coords). */
+  cellStyles?: Record<string, TableCellStyle>;
+  /** Whole-table style preset (read/print chrome). */
+  tableStyle?: TableStyle;
+  /** Display-only merged rectangles; data/formulas are unaffected. */
+  merges?: TableMerge[];
   [key: string]: unknown;
 }
 
