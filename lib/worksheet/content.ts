@@ -239,12 +239,18 @@ const traceStyleSchema = z.enum([
   "waterfall",
   "box",
 ]);
+const axisScaleSchema = z.enum(["linear", "log", "symlog"]);
 const plotAxisSchema = z.object({
   label: z.string().optional(),
   unit: z.string().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
+  /** Deprecated boolean kept for back-compat; `scale` wins when both are present. */
   log: z.boolean().optional(),
+  /** Axis scale — linear (default), log, or symlog. */
+  scale: axisScaleSchema.optional(),
+  /** Symlog linear-region half-width (defaults to 1). */
+  linthresh: z.number().optional(),
 });
 const plotTraceSchema = z.object({
   id: z.string(),
@@ -259,6 +265,30 @@ const plotTraceSchema = z.object({
   /** Per-trace x override (a vector/range name) — its own data source; falls back to the plot's `xData`. */
   xData: z.string().optional(),
   hidden: z.boolean().optional(),
+  /** Which y-axis this trace binds to (primary "y" or secondary "y2"). */
+  axis: z.enum(["y", "y2"]).optional(),
+  /** Optional ± error expression, sampled like `expr`; drawn as bars or a band. */
+  errorExpr: z.string().optional(),
+  errorMode: z.enum(["bar", "band"]).optional(),
+});
+/** A reference (datum) line at a constant value on one axis. */
+const plotReferenceSchema = z.object({
+  id: z.string(),
+  axis: z.enum(["x", "y", "y2"]).default("y"),
+  value: z.number().optional(),
+  /** Expression evaluated in worksheet scope (unit-aware) — overrides `value`. */
+  expr: z.string().optional(),
+  label: z.string().optional(),
+  color: z.string().optional(),
+  dash: z.boolean().optional(),
+});
+/** A text callout at a data-space (x, y) on the primary axes. */
+const plotAnnotationSchema = z.object({
+  id: z.string(),
+  x: z.number(),
+  y: z.number(),
+  text: z.string().default(""),
+  color: z.string().optional(),
 });
 const legendPosSchema = z.enum(["bottom", "top", "left", "right"]);
 /** z = f(x, y) surface, for contour/3D (typed-but-inert until the renderer ships). */
@@ -296,10 +326,15 @@ const plotRegionSchema = z
     xData: z.string().optional(),
     x: plotAxisSchema.default({}),
     y: plotAxisSchema.default({}),
+    /** Optional secondary y-axis; traces with `axis: "y2"` map onto it. */
+    y2: plotAxisSchema.optional(),
     z: plotZSchema.optional(),
     grid: plotGridSchema.optional(),
     surface: surfaceOptionsSchema.optional(),
     traces: z.array(plotTraceSchema).default([]),
+    /** Datum lines + text callouts (deferred-safe; default to empty). */
+    references: z.array(plotReferenceSchema).optional(),
+    annotations: z.array(plotAnnotationSchema).optional(),
     /** Sweep sample count (plot-by-formula); engine clamps to 2–400. */
     samples: z.number().int().min(2).max(400).optional(),
     legend: z.boolean().default(true),
@@ -553,7 +588,10 @@ export type PlotKind = z.infer<typeof plotKindSchema>;
 export type TraceStyle = z.infer<typeof traceStyleSchema>;
 export type LegendPos = z.infer<typeof legendPosSchema>;
 export type PlotAxis = z.infer<typeof plotAxisSchema>;
+export type PlotScale = z.infer<typeof axisScaleSchema>;
 export type PlotTrace = z.infer<typeof plotTraceSchema>;
+export type PlotReference = z.infer<typeof plotReferenceSchema>;
+export type PlotAnnotation = z.infer<typeof plotAnnotationSchema>;
 export type PlotZ = z.infer<typeof plotZSchema>;
 export type PlotGrid = z.infer<typeof plotGridSchema>;
 export type SurfaceOptions = z.infer<typeof surfaceOptionsSchema>;
@@ -639,10 +677,16 @@ export interface PlotRegion extends RegionBase {
   xData?: string;
   x: PlotAxis;
   y: PlotAxis;
+  /** Optional secondary y-axis; traces with `axis: "y2"` map onto it. */
+  y2?: PlotAxis;
   z?: PlotZ;
   grid?: PlotGrid;
   surface?: SurfaceOptions;
   traces: PlotTrace[];
+  /** Datum lines drawn across the plot at a constant axis value. */
+  references?: PlotReference[];
+  /** Text callouts anchored at a data-space (x, y). */
+  annotations?: PlotAnnotation[];
   samples?: number;
   legend: boolean;
   /** Legend placement relative to the figure (defaults to "bottom" when unset). */
