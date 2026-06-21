@@ -17,8 +17,9 @@
 
 /** Keys for the ribbon's Operators / Math-evaluation groups. */
 export type OperatorKey =
-  | "fraction" | "exponent" | "root" | "subscript" | "absolute" | "factorial"
-  | "summation" | "product" | "integral"
+  | "fraction" | "exponent" | "root" | "nthRoot" | "subscript" | "absolute" | "factorial"
+  | "norm" | "ceil" | "floor" | "crossProduct" | "dotProduct"
+  | "summation" | "product" | "integral" | "contourIntegral"
   | "derivative" | "partial" | "limit"
   | "range" | "index"
   | "assign" | "evaluate" | "global";
@@ -35,12 +36,21 @@ export const OPERATOR_TEMPLATES: Record<OperatorKey, OperatorTemplate> = {
   fraction: { latex: "\\frac{#@}{#?}", source: "a/b" },
   exponent: { latex: "{#@}^{#?}", source: "x^2" },
   root: { latex: "\\sqrt{#0}", source: "sqrt(x)" },
+  nthRoot: { latex: "\\sqrt[#?]{#0}", source: "nthRoot(x, 3)" },
   subscript: { latex: "{#@}_{#?}", source: "x_1" },
   absolute: { latex: "\\left|#0\\right|", source: "abs(x)" },
   factorial: { latex: "#@!", source: "n!" },
+  norm: { latex: "\\left\\|#0\\right\\|", source: "norm(v)" },
+  ceil: { latex: "\\left\\lceil#0\\right\\rceil", source: "ceil(x)" },
+  floor: { latex: "\\left\\lfloor#0\\right\\rfloor", source: "floor(x)" },
+  crossProduct: { latex: "#@\\times#?", source: "cross(a, b)" },
+  dotProduct: { latex: "#@\\cdot#?", source: "dot(a, b)" },
   summation: { latex: "\\sum_{#?=#?}^{#?}\\left(#0\\right)", source: "summation(i, 1, 10, i)" },
   product: { latex: "\\prod_{#?=#?}^{#?}\\left(#0\\right)", source: "product(i, 1, 5, i)" },
   integral: { latex: "\\int_{#?}^{#?}\\left(#0\\right)\\,d#?", source: "integral(x, 0, 1, x^2)" },
+  // Contour integral is symbolic-engine territory; the source reuses a numeric
+  // integral as a plain-text proxy so the seed stays evaluable.
+  contourIntegral: { latex: "\\oint_{#?}\\left(#0\\right)\\,d#?", source: "integral(x, 0, 1, x^2)" },
   derivative: { latex: "\\frac{d}{d#?}#0", source: "diff(x^2, x)" },
   partial: { latex: "\\frac{\\partial}{\\partial #?}#0", source: "diff(f, x)" },
   limit: { latex: "\\lim_{#?\\to#?}#0", source: "limit(sin(x)/x, x, 0)" },
@@ -76,6 +86,8 @@ export type SymbolGroup =
   | "Calculus"
   | "Relational"
   | "Arrows"
+  | "Logic"
+  | "Sets"
   | "Misc";
 
 export interface SymbolEntry {
@@ -97,15 +109,22 @@ const OPERATOR_DISPLAY: Record<OperatorKey, { glyph: string; label: string; grou
   fraction: { glyph: "a⁄b", label: "Fraction", group: "Operators" },
   exponent: { glyph: "xⁿ", label: "Exponent", group: "Operators" },
   root: { glyph: "√x", label: "Square root", group: "Operators" },
+  nthRoot: { glyph: "ⁿ√x", label: "Nth root", group: "Operators" },
   subscript: { glyph: "xₙ", label: "Subscript", group: "Operators" },
   absolute: { glyph: "|x|", label: "Absolute value", group: "Operators" },
   factorial: { glyph: "n!", label: "Factorial", group: "Operators" },
+  norm: { glyph: "‖x‖", label: "Norm", group: "Operators" },
+  ceil: { glyph: "⌈x⌉", label: "Ceiling", group: "Operators" },
+  floor: { glyph: "⌊x⌋", label: "Floor", group: "Operators" },
+  crossProduct: { glyph: "a×b", label: "Cross product", group: "Operators" },
+  dotProduct: { glyph: "a·b", label: "Dot product", group: "Operators" },
   assign: { glyph: "≔", label: "Assignment", group: "Operators" },
   evaluate: { glyph: "=", label: "Evaluate", group: "Operators" },
   global: { glyph: "≡", label: "Global definition", group: "Operators" },
   summation: { glyph: "∑", label: "Summation", group: "Calculus" },
   product: { glyph: "∏", label: "Product", group: "Calculus" },
   integral: { glyph: "∫", label: "Integral", group: "Calculus" },
+  contourIntegral: { glyph: "∮", label: "Contour integral", group: "Calculus" },
   derivative: { glyph: "d⁄dx", label: "Derivative", group: "Calculus" },
   partial: { glyph: "∂⁄∂x", label: "Partial derivative", group: "Calculus" },
   limit: { glyph: "lim", label: "Limit", group: "Calculus" },
@@ -136,14 +155,39 @@ const GREEK_UPPER: ReadonlyArray<readonly [string, string, string]> = [
   ["Sigma", "Σ", "\\Sigma"], ["Phi", "Φ", "\\Phi"], ["Psi", "Ψ", "\\Psi"], ["Omega", "Ω", "\\Omega"],
 ];
 
-const GREEK_ENTRIES: SymbolEntry[] = [...GREEK_LOWER, ...GREEK_UPPER].map(([name, glyph, latex]) => ({
-  id: name,
-  label: name[0].toUpperCase() + name.slice(1),
-  glyph,
-  latex,
-  source: glyph,
-  group: "Greek" as const,
-}));
+/**
+ * Variant Greek forms (engineering staples — strain ε, angle φ, etc.). These
+ * carry explicit labels because the capitalize-the-name rule would mangle them,
+ * and distinct ids because the glyph can visually echo the base letter.
+ * `[id, label, glyph, latex]` — source is the glyph.
+ */
+const GREEK_VARIANTS: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["varepsilon", "Epsilon (var)", "ε", "\\varepsilon"],
+  ["vartheta", "Theta (var)", "ϑ", "\\vartheta"],
+  ["varphi", "Phi (var)", "φ", "\\varphi"],
+  ["varpi", "Pi (var)", "ϖ", "\\varpi"],
+  ["varrho", "Rho (var)", "ϱ", "\\varrho"],
+  ["varsigma", "Sigma (var)", "ς", "\\varsigma"],
+];
+
+const GREEK_ENTRIES: SymbolEntry[] = [
+  ...[...GREEK_LOWER, ...GREEK_UPPER].map(([name, glyph, latex]) => ({
+    id: name,
+    label: name[0].toUpperCase() + name.slice(1),
+    glyph,
+    latex,
+    source: glyph,
+    group: "Greek" as const,
+  })),
+  ...GREEK_VARIANTS.map(([id, label, glyph, latex]) => ({
+    id,
+    label,
+    glyph,
+    latex,
+    source: glyph,
+    group: "Greek" as const,
+  })),
+];
 
 /** `[id, label, glyph, latex, source]`. */
 const RELATIONAL: ReadonlyArray<readonly [string, string, string, string, string]> = [
@@ -159,6 +203,11 @@ const RELATIONAL: ReadonlyArray<readonly [string, string, string, string, string
   ["pm", "Plus–minus", "±", "\\pm", "±"],
   ["mp", "Minus–plus", "∓", "\\mp", "∓"],
   ["in", "Element of", "∈", "\\in", "∈"],
+  ["ll", "Much less than", "≪", "\\ll", "<<"],
+  ["gg", "Much greater than", "≫", "\\gg", ">>"],
+  ["cong", "Congruent to", "≅", "\\cong", "≅"],
+  ["simeq", "Asymptotically equal", "≃", "\\simeq", "≃"],
+  ["sim", "Similar to", "∼", "\\sim", "~"],
 ];
 
 const ARROWS: ReadonlyArray<readonly [string, string, string, string, string]> = [
@@ -168,6 +217,30 @@ const ARROWS: ReadonlyArray<readonly [string, string, string, string, string]> =
   ["implies", "Implies", "⇒", "\\Rightarrow", "⇒"],
   ["impliedby", "Implied by", "⇐", "\\Leftarrow", "⇐"],
   ["mapsto", "Maps to", "↦", "\\mapsto", "↦"],
+  ["uparrow", "Upward arrow", "↑", "\\uparrow", "↑"],
+  ["downarrow", "Downward arrow", "↓", "\\downarrow", "↓"],
+  ["Uparrow", "Up double arrow", "⇑", "\\Uparrow", "⇑"],
+  ["Downarrow", "Down double arrow", "⇓", "\\Downarrow", "⇓"],
+];
+
+const LOGIC: ReadonlyArray<readonly [string, string, string, string, string]> = [
+  ["land", "Logical and", "∧", "\\land", "∧"],
+  ["lor", "Logical or", "∨", "\\lor", "∨"],
+  ["lnot", "Negation", "¬", "\\lnot", "not"],
+  ["oplus", "Exclusive or", "⊕", "\\oplus", "xor"],
+  ["forall", "For all", "∀", "\\forall", "∀"],
+  ["exists", "There exists", "∃", "\\exists", "∃"],
+];
+
+const SETS: ReadonlyArray<readonly [string, string, string, string, string]> = [
+  ["cap", "Intersection", "∩", "\\cap", "∩"],
+  ["cup", "Union", "∪", "\\cup", "∪"],
+  ["subset", "Subset", "⊂", "\\subset", "⊂"],
+  ["subseteq", "Subset or equal", "⊆", "\\subseteq", "⊆"],
+  ["supset", "Superset", "⊃", "\\supset", "⊃"],
+  ["supseteq", "Superset or equal", "⊇", "\\supseteq", "⊇"],
+  ["notin", "Not an element of", "∉", "\\notin", "∉"],
+  ["setminus", "Set difference", "∖", "\\setminus", "\\"],
 ];
 
 const MISC: ReadonlyArray<readonly [string, string, string, string, string]> = [
@@ -181,6 +254,9 @@ const MISC: ReadonlyArray<readonly [string, string, string, string, string]> = [
   ["prime", "Prime", "′", "'", "'"],
   ["emptyset", "Empty set", "∅", "\\emptyset", "∅"],
   ["therefore", "Therefore", "∴", "\\therefore", "∴"],
+  ["Re", "Real part", "ℜ", "\\Re", "re"],
+  ["Im", "Imaginary part", "ℑ", "\\Im", "im"],
+  ["hbar", "Reduced Planck", "ℏ", "\\hbar", "hbar"],
 ];
 
 const fromTuples = (
@@ -196,6 +272,8 @@ export const SYMBOL_GROUPS: ReadonlyArray<{ group: SymbolGroup; entries: SymbolE
   { group: "Calculus", entries: OPERATOR_ENTRIES.filter((e) => e.group === "Calculus") },
   { group: "Relational", entries: fromTuples(RELATIONAL, "Relational") },
   { group: "Arrows", entries: fromTuples(ARROWS, "Arrows") },
+  { group: "Logic", entries: fromTuples(LOGIC, "Logic") },
+  { group: "Sets", entries: fromTuples(SETS, "Sets") },
   { group: "Misc", entries: fromTuples(MISC, "Misc") },
 ];
 

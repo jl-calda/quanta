@@ -204,6 +204,7 @@ function OperatorsTab({ cmd, sel }: TabProps) {
         <Tile glyph={<MiniFrac n="a" d="b" />} label="Fraction" onMouseDown={press(() => cmd.insertOp("fraction"))} disabled={d} />
         <Tile glyph={<Big s={16}><It>x</It><Up>n</Up></Big>} label="Exponent" onMouseDown={press(() => cmd.insertOp("exponent"))} disabled={d} />
         <Tile glyph={<Big s={16}>√<span style={{ borderTop: "1px solid currentColor" }}><It>x</It></span></Big>} label="Root" onMouseDown={press(() => cmd.insertOp("root"))} disabled={d} />
+        <Tile glyph={<Big s={16}><Up>n</Up>√<span style={{ borderTop: "1px solid currentColor" }}><It>x</It></span></Big>} label="Nth root" onMouseDown={press(() => cmd.insertOp("nthRoot"))} disabled={d} />
         <Tile glyph={<Big s={15}><It>x</It><Dn>n</Dn></Big>} label="Subscript" onMouseDown={press(() => cmd.insertOp("subscript"))} disabled={d} />
         <Tile glyph={<Big s={16}>|<It>x</It>|</Big>} label="Absolute" onMouseDown={press(() => cmd.insertOp("absolute"))} disabled={d} />
         <Tile glyph={<Big s={15}><It>n</It>!</Big>} label="Factorial" onMouseDown={press(() => cmd.insertOp("factorial"))} disabled={d} />
