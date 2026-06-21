@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { Dispatch } from "react";
-import { cellAddress, tableViewOrder, validateCellSource, type TableCellResult, type TableResult } from "@/lib/calc";
+import {
+  cellAddress,
+  tableToMatrix,
+  tableViewOrder,
+  toDelimited,
+  validateCellSource,
+  type TableCellResult,
+  type TableResult,
+} from "@/lib/calc";
 import type { CondOp, TableColumn, TableRegion, TableSort } from "@/lib/worksheet/content";
 import { Button } from "@/components/ds/core/button";
 import { Input } from "@/components/ds/forms/input";
@@ -455,30 +463,25 @@ function TableEditor({
 
       {(region.sort || region.filter) && <ViewSummary region={region} result={result} dispatch={dispatch} />}
 
-      {/* footer: counts + add row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px" }}>
+      {/* footer: counts + import / copy / add row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 2px" }}>
         <span style={{ font: "11px/1 var(--font-sans)", color: "var(--text-muted)" }}>
           {nRows} {nRows === 1 ? "row" : "rows"}
           {errorCount > 0 && ` · ${errorCount} ${errorCount === 1 ? "cell fails" : "cells fail"}`}
         </span>
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "ADD_TABLE_ROW", id: region.id })}
-          style={{
-            marginLeft: "auto",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            border: "none",
-            background: "none",
-            color: "var(--accent)",
-            font: "500 11px/1 var(--font-sans)",
-            cursor: "pointer",
-            padding: "2px 0",
-          }}
-        >
-          <Icon name="plusSm" size={12} /> Add row
-        </button>
+        <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 14 }}>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "OPEN_DIALOG", dialog: { kind: "tableImport", regionId: region.id } })}
+            style={footerLink}
+          >
+            <Icon name="paste" size={12} /> Import data
+          </button>
+          <CopyMenu region={region} result={result} />
+          <button type="button" onClick={() => dispatch({ type: "ADD_TABLE_ROW", id: region.id })} style={footerLink}>
+            <Icon name="plusSm" size={12} /> Add row
+          </button>
+        </div>
       </div>
 
       {region.group && <TableGroupSummary region={region} result={result} />}
@@ -497,6 +500,120 @@ const iconBtn: CSSProperties = {
   color: "var(--text-muted)",
   cursor: "pointer",
 };
+
+/** Accent text-link buttons shared by the table editor footer (import / copy / add row). */
+const footerLink: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  border: "none",
+  background: "none",
+  color: "var(--accent)",
+  font: "500 11px/1 var(--font-sans)",
+  cursor: "pointer",
+  padding: "2px 0",
+};
+
+/**
+ * Copy menu — exports the selected table to the clipboard as TSV (Excel/Sheets
+ * default) or CSV, from the already-evaluated, formatted cell values in the current
+ * read-view order, with units carried back in the header. Round-trips with the
+ * import dialog. (File download is the separate Export refinement.)
+ */
+function CopyMenu({ region, result }: { region: TableRegion; result?: TableResult }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (ev: MouseEvent) => {
+      if (ref.current && !ref.current.contains(ev.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const copy = async (delim: "\t" | ",") => {
+    const order = tableViewOrder({
+      rows: region.rows,
+      columns: region.columns,
+      cells: result?.cells,
+      sort: region.sort,
+      filter: region.filter,
+    });
+    const matrix = tableToMatrix(region.columns, region.rows, result, order);
+    try {
+      await navigator.clipboard.writeText(toDelimited(matrix, delim));
+    } catch {
+      /* Clipboard unavailable (permissions / insecure context) — fail quietly. */
+    }
+    setOpen(false);
+  };
+
+  const disabled = region.columns.length === 0;
+  const item: CSSProperties = {
+    textAlign: "left",
+    border: "none",
+    background: "none",
+    color: "var(--text-primary)",
+    font: "12px/1 var(--font-sans)",
+    cursor: "pointer",
+    padding: "7px 9px",
+    borderRadius: "var(--radius-sm)",
+  };
+
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        title="Copy table to clipboard"
+        style={{ ...footerLink, opacity: disabled ? 0.5 : 1 }}
+      >
+        <Icon name="copy" size={12} /> Copy <Icon name="chevD" size={11} />
+      </button>
+      {open && (
+        <div
+          className="pop-in"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            right: 0,
+            zIndex: 50,
+            minWidth: 150,
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border-hairline)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-popover)",
+            padding: 5,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <button
+            type="button"
+            style={item}
+            onClick={() => void copy("\t")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+          >
+            Copy as TSV
+          </button>
+          <button
+            type="button"
+            style={item}
+            onClick={() => void copy(",")}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+          >
+            Copy as CSV
+          </button>
+        </div>
+      )}
+    </span>
+  );
+}
 
 function EditCellContent({
   region,

@@ -88,6 +88,20 @@ export {
   type TableGroupResult,
 } from "./table-group";
 
+// Table import / export — pure text ⇄ grid transforms with per-column unit inference.
+export {
+  parseDelimited,
+  inferColumn,
+  isUnitExpr,
+  buildTableImport,
+  tableToMatrix,
+  toDelimited,
+  type ImportColumn,
+  type TableImport,
+  type BuildImportOptions,
+  type Delimiter,
+} from "./table-io";
+
 // Plot region (pure, engine-native — see ./plot).
 export {
   evaluatePlot,

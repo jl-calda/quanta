@@ -65,7 +65,8 @@ export type EditorDialogKind =
   | "goToPage"
   | "shortcuts"
   | "commandPalette"
-  | "worksheetSettings";
+  | "worksheetSettings"
+  | "tableImport";
 
 /** The open dialog + its optional target region (result/conditional format). */
 export interface EditorDialog {
@@ -197,6 +198,14 @@ export type EditorAction =
   | { type: "SET_TABLE_COLUMN"; id: string; key: string; patch: TableColumnPatch }
   | { type: "SET_TABLE_SORT"; id: string; sort: TableSort | null }
   | { type: "SET_TABLE_FILTER"; id: string; filter: TableFilter | null }
+  | {
+      type: "IMPORT_TABLE_DATA";
+      id: string;
+      mode: "replace" | "append";
+      /** Inferred columns (label + optional unit) — used by `replace` only. */
+      columns?: { label: string; unit?: string }[];
+      rows: string[][];
+    }
   | { type: "SET_TABLE_FREEZE"; id: string; freeze: TableFreeze | null }
   | { type: "SET_TABLE_GROUP"; id: string; group: TableGroup | null }
   | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
@@ -357,6 +366,13 @@ function mutate(
   const next: WorksheetContent = structuredClone(content);
   fn(next);
   return next;
+}
+
+/** Trim/pad a row to exactly `width` cells (imported rows align to the grid). */
+function fitRow(row: string[], width: number): string[] {
+  const out = row.slice(0, width);
+  while (out.length < width) out.push("");
+  return out;
 }
 
 /* ------------------------------------------------------------------ *
@@ -575,6 +591,35 @@ export function editorReducer(
         if (!region || region.type !== "table") return;
         if (action.filter) region.filter = action.filter;
         else delete region.filter;
+      });
+      return touched(state, content);
+    }
+    case "IMPORT_TABLE_DATA": {
+      // Imported Excel/CSV data (parsed + unit-inferred by the dialog) lands as
+      // normal table-region content; autosave persists it via the Zod Server Action.
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (action.mode === "replace") {
+          // New columns get fresh keys; sort/filter/ranges and the key-/count-bound
+          // freeze/group keyed off the old columns no longer apply, so clear them.
+          region.columns = (action.columns ?? []).map((col) => ({
+            key: newId(),
+            label: col.label,
+            ...(col.unit ? { unit: col.unit } : {}),
+          }));
+          const width = Math.max(region.columns.length, 1);
+          region.rows = action.rows.map((row) => fitRow(row, width));
+          delete region.sort;
+          delete region.filter;
+          delete region.ranges;
+          delete region.freeze;
+          delete region.group;
+        } else {
+          // Append: keep existing columns/units; align each new row to the grid.
+          const width = Math.max(region.columns.length, 1);
+          for (const row of action.rows) region.rows.push(fitRow(row, width));
+        }
       });
       return touched(state, content);
     }

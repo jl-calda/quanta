@@ -2,6 +2,54 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Table import & paste from Excel/CSV + copy a selection (Phase 2)
+
+- **Import surface = dialog only this phase.** A dedicated Import-data dialog on the
+  existing `DialogHost` (`"tableImport"` kind): paste box + `.csv`/`.xlsx` upload + a
+  "first row is header" toggle + a **live preview of inferred columns and per-column
+  units**. Nothing writes to the grid until confirm — **preview == confirmation** (the
+  same ethos as the result-format dialog). A **bare-grid Ctrl+V paste handler is
+  deliberately deferred** as a typed seam — Refinement row *"Table: grid paste fast-path
+  (Ctrl+V from Excel)"* — owned by the non-intrusive-input / editor-keyboard track
+  (after M6), where keybinding conflicts are resolved centrally. The new
+  `IMPORT_TABLE_DATA` reducer action is the seam it will reuse.
+- **Non-empty target requires an explicit replace/append choice; replace is confirmed.**
+  When the table already holds data, the dialog shows replace vs append; a destructive
+  **replace** routes through the shared `useConfirm()` primitive (never hand-rolled).
+  **Append** keeps existing columns/units and aligns each new row to the grid width;
+  **replace** mints fresh column keys and clears `sort`/`filter`/`ranges` (their old keys
+  no longer apply).
+- **Unit inference is a pure, unit-aware helper (`lib/calc/table-io.ts`).** Header
+  annotations are the trusted signal — `Force (kN)`, `Length [mm]`, `Stress, MPa`, or a
+  trailing ` kN` token — validated by trying `math.unit("1 "+candidate)` (so compound
+  units like `kN/m` work) behind a unit-shape regex, so English headers (`Member`,
+  `Note`) stay unit-less text columns. A consistent trailing unit in the *values*
+  (`12 kN`) is the fallback. The inferred unit is written to `column.unit` and **stripped
+  off the cells**, so the unchanged `table.ts` evaluator re-attaches it and present-mode
+  renders `[unit]` + right-aligned mono automatically — **no `table.ts`/`graph.ts`/
+  `recalc.ts` change**.
+- **The `.xlsx` codec is a lazily-imported client adapter, not engine code.**
+  `lib/import/xlsx.ts` does `await import("xlsx")` (the SheetJS dep already used by the
+  Node-only `lib/export/xlsx.ts` writer) and converts a workbook into the **same plain
+  2D string grid** the pure parser consumes — keeping SheetJS out of the main bundle and
+  out of `/lib/calc`. (SheetJS is JS, not Python, so it does not belong in the Pyodide
+  worker.) The dialog normalizes an uploaded `.xlsx` into tab-delimited text so paste and
+  upload share one code path.
+- **Export = clipboard copy only (TSV default), file download deferred.** A footer Copy
+  menu serializes the selected table to **TSV (Excel/Sheets-friendly default)** or **CSV**
+  from the already-evaluated, formatted cell values (current unit-system display; units
+  carried back in the header as `label [unit]`), in the current read-view order
+  (`tableViewOrder`). CSV/TSV quoting escapes embedded delimiters, quotes, and newlines.
+  This **round-trips with the import dialog** (copy → import is idempotent; covered by a
+  test). Real **file download (`.csv`/`.xlsx`) is deferred** to the Export refinement
+  track — Refinement row *"Export: selection → .csv/.xlsx file"* (reuse the `lib/export`
+  SheetJS path once) — since that is genuine export, not a clipboard convenience.
+- **No new entity, table, server action, or migration.** Imported data is ordinary
+  table-region content; it round-trips through the existing `saveWorksheet` autosave
+  (Zod-validated `contentSchema` → `worksheets.content` JSONB), RLS unchanged. Copy is
+  pure client-side `navigator.clipboard` over data already in client state. `table-io.ts`
+  stays pure/deterministic (client = worker = Node).
+
 ## Table: validation, frozen panes, grouping/pivot (Phase 2)
 
 - **No new entity, table, server action, or migration.** Per-column `validation`
