@@ -6,7 +6,8 @@ import {
   worksheetScopeFromResults,
   type TableEngine,
 } from "./flatten";
-import type { Region, WorksheetContent } from "./content";
+import type { Region, TableRegion, WorksheetContent } from "./content";
+import { buildChartFromRange } from "./chart-from-range";
 
 function doc(regions: Region[]): WorksheetContent {
   return { version: 1, rows: [{ id: "r1", columns: 1, cells: [{ regions }] }] };
@@ -202,6 +203,31 @@ describe("settleTables (scope-bridge)", () => {
     expect(plot.traces[0].error).toBeUndefined();
     expect(plot.traces[0].points.map((p) => p.x)).toEqual([1, 2, 3]);
     expect(plot.traces[0].points.map((p) => p.y)).toEqual([20, 40, 60]); // forces · gamma
+  });
+
+  it("renders a chart built by buildChartFromRange against the table's data", () => {
+    // Closes the loop: the pure builder's output (random range keys + xData) drives
+    // the real settle pipeline and produces the table's actual values as points.
+    const source: TableRegion = {
+      id: "t1",
+      type: "table",
+      indent: 0,
+      columns: [
+        { key: "a", label: "Time", unit: "s" },
+        { key: "b", label: "Force", unit: "kN" },
+      ],
+      rows: [["0", "10"], ["1", "20"], ["2", "30"]],
+    };
+    const built = buildChartFromRange(source, { r0: 0, c0: 0, r1: 2, c1: 1 })!;
+    const table: TableRegion = { ...source, ranges: built.ranges };
+    const content = doc([table, built.plot]);
+    const { engine } = countingEngine();
+    const { plots } = settleTables(content, engine);
+    const plot = plots.get(built.plot.id)!;
+    expect(plot.empty).toBe(false);
+    expect(plot.traces[0].error).toBeUndefined();
+    expect(plot.traces[0].points.map((p) => p.x)).toEqual([0, 1, 2]); // Time column
+    expect(plot.traces[0].points.map((p) => p.y)).toEqual([10, 20, 30]); // Force column
   });
 });
 

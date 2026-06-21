@@ -1632,3 +1632,34 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   operator palette" for this work; only nth-root — a high-value structural
   operator with no prior ribbon presence — warranted a tile. Norm/ceil/floor/
   contour/cross/dot stay dialog-only to keep the ribbon edit minimal.
+
+## Chart from a table range (Phase 2)
+
+- **Bridge via named ranges + a data-mode plot — no engine/schema/server change.**
+  Selecting a rectangular range in a table and choosing **Chart range** adds one
+  named A1 sub-range per selected column to the table's existing `ranges` field
+  (already exported to worksheet scope as a vector by `evaluateTable`), then inserts
+  a `kind:"xy"` plot whose `xData`/trace `expr` reference those range keys by name.
+  The unmodified pipeline (`settleTables` → `evaluatePlotsWith` → `evaluatePlot`
+  data mode) zips the X vector with each trace vector, so the chart stays live and
+  unit-aware with zero changes to `graph.ts`/`recalc.ts` or `contentSchema`
+  (`ranges` and `xData` already validate). It rides the normal autosave → Zod → RLS
+  path; no new entity/table.
+- **Pure builder in the tree layer, not the engine.** `lib/worksheet/chart-from-range.ts`
+  (`buildChartFromRange`) constructs the `{ ranges, plot }` pieces. It lives in
+  `lib/worksheet` (which owns content-tree types) rather than `lib/calc`, because the
+  engine deliberately never imports `PlotRegion`/content types; it is pure and
+  deterministic, called once from a single compound reducer action
+  (`CHART_TABLE_RANGE`) so the table mutation + plot insert are one undo step / one save.
+- **Conventions.** Leftmost selected column = x axis, the rest = y traces (Excel/
+  Sheets/Mathcad). A single selected column charts against its row index via a literal
+  `xData:"1:N"`. The y-axis unit is pinned only when every y column shares one real
+  unit (else left auto), so mismatched-unit columns degrade to per-trace conversion
+  instead of erroring a whole trace. Range keys are sanitized to valid, unique
+  identifiers (label → ASCII word chars, never leading-digit, column-letter fallback,
+  random suffix) so the synthetic `key := …` definition always parses.
+- **Range selection added to the table editor only.** The edit grid's single-cell
+  selection became an anchor+head rectangle (shift-click / shift-arrow extend; plain
+  nav collapses), with a translucent overlay that layers over conditional/spill fills.
+  The head cell stays `sel` so the formula bar, cell editing, and its remount `key`
+  are unchanged; read mode (`TablePresent`) and neighbouring regions are untouched.

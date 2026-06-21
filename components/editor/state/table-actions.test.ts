@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { TableRegion, WorksheetContent } from "@/lib/worksheet/content";
+import {
+  validateContent,
+  type PlotRegion,
+  type Region,
+  type TableRegion,
+  type WorksheetContent,
+} from "@/lib/worksheet/content";
 import { editorReducer, initEditorState, type EditorState } from "./editor-reducer";
 
 function tableDoc(): WorksheetContent {
@@ -115,5 +121,107 @@ describe("table view state (sort / filter)", () => {
       ["1", "2"],
       ["3", "4"],
     ]);
+  });
+});
+
+describe("CHART_TABLE_RANGE", () => {
+  const fullRect = { r0: 0, c0: 0, r1: 1, c1: 1 };
+
+  function regionsOf(state: EditorState): Region[] {
+    return state.content.rows[0].cells[0].regions;
+  }
+
+  it("inserts a bound plot directly after the table and selects it", () => {
+    const s = editorReducer(fresh(), { type: "CHART_TABLE_RANGE", id: "t1", rect: fullRect });
+    const regions = regionsOf(s);
+    expect(regions).toHaveLength(2);
+    expect(regions[0].id).toBe("t1"); // table stays first
+    const plot = regions[1] as PlotRegion;
+    expect(plot.type).toBe("plot");
+    expect(plot.kind).toBe("xy");
+    expect(plot.traces).toHaveLength(1);
+    // The plot binds to range KEYS the action added to the table.
+    const ranges = table(s).ranges!;
+    expect(ranges[plot.xData!]).toBe("A2:A3");
+    expect(ranges[plot.traces[0].expr]).toBe("B2:B3");
+    // Selection moves to the new plot, not editing.
+    expect(s.selectedId).toBe(plot.id);
+    expect(s.selectedIds).toEqual([plot.id]);
+    expect(s.editingId).toBeNull();
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("merges range keys without dropping existing table ranges", () => {
+    const seeded = fresh();
+    (seeded.content.rows[0].cells[0].regions[0] as TableRegion).ranges = { keep: "A2:A3" };
+    const s = editorReducer(seeded, { type: "CHART_TABLE_RANGE", id: "t1", rect: fullRect });
+    const ranges = table(s).ranges!;
+    expect(ranges.keep).toBe("A2:A3"); // pre-existing range preserved
+    expect(Object.keys(ranges).length).toBe(3); // keep + x + y
+  });
+
+  it("produces content that validates under the worksheet schema", () => {
+    const s = editorReducer(fresh(), { type: "CHART_TABLE_RANGE", id: "t1", rect: fullRect });
+    expect(validateContent(s.content)).not.toBeNull();
+  });
+
+  it("places the chart after a table nested inside an area", () => {
+    const content: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "area1",
+                  type: "area",
+                  indent: 0,
+                  title: "Group",
+                  collapsed: false,
+                  regions: [
+                    {
+                      id: "t1",
+                      type: "table",
+                      indent: 0,
+                      columns: [
+                        { key: "a", label: "A" },
+                        { key: "b", label: "B" },
+                      ],
+                      rows: [
+                        ["1", "2"],
+                        ["3", "4"],
+                      ],
+                    } as TableRegion,
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const s = editorReducer(fresh(content), { type: "CHART_TABLE_RANGE", id: "t1", rect: fullRect });
+    const area = s.content.rows[0].cells[0].regions[0];
+    expect(area.type).toBe("area");
+    if (area.type !== "area") throw new Error("expected area");
+    expect(area.regions).toHaveLength(2);
+    expect(area.regions[0].id).toBe("t1");
+    expect(area.regions[1].type).toBe("plot"); // chart lands inside the area, after the table
+  });
+
+  it("is a no-op for a non-table id", () => {
+    const s = editorReducer(fresh(), { type: "CHART_TABLE_RANGE", id: "nope", rect: fullRect });
+    expect(regionsOf(s)).toHaveLength(1);
+    expect(s.saveState).not.toBe("unsaved");
+  });
+
+  it("is a no-op for a degenerate single-cell selection", () => {
+    const s = editorReducer(fresh(), { type: "CHART_TABLE_RANGE", id: "t1", rect: { r0: 0, c0: 0, r1: 0, c1: 0 } });
+    expect(regionsOf(s)).toHaveLength(1);
+    expect(table(s).ranges).toBeUndefined(); // no ranges added
+    expect(s.saveState).not.toBe("unsaved");
   });
 });

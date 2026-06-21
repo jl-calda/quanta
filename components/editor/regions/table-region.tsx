@@ -62,7 +62,11 @@ function TableEditor({
   const cols = region.columns;
   const nRows = region.rows.length;
   const nCols = cols.length;
+  // `sel` is the head/active cell (drives the formula bar); `anchor` is the other
+  // corner of a rectangular selection. A plain click / non-shift nav collapses the
+  // two onto the head; shift-click / shift-arrow moves the head only to extend it.
   const [sel, setSel] = useState<{ r: number; c: number }>({ r: 0, c: 0 });
+  const [anchor, setAnchor] = useState<{ r: number; c: number }>({ r: 0, c: 0 });
   const [cellError, setCellError] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +79,17 @@ function TableEditor({
   });
   const rawAt = (r: number, c: number) => region.rows[r]?.[c] ?? "";
   const errorCount = result?.errorCount ?? 0;
+
+  // The selected rectangle (min/max of anchor + head) and whether it spans >1 cell.
+  const rect = {
+    r0: Math.min(anchor.r, sel.r),
+    c0: Math.min(anchor.c, sel.c),
+    r1: Math.max(anchor.r, sel.r),
+    c1: Math.max(anchor.c, sel.c),
+  };
+  const multiCell = rect.r0 !== rect.r1 || rect.c0 !== rect.c1;
+  const inRect = (r: number, c: number) =>
+    r >= rect.r0 && r <= rect.r1 && c >= rect.c0 && c <= rect.c1;
 
   // Frozen panes (display-only). The edit grid stays in data order, so freeze
   // pins the first N data rows/cols; offsets are exact because we pin widths.
@@ -107,16 +122,31 @@ function TableEditor({
   };
 
   const select = (r: number, c: number) => {
+    const next = clamp(r, c);
+    setSel(next);
+    setAnchor(next); // collapse the selection onto the clicked cell
+    dispatch({ type: "SELECT", id: region.id });
+    gridRef.current?.focus();
+  };
+
+  // Extend the rectangle: move the head, keep the anchor (shift-click / shift-arrow).
+  const extendTo = (r: number, c: number) => {
     setSel(clamp(r, c));
     dispatch({ type: "SELECT", id: region.id });
     gridRef.current?.focus();
   };
 
+  const moveHead = (r: number, c: number, extend: boolean) => {
+    const next = clamp(r, c);
+    setSel(next);
+    if (!extend) setAnchor(next);
+  };
+
   const onGridKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => clamp(s.r - 1, s.c)); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => clamp(s.r + 1, s.c)); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); setSel((s) => clamp(s.r, s.c - 1)); }
-    else if (e.key === "ArrowRight" || e.key === "Tab") { e.preventDefault(); setSel((s) => clamp(s.r, s.c + 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); moveHead(sel.r - 1, sel.c, e.shiftKey); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); moveHead(sel.r + 1, sel.c, e.shiftKey); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); moveHead(sel.r, sel.c - 1, e.shiftKey); }
+    else if (e.key === "ArrowRight" || e.key === "Tab") { e.preventDefault(); moveHead(sel.r, sel.c + 1, e.shiftKey); }
   };
 
   const selCell = cellOf(result, sel.r, sel.c);
@@ -207,11 +237,27 @@ function TableEditor({
             spilledFrom={selSpilledFrom}
             onCommit={commitCell}
             onCommitNext={(source) => {
-              if (commitCell(source)) setSel((s) => clamp(s.r + 1, s.c));
+              // Enter walks down a column — collapse the selection so no stale rect lingers.
+              if (commitCell(source)) {
+                const next = clamp(sel.r + 1, sel.c);
+                setSel(next);
+                setAnchor(next);
+              }
               gridRef.current?.focus();
             }}
           />
         )}
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={<Icon name="chart" size={14} />}
+          disabled={!multiCell}
+          onClick={() => dispatch({ type: "CHART_TABLE_RANGE", id: region.id, rect })}
+          title={multiCell ? "Chart the selected range" : "Select a range of cells to chart"}
+          style={{ flex: "0 0 auto" }}
+        >
+          Chart range
+        </Button>
       </div>
       {cellError && (
         <div
@@ -348,7 +394,10 @@ function TableEditor({
                   </button>
                 </td>
                 {cols.map((col, c) => {
-                  const isSel = sel.r === r && sel.c === c;
+                  const isHead = sel.r === r && sel.c === c;
+                  // A cell inside a multi-cell selection (but not the head) gets a
+                  // translucent overlay that layers over any conditional / spill fill.
+                  const isRange = multiCell && !isHead && inRect(r, c);
                   const cell = cellOf(result, r, c);
                   const style = cell?.style;
                   // Cells an array formula filled read as derived: faint accent tint +
@@ -362,7 +411,7 @@ function TableEditor({
                     <td
                       key={col.key}
                       className="cell"
-                      onClick={() => select(r, c)}
+                      onClick={(e) => (e.shiftKey ? extendTo(r, c) : select(r, c))}
                       style={{
                         position: "relative",
                         padding: "5px 10px",
@@ -371,13 +420,17 @@ function TableEditor({
                         color: cell?.error
                           ? "var(--status-error)"
                           : style?.color ?? (isSpill ? "var(--text-muted)" : "var(--text-primary)"),
-                        background: isSel ? "transparent" : style?.fill ?? (isSpill ? "var(--accent-tint)" : "transparent"),
+                        background: isHead ? "transparent" : style?.fill ?? (isSpill ? "var(--accent-tint)" : "transparent"),
                         borderRight: c < nCols - 1 ? "1px solid var(--border-hairline)" : "none",
                         borderTop: r ? "1px solid var(--border-hairline)" : "none",
                         cursor: "cell",
-                        outline: isSel ? "2px solid var(--accent)" : "none",
+                        outline: isHead ? "2px solid var(--accent)" : "none",
                         outlineOffset: -2,
-                        boxShadow: isSel ? "inset 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)" : "none",
+                        boxShadow: isHead
+                          ? "inset 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)"
+                          : isRange
+                            ? "inset 0 0 0 999px color-mix(in srgb, var(--accent) 12%, transparent)"
+                            : "none",
                         whiteSpace: "nowrap",
                         transition: "background var(--dur-fast) var(--ease-out)",
                         height: frozen ? EDIT_ROW_H : undefined,
@@ -385,7 +438,7 @@ function TableEditor({
                       }}
                     >
                       <EditCellContent region={region} cell={cell} r={r} c={c} />
-                      {!isSel && style?.label && (
+                      {!isHead && style?.label && (
                         <span style={{ font: "8.5px/1 var(--font-sans)", fontWeight: 600, marginLeft: 5, letterSpacing: "0.04em" }}>
                           {style.label}
                         </span>

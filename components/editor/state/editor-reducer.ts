@@ -43,6 +43,7 @@ import {
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
 import { findRegion, readingOrderIds } from "@/lib/worksheet/flatten";
+import { buildChartFromRange, type CellRect } from "@/lib/worksheet/chart-from-range";
 
 export type CalcMode = "auto" | "manual";
 export type CalcStatus = "current" | "stale" | "error";
@@ -203,6 +204,7 @@ export type EditorAction =
   | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
   | { type: "SET_PLOT_TRACE"; id: string; traceId: string; patch: Partial<PlotTrace> }
   | { type: "TOGGLE_PLOT_TRACE"; id: string; traceId: string }
+  | { type: "CHART_TABLE_RANGE"; id: string; rect: CellRect }
   | {
       type: "INSERT_REGION";
       regionType: RegionType;
@@ -748,6 +750,30 @@ export function editorReducer(
       return touched(state, content, {
         selectedId: region.id,
         selectedIds: [region.id],
+        editingId: null,
+      });
+    }
+    case "CHART_TABLE_RANGE": {
+      // Bridge a selected table range to a bound plot: add a named range per column
+      // to the source table (each exported to scope as a vector) and insert a
+      // data-mode plot referencing those names directly after the table — one undo
+      // step, one autosave. A no-op for a non-table id or a degenerate selection.
+      const table = findRegion(state.content, action.id);
+      if (!table || table.type !== "table") return state;
+      const built = buildChartFromRange(table, action.rect);
+      if (!built) return state;
+      const content = mutate(state.content, (next) => {
+        const target = findRegion(next, action.id);
+        if (target?.type === "table") {
+          target.ranges = { ...(target.ranges ?? {}), ...built.ranges };
+        }
+        const loc = locate(next, action.id);
+        if (loc) loc.container.splice(loc.index + 1, 0, built.plot);
+        else next.rows.push(singleColumnRow([built.plot]));
+      });
+      return touched(state, content, {
+        selectedId: built.plot.id,
+        selectedIds: [built.plot.id],
         editingId: null,
       });
     }
