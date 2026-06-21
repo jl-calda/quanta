@@ -22,7 +22,9 @@ import type {
   SolveAlgorithm,
   SolveGuess,
   SolveRegion,
+  TableAgg,
   TableColumn,
+  TableGroup,
   TableRegion,
   TextRegion,
   TraceStyle,
@@ -204,6 +206,12 @@ function TableInspector({
 }) {
   const setCol = (key: string, patch: TableColumnPatch) =>
     dispatch({ type: "SET_TABLE_COLUMN", id: region.id, key, patch });
+  const setFreeze = (frozenRows: number, frozenCols: number) =>
+    dispatch({
+      type: "SET_TABLE_FREEZE",
+      id: region.id,
+      freeze: frozenRows === 0 && frozenCols === 0 ? null : { frozenRows, frozenCols },
+    });
   return (
     <>
       <Group eyebrow="Table">
@@ -238,7 +246,102 @@ function TableInspector({
           <Icon name="plusSm" size={13} /> Add column
         </button>
       </Group>
+
+      <Group eyebrow="Freeze panes">
+        <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          Pin leading rows and columns so headers stay in view while scrolling.
+        </div>
+        <Row label="Frozen rows">
+          <Stepper
+            value={region.freeze?.frozenRows ?? 0}
+            max={Math.max(0, region.rows.length - 1)}
+            set={(v) => setFreeze(v, region.freeze?.frozenCols ?? 0)}
+          />
+        </Row>
+        <Row label="Frozen columns">
+          <Stepper
+            value={region.freeze?.frozenCols ?? 0}
+            max={Math.max(0, region.columns.length - 1)}
+            set={(v) => setFreeze(region.freeze?.frozenRows ?? 0, v)}
+          />
+        </Row>
+      </Group>
+
+      <TableGroupInspector region={region} dispatch={dispatch} />
     </>
+  );
+}
+
+const AGG_OPTIONS: { value: TableAgg; label: string }[] = [
+  { value: "count", label: "Count" },
+  { value: "sum", label: "Sum" },
+  { value: "mean", label: "Mean" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
+];
+
+/**
+ * Grouping summary config — group rows by a column and summarise another. This
+ * is a display-only view rendered below the grid (kept separate from the freeze
+ * config); the pure `evaluateTableGroup` does the unit-aware aggregation.
+ */
+function TableGroupInspector({
+  region,
+  dispatch,
+}: {
+  region: TableRegion;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const group = region.group;
+  const colOptions = region.columns.map((c) => ({ value: c.key, label: c.label?.trim() || c.key }));
+  const setGroup = (next: TableGroup | null) =>
+    dispatch({ type: "SET_TABLE_GROUP", id: region.id, group: next });
+  return (
+    <Group eyebrow="Group / summary">
+      <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+        Group rows by a column and summarise another below the table.
+      </div>
+      <Row label="Group by">
+        <div style={{ width: 150 }}>
+          <Select
+            size="sm"
+            value={group?.by ?? ""}
+            options={[{ value: "", label: "None" }, ...colOptions]}
+            onChange={(e) => {
+              const by = e.target.value;
+              if (!by) setGroup(null);
+              else setGroup({ by, agg: group?.agg ?? "count", value: group?.value });
+            }}
+          />
+        </div>
+      </Row>
+      {group && (
+        <>
+          <Row label="Summarise">
+            <div style={{ width: 150 }}>
+              <Select
+                size="sm"
+                value={group.agg}
+                options={AGG_OPTIONS}
+                onChange={(e) => setGroup({ ...group, agg: e.target.value as TableAgg })}
+              />
+            </div>
+          </Row>
+          {group.agg !== "count" && (
+            <Row label="Of column">
+              <div style={{ width: 150 }}>
+                <Select
+                  size="sm"
+                  value={group.value ?? ""}
+                  options={[{ value: "", label: "Choose…" }, ...colOptions]}
+                  onChange={(e) => setGroup({ ...group, value: e.target.value || undefined })}
+                />
+              </div>
+            </Row>
+          )}
+        </>
+      )}
+    </Group>
   );
 }
 
@@ -295,6 +398,67 @@ function ColumnEditor({
           </button>
         </div>
       </div>
+      <ValidationEditor col={col} setCol={setCol} />
+    </div>
+  );
+}
+
+/**
+ * Per-column validation: a dropdown of allowed values (`list`) or a numeric
+ * range (`number`). The pure rule (`validateCellSource`) rejects bad literals on
+ * commit; `list` columns also render a dropdown in the grid so it can't be typed.
+ */
+function ValidationEditor({
+  col,
+  setCol,
+}: {
+  col: TableColumn;
+  setCol: (key: string, patch: TableColumnPatch) => void;
+}) {
+  const v = col.validation;
+  const onKind = (kind: string) => {
+    if (kind === "list") setCol(col.key, { validation: { kind: "list", options: v?.kind === "list" ? v.options : [] } });
+    else if (kind === "number") setCol(col.key, { validation: { kind: "number", min: v?.kind === "number" ? v.min : undefined, max: v?.kind === "number" ? v.max : undefined } });
+    else setCol(col.key, { validation: null });
+  };
+  const numOrUndef = (s: string): number | undefined => {
+    const t = s.trim();
+    if (t === "") return undefined;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px dashed var(--border-hairline)", paddingTop: 8 }}>
+      <Row label="Validation">
+        <div style={{ width: 132 }}>
+          <Select
+            size="sm"
+            value={v?.kind ?? "none"}
+            onChange={(e) => onKind(e.target.value)}
+            options={[
+              { value: "none", label: "None" },
+              { value: "list", label: "List (dropdown)" },
+              { value: "number", label: "Number range" },
+            ]}
+          />
+        </div>
+      </Row>
+      {v?.kind === "list" && (
+        <Input
+          key={`opts-${col.key}`}
+          mono
+          size="sm"
+          defaultValue={(v.options ?? []).join(", ")}
+          placeholder="M16, M20, M24"
+          onBlur={(e) => setCol(col.key, { validation: { kind: "list", options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) } })}
+        />
+      )}
+      {v?.kind === "number" && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <Input key={`min-${col.key}`} mono size="sm" defaultValue={v.min ?? ""} placeholder="min" onBlur={(e) => setCol(col.key, { validation: { kind: "number", min: numOrUndef(e.target.value), max: v.max } })} containerStyle={{ flex: 1 }} />
+          <Input key={`max-${col.key}`} mono size="sm" defaultValue={v.max ?? ""} placeholder="max" onBlur={(e) => setCol(col.key, { validation: { kind: "number", min: v.min, max: numOrUndef(e.target.value) } })} containerStyle={{ flex: 1 }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1123,12 +1287,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Stepper({ value, set }: { value: number; set: (v: number) => void }) {
+function Stepper({ value, set, min = 0, max = 6 }: { value: number; set: (v: number) => void; min?: number; max?: number }) {
   return (
     <div style={{ display: "inline-flex", alignItems: "center", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-sm)", overflow: "hidden", height: 28 }}>
-      <button onClick={() => set(Math.max(0, value - 1))} style={{ width: 26, height: "100%", border: "none", background: "var(--surface-raised)", cursor: "pointer", color: "var(--text-primary)", fontSize: 14 }}>−</button>
+      <button onClick={() => set(Math.max(min, value - 1))} style={{ width: 26, height: "100%", border: "none", background: "var(--surface-raised)", cursor: "pointer", color: "var(--text-primary)", fontSize: 14 }}>−</button>
       <span style={{ width: 30, textAlign: "center", font: "13px var(--font-mono)" }}>{value}</span>
-      <button onClick={() => set(Math.min(6, value + 1))} style={{ width: 26, height: "100%", border: "none", borderLeft: "1px solid var(--border-hairline)", background: "var(--surface-raised)", cursor: "pointer", color: "var(--text-primary)", fontSize: 14 }}>+</button>
+      <button onClick={() => set(Math.min(max, value + 1))} style={{ width: 26, height: "100%", border: "none", borderLeft: "1px solid var(--border-hairline)", background: "var(--surface-raised)", cursor: "pointer", color: "var(--text-primary)", fontSize: 14 }}>+</button>
     </div>
   );
 }
