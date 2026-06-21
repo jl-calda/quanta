@@ -2,6 +2,46 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Table: validation, frozen panes, grouping/pivot (Phase 2)
+
+- **No new entity, table, server action, or migration.** Per-column `validation`
+  and table-level `freeze`/`group` (plus a deferred, inert `pivot`) live on
+  `TableRegion`/`TableColumn` (`.passthrough()` schema, Zod-validated), round-trip
+  through the existing `saveWorksheet` autosave into `worksheets.content` JSONB;
+  RLS is unchanged. New reducer actions `SET_TABLE_FREEZE`/`SET_TABLE_GROUP` (and
+  `validation` on the existing `SET_TABLE_COLUMN`) `delete` on clear so cleared
+  state leaves no `null` noise; all three are display-only/validation concerns and
+  never trigger a recalc or touch `graph.ts`/`recalc.ts`.
+- **Validation rejects literals, never formulas.** `lib/calc/table-validation`
+  (`validateCellSource`) is pure and only checks typed literals — empty cells and
+  `=formulas` always pass (a formula is a computed value, validated by the engine).
+  `list` columns render a dropdown in the grid (bad input impossible by
+  construction); `number` columns reject non-numeric / out-of-range input on
+  commit with an app-voice message. RLS still gates the save server-side — the
+  dropdown/rejection is UX, not the security boundary.
+- **Grouping summary is display-only and pure, over the live grid.**
+  `lib/calc/table-group` (`evaluateTableGroup`) reads the evaluated grid in DATA
+  order (never sorted/filtered, never a second data copy) and emits one summary
+  row per group below the table. Aggregates are unit-aware: `sum`/`mean` via
+  `math.add`/`divide`, `min`/`max` via `math.smaller`/`larger` (compatible units
+  convert; **incompatible-unit mixing is rejected per group** as a typed per-row
+  error, never thrown); `count` is dimensionless. Empty groups, non-numeric/empty
+  cells, errored cells, and missing columns degrade gracefully (skipped or
+  reported) — the summary always renders.
+- **2-D pivot is a typed-but-inert seam (deferred).** A `pivot` schema field is
+  validated and round-tripped now (mirroring how `sort`/`filter` first shipped)
+  but nothing renders it; the follow-up wires the UI without a migration.
+- **Frozen panes use fixed row height + known column widths (known boundary).**
+  Sticky offsets are exact only because the renderer pins explicit column widths
+  (`col.width ?? 128`) and a fixed row/header height when a freeze is active (the
+  scroll container + `tableLayout: fixed` + `<colgroup>` are gated on a freeze, so
+  default tables are untouched). `components/.../table-frozen` computes the offsets
+  and a z-index layering (header×col corner > body corner > header band > row band
+  > col band) so all four scroll quadrants stay honest. `SET_TABLE_FREEZE` clamps
+  `frozenRows`/`frozenCols` below the row/col count so the whole grid can never be
+  frozen. **Revisit** this fixed-height/known-width assumption if variable row
+  heights or auto-sized columns land.
+
 ## Table array formulas & multi-cell spill (Phase 2, Func §6.3)
 
 - **Array-valued formula cells spill automatically.** A cell whose `=formula`
