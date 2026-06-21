@@ -20,9 +20,11 @@ import {
   type ControlValueType,
   type DisplayFlags,
   type OdeConfig,
+  type PlotAnnotation,
   type PlotAxis,
   type PlotGrid,
   type PlotKind,
+  type PlotReference,
   type PlotTrace,
   type PlotZ,
   type ProgramStatement,
@@ -208,11 +210,17 @@ export type EditorAction =
     }
   | { type: "SET_TABLE_FREEZE"; id: string; freeze: TableFreeze | null }
   | { type: "SET_TABLE_GROUP"; id: string; group: TableGroup | null }
-  | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
+  | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y" | "y2"; patch: Partial<PlotAxis> }
   | { type: "ADD_PLOT_TRACE"; id: string }
   | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
   | { type: "SET_PLOT_TRACE"; id: string; traceId: string; patch: Partial<PlotTrace> }
   | { type: "TOGGLE_PLOT_TRACE"; id: string; traceId: string }
+  | { type: "ADD_PLOT_REFERENCE"; id: string }
+  | { type: "SET_PLOT_REFERENCE"; id: string; refId: string; patch: Partial<PlotReference> }
+  | { type: "DELETE_PLOT_REFERENCE"; id: string; refId: string }
+  | { type: "ADD_PLOT_ANNOTATION"; id: string }
+  | { type: "SET_PLOT_ANNOTATION"; id: string; annId: string; patch: Partial<PlotAnnotation> }
+  | { type: "DELETE_PLOT_ANNOTATION"; id: string; annId: string }
   | { type: "CHART_TABLE_RANGE"; id: string; rect: CellRect }
   | {
       type: "INSERT_REGION";
@@ -695,6 +703,56 @@ export function editorReducer(
         if (!region || region.type !== "plot") return;
         const trace = region.traces.find((t) => t.id === action.traceId);
         if (trace) trace.hidden = !trace.hidden;
+      });
+      return touched(state, content);
+    }
+    case "ADD_PLOT_REFERENCE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        (region.references ??= []).push({ id: newId(), axis: "y", value: 0 });
+      });
+      return touched(state, content);
+    }
+    case "SET_PLOT_REFERENCE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        const ref = region.references?.find((r) => r.id === action.refId);
+        if (ref) Object.assign(ref, action.patch);
+      });
+      return touched(state, content);
+    }
+    case "DELETE_PLOT_REFERENCE": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        region.references = (region.references ?? []).filter((r) => r.id !== action.refId);
+      });
+      return touched(state, content);
+    }
+    case "ADD_PLOT_ANNOTATION": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        (region.annotations ??= []).push({ id: newId(), x: 0, y: 0, text: "Note" });
+      });
+      return touched(state, content);
+    }
+    case "SET_PLOT_ANNOTATION": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        const ann = region.annotations?.find((a) => a.id === action.annId);
+        if (ann) Object.assign(ann, action.patch);
+      });
+      return touched(state, content);
+    }
+    case "DELETE_PLOT_ANNOTATION": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "plot") return;
+        region.annotations = (region.annotations ?? []).filter((a) => a.id !== action.annId);
       });
       return touched(state, content);
     }
