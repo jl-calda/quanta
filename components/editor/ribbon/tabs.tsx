@@ -286,6 +286,14 @@ function PlotTab({ cmd, sel }: TabProps) {
         <BigBtn icon="plot" label="2D plot" onClick={() => cmd.insertRegion("plot")} disabled={d} />
         <SmStack w={104}>
           <SmBtn icon="polar" label="Polar" onClick={() => cmd.insertPlot("polar")} disabled={d} />
+          <SmBtn icon="histogram" label="Histogram" onClick={() => cmd.insertPlot("histogram")} disabled={d} />
+        </SmStack>
+        <SmStack w={108}>
+          <SmBtn icon="boxplot" label="Box plot" onClick={() => cmd.insertPlot("boxplot")} disabled={d} />
+          <SmBtn icon="parametric" label="Parametric" onClick={() => cmd.insertPlot("parametric")} disabled={d} />
+        </SmStack>
+        <SmStack w={104}>
+          <SmBtn icon="vectorField" label="Vector" onClick={() => cmd.insertPlot("vector")} disabled={d} />
           <SmBtn icon="contour" label="Contour" onClick={() => cmd.insertPlot("contour")} disabled={d} />
         </SmStack>
         <SmStack w={96}>

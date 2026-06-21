@@ -226,7 +226,16 @@ const tableRegionSchema = z
  * defaults mean a legacy render-only plot (`{type:"plot", title?}`) still
  * validates with sensible values, so no dedicated migration is required.
  */
-const plotKindSchema = z.enum(["xy", "polar", "contour", "surface"]);
+const plotKindSchema = z.enum([
+  "xy",
+  "polar",
+  "contour",
+  "surface",
+  "histogram",
+  "boxplot",
+  "parametric",
+  "vector",
+]);
 const traceStyleSchema = z.enum([
   "line",
   "scatter",
@@ -251,10 +260,28 @@ const plotTraceSchema = z.object({
   label: z.string().optional(),
   /** y expression sampled over `xVar` (sweep) or a vector expression (data). */
   expr: z.string().default(""),
+  /** x(t) for a parametric trace, swept alongside `expr` over the parameter. */
+  xExpr: z.string().optional(),
   style: traceStyleSchema.default("line"),
   color: z.string().optional(),
   dash: z.boolean().optional(),
   hidden: z.boolean().optional(),
+});
+/** Histogram binning options (auto bin count when `bins` is unset). */
+const plotHistogramSchema = z.object({
+  bins: z.number().int().min(1).max(200).optional(),
+});
+/** Vector-field components F(x, y) = (u, v); `normalize` draws unit-length arrows. */
+const plotVectorSchema = z.object({
+  u: z.string().default(""),
+  v: z.string().default(""),
+  normalize: z.boolean().optional(),
+});
+/** Parameter for a parametric plot — `var` swept over [min, max]. */
+const plotParamSchema = z.object({
+  var: z.string().default("t"),
+  min: z.number().optional(),
+  max: z.number().optional(),
 });
 /** z = f(x, y) surface, for contour/3D (typed-but-inert until the renderer ships). */
 const plotZSchema = z.object({
@@ -294,8 +321,14 @@ const plotRegionSchema = z
     z: plotZSchema.optional(),
     grid: plotGridSchema.optional(),
     surface: surfaceOptionsSchema.optional(),
+    /** Histogram bin options (kind `histogram`). */
+    histogram: plotHistogramSchema.optional(),
+    /** Vector-field components (kind `vector`). */
+    vector: plotVectorSchema.optional(),
+    /** Sweep parameter (kind `parametric`). */
+    param: plotParamSchema.optional(),
     traces: z.array(plotTraceSchema).default([]),
-    /** Sweep sample count (plot-by-formula); engine clamps to 2–400. */
+    /** Sweep / parameter sample count (plot-by-formula); engine clamps to 2–400. */
     samples: z.number().int().min(2).max(400).optional(),
     legend: z.boolean().default(true),
     frame: z.boolean().optional(),
@@ -547,6 +580,9 @@ export type PlotTrace = z.infer<typeof plotTraceSchema>;
 export type PlotZ = z.infer<typeof plotZSchema>;
 export type PlotGrid = z.infer<typeof plotGridSchema>;
 export type SurfaceOptions = z.infer<typeof surfaceOptionsSchema>;
+export type PlotHistogram = z.infer<typeof plotHistogramSchema>;
+export type PlotVector = z.infer<typeof plotVectorSchema>;
+export type PlotParam = z.infer<typeof plotParamSchema>;
 export type ControlKind = z.infer<typeof controlKindSchema>;
 export type ControlValueType = z.infer<typeof controlValueTypeSchema>;
 export type ControlOption = z.infer<typeof controlOptionSchema>;
@@ -632,6 +668,12 @@ export interface PlotRegion extends RegionBase {
   z?: PlotZ;
   grid?: PlotGrid;
   surface?: SurfaceOptions;
+  /** Histogram binning options (kind `histogram`). */
+  histogram?: PlotHistogram;
+  /** Vector-field components (kind `vector`). */
+  vector?: PlotVector;
+  /** Sweep parameter (kind `parametric`). */
+  param?: PlotParam;
   traces: PlotTrace[];
   samples?: number;
   legend: boolean;

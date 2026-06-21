@@ -376,6 +376,13 @@ function PlotBlock({
   if (region.kind === "contour" || region.kind === "surface") {
     return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{region.kind === "surface" ? "3D surface" : "Contour"} plot — configured.</div>);
   }
+  // Data-bound kinds need the live worksheet scope (absent in the Node export path),
+  // so the print view shows a compact note rather than an empty frame. Parametric is
+  // formula-driven and falls through to the points renderer below.
+  if (region.kind === "histogram" || region.kind === "boxplot" || region.kind === "vector") {
+    const label = region.kind === "histogram" ? "Histogram" : region.kind === "boxplot" ? "Box plot" : "Vector field";
+    return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>{label} — configured.</div>);
+  }
   if (region.traces.length === 0) {
     return wrap(<div style={{ font: "10.5px/1.4 var(--font-sans)", color: MUTED }}>No traces yet.</div>);
   }

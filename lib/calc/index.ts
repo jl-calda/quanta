@@ -116,6 +116,9 @@ export {
   type PlotResult,
   type TraceResult,
   type PlotBounds,
+  type VectorSample,
+  type Bin,
+  type BoxStats,
 } from "./plot";
 
 // Solve block (pure, engine-native — see ./solve).

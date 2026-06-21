@@ -60,7 +60,12 @@ export function TableRegionView({ region }: RegionRenderProps<TableRegion>) {
 export function PlotRegionView({ region }: RegionRenderProps<PlotRegion>) {
   const result = useMemo(() => evaluatePlot(region as PlotSpec, {}), [region]);
   if (region.kind === "contour" || region.kind === "surface") return <PlotPlaceholder region={region} />;
-  if (region.traces.length === 0) return <PlotEmptyState />;
+  if (region.kind === "vector") {
+    const configured = !!region.vector?.u?.trim() && !!region.vector?.v?.trim();
+    if (!configured) return <PlotEmptyState />;
+  } else if (region.traces.length === 0) {
+    return <PlotEmptyState />;
+  }
   return (
     <div style={{ maxWidth: 560 }}>
       {region.title && <div style={{ font: "600 13px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 8 }}>{region.title}</div>}

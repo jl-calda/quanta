@@ -27,13 +27,24 @@ import type { MathNode, Unit } from "./math";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 import { CalcEngineError, classifyThrow, makeError } from "./errors";
 import type { CalcError, UnitSystem } from "./types";
+import { boxStats, histogramBins, type Bin, type BoxStats } from "./plot-stats";
+
+export type { Bin, BoxStats } from "./plot-stats";
 
 /* ------------------------------------------------------------------ *
  * Input contract (structurally satisfied by lib/worksheet's PlotRegion,
  * so the engine stays decoupled from the content tree).
  * ------------------------------------------------------------------ */
 
-export type PlotKind = "xy" | "polar" | "contour" | "surface";
+export type PlotKind =
+  | "xy"
+  | "polar"
+  | "contour"
+  | "surface"
+  | "histogram"
+  | "boxplot"
+  | "parametric"
+  | "vector";
 export type PlotTraceStyle =
   | "line"
   | "scatter"
@@ -57,8 +68,13 @@ export interface PlotAxisSpec {
 export interface PlotTraceSpec {
   id: string;
   label?: string;
-  /** y expression sampled over `xVar` (sweep), or a vector expression (data). */
+  /**
+   * y expression sampled over `xVar` (sweep) or a vector expression (data);
+   * for `parametric` this is y(t), and for histogram/boxplot the data vector.
+   */
   expr: string;
+  /** x(t) for a `parametric` trace, swept alongside `expr` over the parameter. */
+  xExpr?: string;
   style?: PlotTraceStyle;
   color?: string;
   dash?: boolean;
@@ -69,13 +85,23 @@ export interface PlotSpec {
   kind?: PlotKind;
   /** Independent variable swept across the x-axis (default "x"); θ for polar. */
   xVar?: string;
+  /** Second grid variable for `vector` fields (default "y"). */
+  yVar?: string;
   /** Explicit x data expression (a vector) — switches the plot to data mode. */
   xData?: string;
   x?: PlotAxisSpec;
   y?: PlotAxisSpec;
   traces?: PlotTraceSpec[];
-  /** Sweep sample count; clamped to 2–400. */
+  /** Sweep / parameter sample count; clamped to 2–400. */
   samples?: number;
+  /** Histogram options — bin count (auto when omitted). */
+  histogram?: { bins?: number };
+  /** Vector-field components F(x, y) = (u, v); `normalize` draws unit arrows. */
+  vector?: { u?: string; v?: string; normalize?: boolean };
+  /** Grid resolution for the vector field (per axis; clamped 2–60). */
+  grid?: { x?: number; y?: number };
+  /** Parameter for a `parametric` plot — `var` swept over [min, max]. */
+  param?: { var?: string; min?: number; max?: number };
 }
 
 /* ------------------------------------------------------------------ *
@@ -89,6 +115,16 @@ export interface PlotPoint {
   y: number;
 }
 
+/** One arrow of a vector field: a base point (x, y) and its (u, v) components. */
+export interface VectorSample {
+  x: number;
+  y: number;
+  u: number;
+  v: number;
+  /** √(u² + v²) — the field magnitude, for colour / scaling. */
+  mag: number;
+}
+
 export interface TraceResult {
   id: string;
   label: string;
@@ -98,6 +134,12 @@ export interface TraceResult {
   hidden: boolean;
   /** Sampled points in display units; empty on error or a blank expression. */
   points: PlotPoint[];
+  /** Histogram bars (kind `histogram`). */
+  bins?: Bin[];
+  /** Box-and-whisker summary (kind `boxplot`). */
+  box?: BoxStats;
+  /** Field arrows (kind `vector`). */
+  vectors?: VectorSample[];
   error?: CalcError;
   /** True when the trace has no expression yet. */
   empty: boolean;
@@ -152,6 +194,13 @@ export function evaluatePlot(
       empty: true,
     };
   }
+
+  // Data-driven + parametric + field kinds each have their own sampler; they reuse
+  // the engine's value model / unit conversion but not the x sweep / data zip path.
+  if (kind === "histogram") return evaluateHistogram(spec, xAxis, yAxis, xUnit, yUnit, externalScope, system);
+  if (kind === "boxplot") return evaluateBoxplot(spec, xAxis, yAxis, yUnit, externalScope, system);
+  if (kind === "parametric") return evaluateParametric(spec, xAxis, yAxis, xUnit, yUnit, externalScope, system);
+  if (kind === "vector") return evaluateVector(spec, xAxis, yAxis, xUnit, yUnit, externalScope, system);
 
   const polar = kind === "polar";
   const xVar = spec.xVar?.trim() || (polar ? "theta" : "x");
@@ -336,6 +385,358 @@ function zipData(
     out.push({ x: xDisplay[i], raw });
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * Histogram / box plot / parametric / vector-field kinds
+ * (light pure samplers; reuse the engine value model, never the sweep path)
+ * ------------------------------------------------------------------ */
+
+/** Shared display fields for a trace result (mirrors `evaluateTrace`'s base). */
+function makeTraceBase(trace: PlotTraceSpec) {
+  return {
+    id: trace.id,
+    label: trace.label?.trim() || trace.expr.trim() || "trace",
+    style: trace.style ?? ("line" as PlotTraceStyle),
+    color: trace.color,
+    dash: trace.dash,
+    hidden: !!trace.hidden,
+  };
+}
+
+/** Evaluate an expression to a flat 1-D array of raw (possibly unit-bearing) values. */
+function evalDataVector(expr: string, scope: Record<string, unknown>): unknown[] {
+  return flatten1D(math.parse(expr).evaluate({ ...scope }));
+}
+
+/** Convert raw values to plain display numbers; tracks the first conversion error. */
+function rawToNumbers(
+  raw: unknown[],
+  unit: string | undefined,
+  system: UnitSystem,
+): { values: number[]; firstError: unknown } {
+  const values: number[] = [];
+  let firstError: unknown = null;
+  for (const r of raw) {
+    try {
+      const n = toAxisNumber(r, unit, system);
+      if (Number.isFinite(n)) values.push(n);
+    } catch (error) {
+      if (!firstError) firstError = error;
+    }
+  }
+  return { values, firstError };
+}
+
+/** Histogram: bin each trace's data vector along the x (value) axis; y is the count. */
+function evaluateHistogram(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  xUnit: string | undefined,
+  yUnit: string | undefined,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const traces = spec.traces ?? [];
+  const binCount = spec.histogram?.bins;
+  let maxCount = 0;
+  let xLo = Infinity;
+  let xHi = -Infinity;
+
+  const traceResults: TraceResult[] = traces.map((t) => {
+    const base = makeTraceBase(t);
+    if (base.hidden) return { ...base, points: [], empty: false };
+    const expr = t.expr?.trim() ?? "";
+    if (!expr) return { ...base, points: [], empty: true };
+    let raw: unknown[];
+    try {
+      raw = evalDataVector(expr, scope);
+    } catch (error) {
+      return { ...base, points: [], empty: false, error: classifyThrow(error) };
+    }
+    const { values, firstError } = rawToNumbers(raw, xAxis.unit, system);
+    if (values.length === 0) {
+      return { ...base, points: [], empty: false, error: firstError ? classifyThrow(firstError) : undefined };
+    }
+    const bins = histogramBins(values, binCount);
+    for (const b of bins) {
+      if (b.count > maxCount) maxCount = b.count;
+      if (b.x0 < xLo) xLo = b.x0;
+      if (b.x1 > xHi) xHi = b.x1;
+    }
+    return { ...base, points: [], bins, empty: false };
+  });
+
+  const drawable = traceResults.filter((t) => !t.hidden && t.bins && t.bins.length > 0);
+  const [, niceCount] = niceBounds(0, maxCount);
+  return {
+    kind: "histogram",
+    traces: traceResults,
+    bounds: {
+      xMin: finiteOr(xAxis.min, Number.isFinite(xLo) ? xLo : 0),
+      xMax: finiteOr(xAxis.max, Number.isFinite(xHi) ? xHi : 1),
+      yMin: finiteOr(yAxis.min, 0),
+      yMax: finiteOr(yAxis.max, niceCount),
+    },
+    xUnit: xUnit ?? null,
+    yUnit: yUnit ?? null,
+    errorCount: traceResults.filter((t) => t.error).length,
+    empty: drawable.length === 0,
+  };
+}
+
+/** Box plot: a five-number summary per trace's data vector; x is categorical. */
+function evaluateBoxplot(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  yUnit: string | undefined,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const traces = spec.traces ?? [];
+  let yLo = Infinity;
+  let yHi = -Infinity;
+
+  const traceResults: TraceResult[] = traces.map((t) => {
+    const base = makeTraceBase(t);
+    if (base.hidden) return { ...base, points: [], empty: false };
+    const expr = t.expr?.trim() ?? "";
+    if (!expr) return { ...base, points: [], empty: true };
+    let raw: unknown[];
+    try {
+      raw = evalDataVector(expr, scope);
+    } catch (error) {
+      return { ...base, points: [], empty: false, error: classifyThrow(error) };
+    }
+    const { values, firstError } = rawToNumbers(raw, yAxis.unit, system);
+    if (values.length === 0) {
+      return { ...base, points: [], empty: false, error: firstError ? classifyThrow(firstError) : undefined };
+    }
+    const box = boxStats(values);
+    if (!box) return { ...base, points: [], empty: false };
+    for (const v of [box.min, box.max, ...box.outliers]) {
+      if (v < yLo) yLo = v;
+      if (v > yHi) yHi = v;
+    }
+    return { ...base, points: [], box, empty: false };
+  });
+
+  const drawable = traceResults.filter((t) => !t.hidden && t.box);
+  const [nlo, nhi] = niceBounds(Number.isFinite(yLo) ? yLo : 0, Number.isFinite(yHi) ? yHi : 1);
+  return {
+    kind: "boxplot",
+    traces: traceResults,
+    bounds: {
+      xMin: 0,
+      xMax: Math.max(1, drawable.length),
+      yMin: finiteOr(yAxis.min, nlo),
+      yMax: finiteOr(yAxis.max, nhi),
+    },
+    xUnit: null, // categorical — one box per trace
+    yUnit: yUnit ?? null,
+    errorCount: traceResults.filter((t) => t.error).length,
+    empty: drawable.length === 0,
+  };
+}
+
+/** Parametric: sweep a parameter `t` and trace (x(t), y(t)) — reuses the xy renderer. */
+function evaluateParametric(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  xUnit: string | undefined,
+  yUnit: string | undefined,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const traces = spec.traces ?? [];
+  const pvar = spec.param?.var?.trim() || "t";
+  let lo = spec.param?.min;
+  let hi = spec.param?.max;
+  if (!Number.isFinite(lo as number) || !Number.isFinite(hi as number) || lo === hi) {
+    lo = 0;
+    hi = 1;
+  }
+  const n = clampInt(spec.samples ?? DEFAULT_SAMPLES, 2, 400);
+  const tvals = linspace(lo as number, hi as number, n);
+
+  const traceResults: TraceResult[] = traces.map((t) => {
+    const base = makeTraceBase(t);
+    if (base.hidden) return { ...base, points: [], empty: false };
+    const yExpr = t.expr?.trim() ?? "";
+    if (!yExpr) return { ...base, points: [], empty: true };
+    let yNode: MathNode;
+    let xNode: MathNode | null = null;
+    try {
+      yNode = math.parse(yExpr);
+      if (t.xExpr?.trim()) xNode = math.parse(t.xExpr);
+    } catch (error) {
+      return { ...base, points: [], empty: false, error: classifyThrow(error) };
+    }
+
+    const points: PlotPoint[] = [];
+    let firstError: unknown = null;
+    let allThrew: unknown = null;
+    let evaluated = 0;
+    for (const tv of tvals) {
+      try {
+        const s = { ...scope, [pvar]: tv };
+        const yRaw = yNode.evaluate(s);
+        const xRaw = xNode ? xNode.evaluate(s) : null;
+        evaluated += 1;
+        let x: number;
+        let y: number;
+        try {
+          // Blank x(t) ⇒ plot y(t) against the raw (dimensionless) parameter t —
+          // don't force the parameter through the x-axis unit conversion.
+          x = xRaw === null ? tv : toAxisNumber(xRaw, xAxis.unit, system);
+          y = toAxisNumber(yRaw, yAxis.unit, system);
+        } catch (error) {
+          if (!firstError) firstError = error;
+          continue;
+        }
+        if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+      } catch (error) {
+        if (!allThrew) allThrew = error;
+      }
+    }
+    if (evaluated === 0 && allThrew) return { ...base, points: [], empty: false, error: classifyThrow(allThrew) };
+    if (points.length === 0 && firstError) return { ...base, points: [], empty: false, error: classifyThrow(firstError) };
+    return { ...base, points, empty: false };
+  });
+
+  const pts = traceResults.filter((t) => !t.hidden).flatMap((t) => t.points);
+  const [xlo, xhi] = extent(pts.map((p) => p.x));
+  const [ylo, yhi] = extent(pts.map((p) => p.y));
+  const [nxlo, nxhi] = niceBounds(xlo, xhi);
+  const [nylo, nyhi] = niceBounds(ylo, yhi);
+  return {
+    kind: "parametric",
+    traces: traceResults,
+    bounds: {
+      xMin: finiteOr(xAxis.min, nxlo),
+      xMax: finiteOr(xAxis.max, nxhi),
+      yMin: finiteOr(yAxis.min, nylo),
+      yMax: finiteOr(yAxis.max, nyhi),
+    },
+    xUnit: xUnit ?? null,
+    yUnit: yUnit ?? null,
+    errorCount: traceResults.filter((t) => t.error).length,
+    empty: traceResults.filter((t) => !t.hidden && t.points.length > 0).length === 0,
+  };
+}
+
+/** Vector field: sample F(x, y) = (u, v) on an x/y grid into one synthetic trace. */
+function evaluateVector(
+  spec: PlotSpec,
+  xAxis: PlotAxisSpec,
+  yAxis: PlotAxisSpec,
+  xUnit: string | undefined,
+  yUnit: string | undefined,
+  scope: Record<string, unknown>,
+  system: UnitSystem,
+): PlotResult {
+  const uExpr = spec.vector?.u?.trim() ?? "";
+  const vExpr = spec.vector?.v?.trim() ?? "";
+  const xVar = spec.xVar?.trim() || "x";
+  const yVar = spec.yVar?.trim() || "y";
+  const gx = clampInt(spec.grid?.x ?? 12, 2, 60);
+  const gy = clampInt(spec.grid?.y ?? 12, 2, 60);
+  const x0 = finiteOr(xAxis.min, 0);
+  const x1 = finiteOr(xAxis.max, 1);
+  const y0 = finiteOr(yAxis.min, 0);
+  const y1 = finiteOr(yAxis.max, 1);
+  const bounds: PlotBounds = { xMin: x0, xMax: x1, yMin: y0, yMax: y1 };
+  const base = {
+    id: "field",
+    label: "F(x, y)",
+    style: "line" as PlotTraceStyle,
+    color: spec.traces?.[0]?.color,
+    dash: false,
+    hidden: false,
+  };
+
+  if (!uExpr || !vExpr) {
+    return {
+      kind: "vector",
+      traces: [{ ...base, points: [], vectors: [], empty: true }],
+      bounds,
+      xUnit: xUnit ?? null,
+      yUnit: yUnit ?? null,
+      errorCount: 0,
+      empty: true,
+    };
+  }
+
+  let uNode: MathNode;
+  let vNode: MathNode;
+  try {
+    uNode = math.parse(uExpr);
+    vNode = math.parse(vExpr);
+  } catch (error) {
+    return {
+      kind: "vector",
+      traces: [{ ...base, points: [], vectors: [], empty: false, error: classifyThrow(error) }],
+      bounds,
+      xUnit: xUnit ?? null,
+      yUnit: yUnit ?? null,
+      errorCount: 1,
+      empty: true,
+    };
+  }
+
+  const xs = linspace(x0, x1, gx);
+  const ys = linspace(y0, y1, gy);
+  const vectors: VectorSample[] = [];
+  let firstError: unknown = null;
+  let allThrew: unknown = null;
+  let evaluated = 0;
+  for (const yj of ys) {
+    for (const xi of xs) {
+      try {
+        const s = { ...scope, [xVar]: attachUnit(xi, xAxis.unit), [yVar]: attachUnit(yj, yAxis.unit) };
+        const uRaw = uNode.evaluate(s);
+        const vRaw = vNode.evaluate(s);
+        evaluated += 1;
+        let u: number;
+        let v: number;
+        try {
+          u = toAxisNumber(uRaw, undefined, system);
+          v = toAxisNumber(vRaw, undefined, system);
+        } catch (error) {
+          if (!firstError) firstError = error;
+          continue;
+        }
+        if (Number.isFinite(u) && Number.isFinite(v)) {
+          const mag = Math.hypot(u, v);
+          let uu = u;
+          let vv = v;
+          if (spec.vector?.normalize && mag > 0) {
+            uu = u / mag;
+            vv = v / mag;
+          }
+          vectors.push({ x: xi, y: yj, u: uu, v: vv, mag });
+        }
+      } catch (error) {
+        if (!allThrew) allThrew = error;
+      }
+    }
+  }
+
+  let error: CalcError | undefined;
+  if (evaluated === 0 && allThrew) error = classifyThrow(allThrew);
+  else if (vectors.length === 0 && firstError) error = classifyThrow(firstError);
+  return {
+    kind: "vector",
+    traces: [{ ...base, points: [], vectors, empty: vectors.length === 0 && !error, error }],
+    bounds,
+    xUnit: xUnit ?? null,
+    yUnit: yUnit ?? null,
+    errorCount: error ? 1 : 0,
+    empty: vectors.length === 0,
+  };
 }
 
 /* ------------------------------------------------------------------ *

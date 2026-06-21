@@ -15,7 +15,8 @@ export type IconName =
   | "kebab" | "kebabH" | "grip" | "indentR" | "indentL" | "spanCols" | "splitCols"
   | "border" | "folder" | "sheet" | "outline" | "varsX" | "gear" | "fit"
   | "alertTri" | "alertCirc" | "dot" | "search" | "eye" | "link" | "lock" | "target" | "funnel"
-  | "x" | "send" | "checkCirc"
+  | "x" | "send" | "checkCirc" | "download"
+  | "histogram" | "boxplot" | "parametric" | "vectorField"
   // Ribbon set — ported 1:1 from `mathcad-like/project/ribbon-icons.jsx`.
   | "text" | "sketch" | "include" | "polar" | "contour" | "plot3d" | "chart"
   | "units" | "find" | "palette" | "vectorize" | "label" | "fx"
@@ -33,6 +34,11 @@ const GLYPHS: Record<IconName, ReactNode> = {
   spinner: <path d="M12 3a9 9 0 1 0 9 9" opacity={0.9} />,
   play: <path d="M8 5.5l10 6.5-10 6.5z" />,
   share: (<><circle cx="18" cy="5.5" r="2.4" /><circle cx="6" cy="12" r="2.4" /><circle cx="18" cy="18.5" r="2.4" /><path d="M8.1 10.8 15.9 6.7" /><path d="M8.1 13.2l7.8 4.1" /></>),
+  download: (<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></>),
+  histogram: (<><path d="M3 21h18" /><rect x="4" y="11" width="3.6" height="9" /><rect x="10.2" y="6" width="3.6" height="14" /><rect x="16.4" y="13" width="3.6" height="7" /></>),
+  boxplot: (<><line x1="12" y1="3" x2="12" y2="7" /><line x1="12" y1="17" x2="12" y2="21" /><rect x="7" y="7" width="10" height="10" rx="1" /><line x1="7" y1="12.5" x2="17" y2="12.5" /></>),
+  parametric: <path d="M4 12c2-7 6-7 8 0s6 7 8 0" />,
+  vectorField: (<><path d="M3 7h5" /><path d="M6.5 5l2 2-2 2" /><path d="M3 16h7" /><path d="M8.5 14l2 2-2 2" /><path d="M14 11h6" /><path d="M18.5 9l2 2-2 2" /></>),
   comment: <path d="M5 5h14a1.2 1.2 0 0 1 1.2 1.2v8.4A1.2 1.2 0 0 1 19 15.8H9.5L5.5 19.5V6.2A1.2 1.2 0 0 1 6.7 5z" />,
   sparkle: (<><path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7z" /><path d="M18.5 14.5l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8z" /></>),
   chevD: <path d="m6 9.5 6 6 6-6" />,

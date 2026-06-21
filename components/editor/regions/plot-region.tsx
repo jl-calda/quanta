@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { Dispatch } from "react";
 import type { PlotResult } from "@/lib/calc";
 import type { PlotAxis, PlotRegion } from "@/lib/worksheet/content";
+import { downloadPlotPng, downloadPlotSvg } from "@/lib/export/plot-image";
 import { useEditor } from "../state/editor-provider";
 import type { EditorAction } from "../state/editor-reducer";
 import { IconButton } from "@/components/ds";
@@ -31,9 +32,16 @@ export function PlotRegionView({ region, canEdit, dispatch }: RegionRenderProps<
   if (region.kind === "contour" || region.kind === "surface") {
     return <PlotPlaceholder region={region} />;
   }
-  // No traces yet ⇒ the "pick variables" empty state (mockup (c)).
-  if (region.traces.length === 0) return <PlotEmptyState />;
   if (!result) return <PlotEmptyState />;
+  // A vector field is configured through `vector.u`/`v`, not the trace list, so its
+  // emptiness can't be read off `traces.length` like the trace-based kinds.
+  if (region.kind === "vector") {
+    const configured = !!region.vector?.u?.trim() && !!region.vector?.v?.trim();
+    if (!configured) return <PlotEmptyState />;
+  } else if (region.traces.length === 0) {
+    // No traces yet ⇒ the "pick variables" empty state (mockup (c)).
+    return <PlotEmptyState />;
+  }
 
   return <PlotEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
 }
@@ -51,6 +59,7 @@ function PlotEditor({
 }) {
   const { state, dispatch: rawDispatch } = useEditor();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
     dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
@@ -68,7 +77,7 @@ function PlotEditor({
     if (!state.ui.rightOpen) rawDispatch({ type: "TOGGLE_RIGHT" });
   };
 
-  const sweepNoRange = !region.xData && (region.x.min == null || region.x.max == null) && region.kind !== "polar";
+  const sweepNoRange = region.kind === "xy" && !region.xData && (region.x.min == null || region.x.max == null);
   const boundLabel = region.traces[0]?.expr ? prettyExpr(region.traces[0].expr) : null;
 
   return (
@@ -82,6 +91,7 @@ function PlotEditor({
           onCommit={(title) => dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: title || undefined } })}
         />
         {canEdit && <span style={{ display: "inline-flex", color: "var(--text-muted)", flex: "0 0 auto" }}><Icon name="sketch" size={13} /></span>}
+        <ExportMenu getSvg={() => containerRef.current?.querySelector("svg") ?? null} filename={region.title?.trim() || "plot"} />
         <IconButton label="Plot settings" size="sm" onClick={openInspector}>
           <Icon name="gear" size={16} />
         </IconButton>
@@ -93,13 +103,15 @@ function PlotEditor({
       {/* axis range controls */}
       {canEdit && region.kind !== "polar" && (
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px", flexWrap: "wrap" }}>
-          <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          {region.kind !== "boxplot" && (
+            <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          )}
           <AxisRange label="y range" axis={region.y} onMin={(v) => setAxis("y", { min: v })} onMax={(v) => setAxis("y", { max: v })} />
         </div>
       )}
 
       {/* the plot */}
-      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+      <div ref={containerRef} style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
         <PlotFigure
           result={result}
           region={region}
@@ -231,6 +243,88 @@ const rngStyle: CSSProperties = {
   outline: "none",
   textAlign: "right",
 };
+
+/* ------------------------------------------------------------------ *
+ * Export menu — download the rendered figure as SVG / PNG
+ * ------------------------------------------------------------------ */
+
+function ExportMenu({ getSvg, filename }: { getSvg: () => SVGSVGElement | null; filename: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const exportAs = async (kind: "svg" | "png") => {
+    setOpen(false);
+    const svg = getSvg();
+    if (!svg) return;
+    try {
+      if (kind === "svg") downloadPlotSvg(svg, filename);
+      else await downloadPlotPng(svg, filename);
+    } catch {
+      // Export is best-effort; a failure leaves the worksheet untouched.
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <IconButton label="Export plot" size="sm" onClick={() => setOpen((o) => !o)}>
+        <Icon name="download" size={16} />
+      </IconButton>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            right: 0,
+            minWidth: 150,
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border-hairline)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-popover)",
+            padding: 4,
+            zIndex: 8,
+          }}
+        >
+          <ExportItem label="Download SVG" onClick={() => void exportAs("svg")} />
+          <ExportItem label="Download PNG" onClick={() => void exportAs("png")} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExportItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "6px 10px",
+        border: "none",
+        borderRadius: "var(--radius-sm)",
+        background: "transparent",
+        font: "12.5px/1 var(--font-sans)",
+        color: "var(--text-primary)",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      {label}
+    </button>
+  );
+}
 
 /* ------------------------------------------------------------------ *
  * helpers
