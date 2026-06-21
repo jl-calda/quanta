@@ -34,6 +34,8 @@ import {
   type SolveGuess,
   type SurfaceOptions,
   type SymbolicCache,
+  type TableFilter,
+  type TableSort,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
@@ -187,6 +189,8 @@ export type EditorAction =
   | { type: "ADD_TABLE_COLUMN"; id: string }
   | { type: "DELETE_TABLE_COLUMN"; id: string; key: string }
   | { type: "SET_TABLE_COLUMN"; id: string; key: string; patch: TableColumnPatch }
+  | { type: "SET_TABLE_SORT"; id: string; sort: TableSort | null }
+  | { type: "SET_TABLE_FILTER"; id: string; filter: TableFilter | null }
   | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
   | { type: "ADD_PLOT_TRACE"; id: string }
   | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
@@ -540,6 +544,26 @@ export function editorReducer(
         for (const [key, value] of Object.entries(action.patch)) {
           if (value !== undefined) target[key] = value;
         }
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_SORT": {
+      // Display-only view state (sort/filter never reorder `rows`, so lookups and
+      // A1 references stay stable). `delete` on clear keeps JSONB free of nulls.
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (action.sort) region.sort = action.sort;
+        else delete region.sort;
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_FILTER": {
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (action.filter) region.filter = action.filter;
+        else delete region.filter;
       });
       return touched(state, content);
     }

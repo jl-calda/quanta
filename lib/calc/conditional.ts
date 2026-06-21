@@ -15,13 +15,19 @@ export function applyConditional(
 ): CondStyle | undefined {
   if (!rules || rules.length === 0) return undefined;
   for (const rule of rules) {
-    if (matches(value, rule.op, rule.value)) return rule.style;
+    if (condMatches(value, rule.op, rule.value)) return rule.style;
   }
   return undefined;
 }
 
-function matches(value: unknown, op: CondOp, target: number | string): boolean {
-  const left = toComparable(value);
+/**
+ * Does `value` satisfy `value op target`? Shared by conditional formatting and
+ * the table filter (same `CondOp` + `number | string` contract). Numeric when
+ * both sides are finite numbers (a unit value compared by its stored magnitude);
+ * `=`/`!=` fall back to string equality on the *raw* value (e.g. status strings).
+ */
+export function condMatches(value: unknown, op: CondOp, target: number | string): boolean {
+  const left = comparableValue(value);
   const right = typeof target === "number" ? target : Number(target);
 
   // Numeric comparison when both sides are numbers.
@@ -50,7 +56,8 @@ function matches(value: unknown, op: CondOp, target: number | string): boolean {
   return false;
 }
 
-function toComparable(value: unknown): number {
+/** Coerce a result value to a number for ordered comparison (NaN when not orderable). */
+export function comparableValue(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "boolean") return value ? 1 : 0;
   if (isUnit(value)) {
