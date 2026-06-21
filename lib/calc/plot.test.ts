@@ -140,6 +140,103 @@ describe("evaluatePlot — empty + hidden", () => {
   });
 });
 
+describe("evaluatePlot — log scale", () => {
+  it("drops non-positive y as gaps (no log of ≤ 0) without erroring the trace", () => {
+    const res = evaluatePlot(xy({ x: { min: -3, max: 3 }, y: { scale: "log" }, traces: [{ id: "t", expr: "x" }], samples: 7 }));
+    const t = res.traces[0];
+    expect(t.error).toBeUndefined();
+    // x = -3..-1, 0 are dropped; only 1,2,3 remain.
+    expect(t.points.every((p) => p.y > 0)).toBe(true);
+    expect(t.points.map((p) => p.x)).toEqual([1, 2, 3]);
+  });
+
+  it("snaps auto y-bounds to powers of 10 on a log axis", () => {
+    const res = evaluatePlot(xy({ x: { min: 1, max: 5 }, y: { scale: "log" }, traces: [{ id: "t", expr: "x^3" }], samples: 5 }));
+    // y-extent is 1..125 → [1, 1000].
+    expect(res.bounds.yMin).toBe(1);
+    expect(res.bounds.yMax).toBe(1000);
+  });
+
+  it("honours a legacy log:true flag", () => {
+    const res = evaluatePlot(xy({ x: { min: -2, max: 2 }, y: { log: true }, traces: [{ id: "t", expr: "x" }], samples: 5 }));
+    expect(res.traces[0].points.every((p) => p.y > 0)).toBe(true);
+  });
+});
+
+describe("evaluatePlot — secondary y-axis", () => {
+  it("converts a y2-bound trace to the y2 unit and computes separate bounds", () => {
+    const res = evaluatePlot(
+      xy({
+        x: { min: 0, max: 4 },
+        y: { unit: "kN" },
+        y2: { unit: "MPa" },
+        traces: [
+          { id: "a", expr: "x", axis: "y" },
+          { id: "b", expr: "100*x", axis: "y2" },
+        ],
+        samples: 5,
+      }),
+    );
+    expect(res.traces[0].axis).toBe("y");
+    expect(res.traces[1].axis).toBe("y2");
+    expect(res.y2Unit).toBe("MPa");
+    // y2 data is 0..400, far above the primary axis' 0..4 — proves a separate scale.
+    expect(res.bounds.y2Max).toBeGreaterThanOrEqual(400);
+    expect(res.bounds.yMax).toBeLessThan(50);
+  });
+
+  it("omits y2 bounds when no trace binds to the secondary axis", () => {
+    const res = evaluatePlot(xy({ y2: { unit: "MPa" }, traces: [{ id: "a", expr: "x" }] }));
+    expect(res.bounds.y2Min).toBeUndefined();
+    expect(res.bounds.y2Max).toBeUndefined();
+  });
+});
+
+describe("evaluatePlot — reference lines", () => {
+  it("passes through a literal value in the target axis unit", () => {
+    const res = evaluatePlot(xy({ references: [{ id: "r", axis: "y", value: 45 }], traces: [{ id: "t", expr: "x" }] }));
+    expect(res.references).toHaveLength(1);
+    expect(res.references[0]).toMatchObject({ axis: "y", value: 45 });
+  });
+
+  it("resolves an expression against worksheet scope, unit-aware", () => {
+    const res = evaluatePlot(
+      { kind: "xy", x: { min: 0, max: 4 }, y: { unit: "kN" }, references: [{ id: "r", axis: "y", expr: "phi*Rn" }], traces: [{ id: "t", expr: "x" }], samples: 3 },
+      { phi: 0.9, Rn: math.unit("100 kN") },
+    );
+    expect(res.references[0].value).toBeCloseTo(90); // 0.9 · 100 kN → 90 kN
+  });
+
+  it("drops an unresolvable reference rather than sinking the plot", () => {
+    const res = evaluatePlot(xy({ references: [{ id: "r", axis: "y", expr: "undefined_name" }], traces: [{ id: "t", expr: "x" }] }));
+    expect(res.references).toHaveLength(0);
+    expect(res.empty).toBe(false);
+  });
+});
+
+describe("evaluatePlot — error bars", () => {
+  it("samples an error expression into a per-point ± half-width", () => {
+    const res = evaluatePlot(xy({ x: { min: 0, max: 4 }, traces: [{ id: "t", expr: "x^2", errorExpr: "x", errorMode: "bar" }], samples: 5 }));
+    const t = res.traces[0];
+    expect(t.errorMode).toBe("bar");
+    expect(t.points.find((p) => p.x === 3)?.err).toBe(3);
+    expect(t.points.every((p) => p.err != null)).toBe(true);
+  });
+
+  it("converts error magnitudes to the y-axis unit", () => {
+    const res = evaluatePlot(
+      { kind: "xy", x: { min: 0, max: 2 }, y: { unit: "kN" }, traces: [{ id: "t", expr: "10*x kN", errorExpr: "1 kN" }], samples: 3 },
+    );
+    expect(res.traces[0].points.every((p) => p.err === 1)).toBe(true);
+  });
+
+  it("treats a bad error expression as no bars (never errors the trace)", () => {
+    const res = evaluatePlot(xy({ traces: [{ id: "t", expr: "x", errorExpr: "(" }] }));
+    expect(res.traces[0].error).toBeUndefined();
+    expect(res.traces[0].points.every((p) => p.err == null)).toBe(true);
+  });
+});
+
 describe("evaluatePlot — polar", () => {
   it("sweeps θ over a full turn by default and pins the radius from the centre", () => {
     const res = evaluatePlot({ kind: "polar", xVar: "theta", x: {}, y: {}, samples: 9, traces: [{ id: "r", expr: "1" }] });

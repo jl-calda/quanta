@@ -109,14 +109,32 @@ export {
   niceNum,
   type PlotSpec,
   type PlotAxisSpec,
+  type PlotAxisId,
+  type PlotErrorMode,
   type PlotTraceSpec,
+  type PlotReferenceSpec,
+  type PlotAnnotationSpec,
   type PlotKind,
   type PlotTraceStyle,
   type PlotPoint,
   type PlotResult,
   type TraceResult,
   type PlotBounds,
+  type ResolvedReference,
+  type ResolvedAnnotation,
 } from "./plot";
+
+// Axis scales (pure — shared by the plot engine's bounds and the renderer's mapping).
+export {
+  resolveScale,
+  linthreshOf,
+  scaleForward,
+  scaleInverse,
+  logTicks,
+  symlogTicks,
+  niceLogBounds,
+  type AxisScale,
+} from "./plot-scale";
 
 // Solve block (pure, engine-native — see ./solve).
 export {
