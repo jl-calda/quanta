@@ -2,6 +2,8 @@
 
 import { tableViewOrder, type TableCellResult, type TableResult } from "@/lib/calc";
 import type { TableColumn, TableRegion } from "@/lib/worksheet/content";
+import { freezeStyle } from "./table-frozen";
+import { TableGroupSummary } from "./table-group-summary";
 
 /**
  * Clean banded read mode for a table region (mockup `table-region.html`,
@@ -44,6 +46,22 @@ export function cellOf(result: TableResult | undefined, r: number, c: number): T
   return result?.cells?.[r]?.[c];
 }
 
+/* Frozen-pane geometry — fixed widths/heights make sticky offsets deterministic
+ * (see `table-frozen` + DECISIONS.md). Shared by present and edit modes. */
+export const FROZEN_COL_WIDTH = 128;
+export const FROZEN_ROW_HEIGHT = 30;
+export const FROZEN_HEADER_HEIGHT = 30;
+
+export function colWidthsOf(cols: TableColumn[]): number[] {
+  return cols.map((c) => c.width ?? FROZEN_COL_WIDTH);
+}
+
+/** True when a freeze config actually pins at least one row or column. */
+export function isFrozen(region: TableRegion): boolean {
+  const f = region.freeze;
+  return Boolean(f && (f.frozenRows > 0 || f.frozenCols > 0));
+}
+
 export function TablePresent({ region, result }: { region: TableRegion; result?: TableResult }) {
   const title = region.eyebrow || region.name;
   const cols = region.columns;
@@ -56,6 +74,29 @@ export function TablePresent({ region, result }: { region: TableRegion; result?:
     sort: region.sort,
     filter: region.filter,
   });
+
+  const frozen = isFrozen(region);
+  const freeze = region.freeze;
+  const colWidths = colWidthsOf(cols);
+  const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+  // Pin row index `i` (display order) / data column `c`. Opaque paper bg keeps the
+  // scrolled grid from bleeding through sticky cells.
+  const fz = (i: number, c: number, isHeader = false) =>
+    frozen && freeze
+      ? freezeStyle({
+          row: i,
+          col: c,
+          frozenRows: freeze.frozenRows,
+          frozenCols: freeze.frozenCols,
+          colWidths,
+          rowHeight: FROZEN_ROW_HEIGHT,
+          headerHeight: FROZEN_HEADER_HEIGHT,
+          isHeader,
+          surface: "var(--surface-paper)",
+          headerSurface: "var(--surface-paper)",
+        })
+      : {};
+
   return (
     <div>
       {title && (
@@ -71,61 +112,89 @@ export function TablePresent({ region, result }: { region: TableRegion; result?:
           {title}
         </div>
       )}
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr style={{ borderBottom: "1.5px solid var(--text-primary)" }}>
-            {cols.map((col) => (
-              <th
-                key={col.key}
+      <div
+        style={{
+          overflow: frozen ? "auto" : undefined,
+          maxHeight: frozen && freeze && freeze.frozenRows > 0 ? 360 : undefined,
+          maxWidth: "100%",
+          border: frozen ? "1px solid var(--border-hairline)" : undefined,
+          borderRadius: frozen ? "var(--radius-sm)" : undefined,
+        }}
+      >
+        <table
+          style={{
+            borderCollapse: "collapse",
+            width: frozen ? totalWidth : "100%",
+            tableLayout: frozen ? "fixed" : "auto",
+          }}
+        >
+          {frozen && (
+            <colgroup>
+              {colWidths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
+          )}
+          <thead>
+            <tr style={{ borderBottom: "1.5px solid var(--text-primary)" }}>
+              {cols.map((col, c) => (
+                <th
+                  key={col.key}
+                  style={{
+                    padding: "5px 12px",
+                    textAlign: colAlign(col),
+                    font: "600 11px/1.3 var(--font-sans)",
+                    color: "var(--text-primary)",
+                    whiteSpace: "nowrap",
+                    height: frozen ? FROZEN_HEADER_HEIGHT : undefined,
+                    ...fz(0, c, true),
+                  }}
+                >
+                  {columnLabel(col)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {order.map((r, i) => (
+              <tr
+                key={r}
                 style={{
-                  padding: "5px 12px",
-                  textAlign: colAlign(col),
-                  font: "600 11px/1.3 var(--font-sans)",
-                  color: "var(--text-primary)",
-                  whiteSpace: "nowrap",
+                  background: i % 2 ? "color-mix(in srgb, var(--surface-chrome) 40%, transparent)" : "transparent",
+                  borderBottom: "1px solid var(--border-hairline)",
                 }}
               >
-                {columnLabel(col)}
-              </th>
+                {cols.map((col, c) => {
+                  const cell = cellOf(result, r, c);
+                  return (
+                    <td
+                      key={col.key}
+                      style={{
+                        padding: "5px 12px",
+                        textAlign: colAlign(col),
+                        font: `${numericColumn(col) ? "" : "600 "}12px/1.4 ${colFontFamily(col)}`,
+                        fontWeight: cell?.style ? 600 : numericColumn(col) ? 400 : 600,
+                        color: cell?.style?.color ?? "var(--text-primary)",
+                        whiteSpace: "nowrap",
+                        height: frozen ? FROZEN_ROW_HEIGHT : undefined,
+                        ...fz(i, c),
+                      }}
+                    >
+                      <PresentCellContent region={region} cell={cell} r={r} c={c} />
+                      {cell?.style?.label && (
+                        <span style={{ font: "8.5px/1 var(--font-sans)", fontWeight: 600, marginLeft: 5 }}>
+                          {cell.style.label}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {order.map((r, i) => (
-            <tr
-              key={r}
-              style={{
-                background: i % 2 ? "color-mix(in srgb, var(--surface-chrome) 40%, transparent)" : "transparent",
-                borderBottom: "1px solid var(--border-hairline)",
-              }}
-            >
-              {cols.map((col, c) => {
-                const cell = cellOf(result, r, c);
-                return (
-                  <td
-                    key={col.key}
-                    style={{
-                      padding: "5px 12px",
-                      textAlign: colAlign(col),
-                      font: `${numericColumn(col) ? "" : "600 "}12px/1.4 ${colFontFamily(col)}`,
-                      fontWeight: cell?.style ? 600 : numericColumn(col) ? 400 : 600,
-                      color: cell?.style?.color ?? "var(--text-primary)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <PresentCellContent region={region} cell={cell} r={r} c={c} />
-                    {cell?.style?.label && (
-                      <span style={{ font: "8.5px/1 var(--font-sans)", fontWeight: 600, marginLeft: 5 }}>
-                        {cell.style.label}
-                      </span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+      {region.group && <TableGroupSummary region={region} result={result} />}
     </div>
   );
 }

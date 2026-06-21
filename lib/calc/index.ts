@@ -72,6 +72,21 @@ export {
   type TableViewSort,
   type TableViewFilter,
 } from "./table-view";
+export {
+  validateCellSource,
+  type TableValidationRule,
+  type TableValidationKind,
+  type CellValidation,
+} from "./table-validation";
+export {
+  evaluateTableGroup,
+  type GroupAgg,
+  type TableGroupSpec,
+  type TableGroupColumn,
+  type TableGroupArgs,
+  type TableGroupRow,
+  type TableGroupResult,
+} from "./table-group";
 
 // Plot region (pure, engine-native — see ./plot).
 export {
