@@ -1,9 +1,12 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { Dispatch } from "react";
-import { cellAddress, type TableCellResult, type TableResult } from "@/lib/calc";
-import type { TableRegion } from "@/lib/worksheet/content";
+import { cellAddress, tableViewOrder, type TableCellResult, type TableResult } from "@/lib/calc";
+import type { CondOp, TableColumn, TableRegion, TableSort } from "@/lib/worksheet/content";
+import { Button } from "@/components/ds/core/button";
+import { Input } from "@/components/ds/forms/input";
+import { Select } from "@/components/ds/forms/select";
 import { useEditor } from "../state/editor-provider";
 import type { EditorAction } from "../state/editor-reducer";
 import { Icon } from "../icons";
@@ -167,9 +170,7 @@ function TableEditor({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  <span style={{ font: "600 11.5px/1.2 var(--font-sans)", color: "var(--text-primary)" }}>
-                    {columnLabel(col)}
-                  </span>
+                  <ColumnHead region={region} col={col} dispatch={dispatch} />
                 </th>
               ))}
               <th
@@ -265,6 +266,8 @@ function TableEditor({
           </tbody>
         </table>
       </div>
+
+      {(region.sort || region.filter) && <ViewSummary region={region} result={result} dispatch={dispatch} />}
 
       {/* footer: counts + add row */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px" }}>
@@ -401,6 +404,322 @@ function FormulaBar({
           color: "var(--text-primary)",
         }}
       />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Column header — sort toggle + filter menu (the sort/filter is a
+ * display-only view applied by `TablePresent`; the edit grid stays in
+ * raw data order so A1 addresses and cell editing remain honest).
+ * ------------------------------------------------------------------ */
+
+const FILTER_OPS: { value: CondOp; label: string }[] = [
+  { value: ">", label: ">" },
+  { value: ">=", label: "≥" },
+  { value: "<", label: "<" },
+  { value: "<=", label: "≤" },
+  { value: "=", label: "=" },
+  { value: "!=", label: "≠" },
+];
+
+function opGlyph(op: CondOp): string {
+  return FILTER_OPS.find((o) => o.value === op)?.label ?? op;
+}
+
+/** A numeric-looking value persists as a number; anything else stays a string. */
+function parseFilterValue(raw: string): number | string {
+  const trimmed = raw.trim();
+  const num = Number(trimmed);
+  return trimmed !== "" && Number.isFinite(num) ? num : trimmed;
+}
+
+function colLabelText(region: TableRegion, key: string): string {
+  const col = region.columns.find((c) => c.key === key);
+  return col?.label?.trim() || key;
+}
+
+const headCompactBtn: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 22,
+  height: 22,
+  border: "none",
+  borderRadius: "var(--radius-sm)",
+  cursor: "pointer",
+};
+
+function ColumnHead({
+  region,
+  col,
+  dispatch,
+}: {
+  region: TableRegion;
+  col: TableColumn;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const sort = region.sort?.key === col.key ? region.sort : undefined;
+  const align = colAlign(col);
+  const justify = align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start";
+
+  // Cycle none → ascending → descending → none for this column (single sort key).
+  const cycleSort = () => {
+    const next: TableSort | null = !sort
+      ? { key: col.key, dir: "asc" }
+      : sort.dir === "asc"
+        ? { key: col.key, dir: "desc" }
+        : null;
+    dispatch({ type: "SET_TABLE_SORT", id: region.id, sort: next });
+  };
+  const label = col.label?.trim() || col.key;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: justify }}>
+      <button
+        type="button"
+        onClick={cycleSort}
+        title={sort ? `Sorted ${sort.dir === "asc" ? "ascending" : "descending"} — click to ${sort.dir === "asc" ? "reverse" : "clear"}` : `Sort by ${label}`}
+        aria-label={`Sort by ${label}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          padding: "2px 3px",
+          borderRadius: "var(--radius-sm)",
+          color: sort ? "var(--accent)" : "var(--text-primary)",
+          font: "600 11.5px/1.2 var(--font-sans)",
+          whiteSpace: "nowrap",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+      >
+        <span>{columnLabel(col)}</span>
+        {sort && <Icon name={sort.dir === "asc" ? "chevU" : "chevD"} size={12} />}
+      </button>
+      <ColumnFilterMenu region={region} col={col} dispatch={dispatch} />
+    </div>
+  );
+}
+
+function ColumnFilterMenu({
+  region,
+  col,
+  dispatch,
+}: {
+  region: TableRegion;
+  col: TableColumn;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const active = region.filter?.key === col.key ? region.filter : undefined;
+  const [open, setOpen] = useState(false);
+  const [op, setOp] = useState<CondOp>(active?.op ?? ">");
+  const [value, setValue] = useState<string>(active != null ? String(active.value) : "");
+  const ref = useRef<HTMLSpanElement>(null);
+
+  // Sync the draft to the persisted filter each time the menu opens.
+  useEffect(() => {
+    if (open) {
+      setOp(active?.op ?? ">");
+      setValue(active != null ? String(active.value) : "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (ev: MouseEvent) => {
+      if (ref.current && !ref.current.contains(ev.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const apply = () => {
+    dispatch({
+      type: "SET_TABLE_FILTER",
+      id: region.id,
+      filter: { key: col.key, op, value: parseFilterValue(value) },
+    });
+    setOpen(false);
+  };
+  const clear = () => {
+    dispatch({ type: "SET_TABLE_FILTER", id: region.id, filter: null });
+    setOpen(false);
+  };
+  const label = col.label?.trim() || col.key;
+
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-flex", flex: "0 0 auto" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title={active ? `Filtered ${opGlyph(active.op)} ${active.value} — edit` : `Filter ${label}`}
+        aria-label={`Filter ${label}`}
+        style={{
+          ...headCompactBtn,
+          color: active ? "var(--accent)" : "var(--text-muted)",
+          background: active ? "var(--accent-tint)" : "transparent",
+        }}
+        onMouseEnter={(e) => {
+          if (!active) e.currentTarget.style.background = "var(--surface-hover)";
+        }}
+        onMouseLeave={(e) => {
+          if (!active) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        <Icon name="funnel" size={12} />
+      </button>
+      {open && (
+        <div
+          className="pop-in"
+          // Keep arrow/Escape keys inside the menu — the grid div above listens for nav keys.
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") setOpen(false);
+          }}
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            zIndex: 50,
+            width: 226,
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border-hairline)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-popover)",
+            padding: 10,
+            display: "flex",
+            flexDirection: "column",
+            gap: 9,
+            textAlign: "left",
+            cursor: "default",
+          }}
+        >
+          <div
+            className="q-eyebrow"
+            style={{
+              font: "600 10px/1 var(--font-sans)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--text-muted)",
+            }}
+          >
+            Filter {label}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <div style={{ width: 64, flex: "0 0 auto" }}>
+              <Select size="sm" value={op} onChange={(e) => setOp(e.target.value as CondOp)} options={FILTER_OPS} />
+            </div>
+            <Input
+              size="sm"
+              mono
+              value={value}
+              placeholder="value"
+              autoFocus
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  apply();
+                }
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+            <Button size="sm" variant="ghost" onClick={clear} disabled={!active}>
+              Clear
+            </Button>
+            <Button size="sm" variant="primary" onClick={apply}>
+              Apply filter
+            </Button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * View-summary chip — the edit grid stays in data order, so this makes the
+ * sort/filter that the read/print view applies discoverable, with the live
+ * match count and one-click clear.
+ */
+function ViewSummary({
+  region,
+  result,
+  dispatch,
+}: {
+  region: TableRegion;
+  result?: TableResult;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const total = region.rows.length;
+  const shown = tableViewOrder({
+    rows: region.rows,
+    columns: region.columns,
+    cells: result?.cells,
+    sort: region.sort,
+    filter: region.filter,
+  }).length;
+  const clearAll = () => {
+    if (region.sort) dispatch({ type: "SET_TABLE_SORT", id: region.id, sort: null });
+    if (region.filter) dispatch({ type: "SET_TABLE_FILTER", id: region.id, filter: null });
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+        padding: "6px 9px",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--accent-tint)",
+        border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
+      }}
+    >
+      <span style={{ display: "inline-flex", color: "var(--accent)", flex: "0 0 auto" }}>
+        <Icon name="eye" size={13} />
+      </span>
+      <span style={{ font: "11px/1.4 var(--font-sans)", color: "var(--text-primary)" }}>
+        Read view:
+        {region.sort && (
+          <>
+            {" "}sorted by <b>{colLabelText(region, region.sort.key)}</b> {region.sort.dir === "asc" ? "↑" : "↓"}
+          </>
+        )}
+        {region.sort && region.filter && " ·"}
+        {region.filter && (
+          <>
+            {" "}filtered <b>{colLabelText(region, region.filter.key)} {opGlyph(region.filter.op)} {String(region.filter.value)}</b>
+          </>
+        )}
+      </span>
+      {region.filter && (
+        <span style={{ font: "11px/1.4 var(--font-mono)", color: "var(--text-muted)" }}>
+          {shown} of {total} rows
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={clearAll}
+        style={{
+          marginLeft: "auto",
+          border: "none",
+          background: "none",
+          color: "var(--accent)",
+          font: "500 11px/1 var(--font-sans)",
+          cursor: "pointer",
+          padding: "2px 0",
+        }}
+      >
+        Clear view
+      </button>
     </div>
   );
 }

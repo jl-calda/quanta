@@ -31,7 +31,7 @@ export { latexToSource, sourceToLatex, exprToLatex, constraintToLatex, looksLike
 export { isSymbolic } from "./symbolic";
 export { analyzeDependencies } from "./graph";
 export { formatValue } from "./format";
-export { applyConditional } from "./conditional";
+export { applyConditional, condMatches, comparableValue } from "./conditional";
 export { buildSubstitutedTex } from "./show-steps";
 export {
   toDisplayUnit,
@@ -65,6 +65,13 @@ export {
   type TableCellKind,
 } from "./table";
 export { Vlookup, Hlookup, Index, Match, Interp, LOOKUP_FUNCTIONS } from "./lookups";
+export {
+  tableViewOrder,
+  type TableViewArgs,
+  type TableViewColumn,
+  type TableViewSort,
+  type TableViewFilter,
+} from "./table-view";
 
 // Plot region (pure, engine-native — see ./plot).
 export {

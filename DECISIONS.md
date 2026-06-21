@@ -1448,3 +1448,35 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   reference (7.25), the live keymap preference (7.26), and the math input bar with
   inline key-hint chips; the keypad keys gained the same 2px-bottom-border hint
   chips so the keyboard path is discoverable.
+
+## Table — sort & filter (Func §6.3, Phase 2)
+
+- **Sort/filter is a display-only view; `rows` are never reordered.** The pure
+  engine (`lib/calc/table.ts`) builds `TableResult.cells` in data order, and every
+  A1 reference, named range, grid export, and lookup (`Vlookup`/`Index`/…) resolves
+  by data-order index. A new pure helper `tableViewOrder` (`lib/calc/table-view.ts`)
+  returns the *original* row indices to display after **filter then stable-sort**;
+  `TablePresent` renders through it. So sorting/filtering changes only what the
+  reader/checker sees — lookups still resolve. (`graph.ts`/`recalc.ts` untouched.)
+- **The edit grid stays raw data order and shows every row.** Its A1 gutter (`r+2`),
+  formula-bar address, cell selection and arrow-nav are all in data coordinates, and
+  the author must be able to edit filtered-out rows. Reordering/hiding there would
+  make A1 dishonest and break editing. The sort/filter **controls** live in the
+  edit-grid column headers (header click cycles sort none→asc→desc→none; a funnel
+  popover sets the filter); a footer "Read view" chip shows the active sort/filter +
+  live match count + clear, so the difference from the printed view is discoverable.
+- **Filter keeps rows whose key cell errored** (it sorts them to the end) instead of
+  dropping them. `render-only.tsx` evaluates snapshots/PDFs with an empty scope, so
+  cross-referencing cells error there; silently dropping them would show a checker
+  fewer rows than the editor. A `#error` must be visible, never a vanished row.
+- **Comparison is shared with conditional formatting (DRY).** The filter uses the
+  same `CondOp` + `number|string` contract as a `CondRule`, so `conditional.ts` now
+  exports `condMatches`/`comparableValue` (unit-aware; `=`/`!=` fall back to raw
+  string equality) and both features compare through them. `=` filters are therefore
+  **exact float equality** — prefer ranges (`>`/`<`) for computed values.
+- **No new entity, table, server action, or migration.** `sort`/`filter` already
+  live on `TableRegion` (`.passthrough()` schema) and round-trip through the existing
+  `saveWorksheet` autosave (Zod-validated `contentSchema` → `worksheets.content`
+  JSONB); RLS is unchanged. New reducer actions `SET_TABLE_SORT`/`SET_TABLE_FILTER`
+  use `delete` on clear so cleared state leaves no `null` noise in JSONB, and they
+  only mark the doc unsaved (display-only — no recalc).

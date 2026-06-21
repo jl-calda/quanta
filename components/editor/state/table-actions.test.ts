@@ -88,3 +88,32 @@ describe("table structural actions", () => {
     expect(table(s).columns[0].unit).toBeUndefined();
   });
 });
+
+describe("table view state (sort / filter)", () => {
+  it("SET_TABLE_SORT sets the sort and marks the doc unsaved", () => {
+    const s = editorReducer(fresh(), { type: "SET_TABLE_SORT", id: "t1", sort: { key: "b", dir: "desc" } });
+    expect(table(s).sort).toEqual({ key: "b", dir: "desc" });
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("SET_TABLE_SORT with null removes the key entirely (no JSONB noise)", () => {
+    const set = editorReducer(fresh(), { type: "SET_TABLE_SORT", id: "t1", sort: { key: "a", dir: "asc" } });
+    const cleared = editorReducer(set, { type: "SET_TABLE_SORT", id: "t1", sort: null });
+    expect("sort" in table(cleared)).toBe(false);
+  });
+
+  it("SET_TABLE_FILTER sets and clears the filter", () => {
+    const set = editorReducer(fresh(), { type: "SET_TABLE_FILTER", id: "t1", filter: { key: "b", op: ">", value: 10 } });
+    expect(table(set).filter).toEqual({ key: "b", op: ">", value: 10 });
+    const cleared = editorReducer(set, { type: "SET_TABLE_FILTER", id: "t1", filter: null });
+    expect("filter" in table(cleared)).toBe(false);
+  });
+
+  it("leaves the underlying rows untouched (display-only)", () => {
+    const s = editorReducer(fresh(), { type: "SET_TABLE_SORT", id: "t1", sort: { key: "b", dir: "desc" } });
+    expect(table(s).rows).toEqual([
+      ["1", "2"],
+      ["3", "4"],
+    ]);
+  });
+});
