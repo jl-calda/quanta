@@ -21,7 +21,7 @@ describe("evaluate", () => {
     const result = evaluate("12 kN + 3 mm");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe("unit_mismatch");
+      expect(result.error.kind).toBe("unit-mismatch");
     }
   });
 
@@ -29,7 +29,7 @@ describe("evaluate", () => {
     const result = evaluate("3 * (");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe("parse_error");
+      expect(result.error.kind).toBe("parse");
     }
   });
 

@@ -5,7 +5,8 @@ import { STIX_Two_Text } from "next/font/google";
 import "./globals.css";
 import { readPreferences } from "@/lib/preferences/server";
 import { PreferencesProvider } from "@/lib/preferences/provider";
-import { AppBar } from "@/components/app-bar";
+import { ConditionalAppBar } from "@/components/conditional-app-bar";
+import { ConfirmProvider } from "@/components/shared/confirm-provider";
 
 // Rendered math notation — the product's voice (true textbook math glyphs).
 const stixTwoText = STIX_Two_Text({
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { density, theme } = await readPreferences();
+  const { density, theme, keymap } = await readPreferences();
 
   return (
     <html
@@ -36,11 +37,13 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        <PreferencesProvider initialDensity={density} initialTheme={theme}>
-          <div className="flex min-h-screen flex-col">
-            <AppBar />
-            {children}
-          </div>
+        <PreferencesProvider initialDensity={density} initialTheme={theme} initialKeymap={keymap}>
+          <ConfirmProvider>
+            <div className="flex min-h-screen flex-col">
+              <ConditionalAppBar />
+              {children}
+            </div>
+          </ConfirmProvider>
         </PreferencesProvider>
       </body>
     </html>

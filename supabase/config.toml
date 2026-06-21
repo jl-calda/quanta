@@ -1,0 +1,36 @@
+# Quanta — Supabase CLI config (local dev + migration push).
+# Run `supabase start` for a local stack, `supabase db reset` to apply the
+# migrations in supabase/migrations, or `supabase db push` against a linked
+# project. Provider secrets (Google, SAML) are set in the hosted dashboard or
+# via env, never committed.
+
+project_id = "quanta"
+
+[db]
+major_version = 17
+
+[auth]
+# Where the email links / OAuth callbacks return to. Override per environment.
+site_url = "http://localhost:3000"
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/confirm",
+]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Set true in production to require email confirmation before first sign-in.
+enable_confirmations = false
+
+# Email/password + magic link are built in. Google OAuth and SAML SSO are
+# enabled here for local dev and need client credentials supplied via env.
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+redirect_uri = ""
+
+[storage]
+enabled = true

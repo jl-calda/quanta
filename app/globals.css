@@ -78,6 +78,231 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ---- Dashboard shell utilities (ported from Dashboard.html mockup) ---- */
+
+/* Fine 12px dot-grid for the worksheet mini-previews on recent/template cards. */
+.q-grid-mini {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 12px 12px;
+  background-position: -1px -1px;
+}
+
+/* Thin custom scrollbars for the horizontal template row / scrolling panes. */
+.scroll-x {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.scroll-x::-webkit-scrollbar {
+  height: 8px;
+}
+.scroll-x::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+.scroll-y {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Inline text link on non-anchor elements (section "see all" actions). */
+.q-link {
+  color: var(--text-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+.q-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Table row + card hover affordances. */
+.row-hover:hover {
+  background: var(--surface-hover);
+}
+.card-lift {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.card-lift:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+
+/* ---- Template gallery (ported from templates.html mockup) ---- */
+
+/* Card lift + hover-reveal action bar over the thumbnail. `:focus-within`
+   reveals the actions for keyboard users too. */
+.tpl-gallery-card {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.tpl-gallery-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+.tpl-gallery-card .hover-actions {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.tpl-gallery-card:hover .hover-actions,
+.tpl-gallery-card:focus-within .hover-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Preview drawer slide-in + scrim fade. (Both are neutralized by the
+   reduced-motion guard below.) */
+.drawer {
+  animation: drawer-in var(--dur-base) var(--ease-out);
+}
+.overlay {
+  animation: overlay-in var(--dur-base) var(--ease-out);
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- File browser (ported from files.html mockup) ---- */
+
+/* Row hover wash + reveal of the checkbox and kebab on hover or when a
+   selection is active. */
+.fb-row {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.fb-row:hover {
+  background: var(--surface-hover);
+}
+.fb-row .row-check,
+.fb-row .row-kebab {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.fb-row:hover .row-check,
+.fb-row:hover .row-kebab,
+.fb-row.any-sel .row-check,
+.fb-row:focus-within .row-check,
+.fb-row:focus-within .row-kebab {
+  opacity: 1;
+}
+
+/* Popover / menu entrance and the floating action bar entrance. */
+.pop-in {
+  animation: pop-in var(--dur-base) var(--ease-out);
+  transform-origin: top right;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.bar-in {
+  animation: bar-in var(--dur-base) var(--ease-out);
+}
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ---- Reference library (ported from reference-app.jsx) ---- */
+
+/* Category + result rows wash to the hover surface; the selected row sets an
+   inline blueprint-tint background, which always wins over this rule. */
+.ref-cat:hover,
+.ref-row:hover {
+  background: var(--surface-hover);
+}
+
+/* Related chips: border + text turn blueprint on hover when navigable. */
+.ref-related:not(:disabled):hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* Detail-pane enter: a gentle opacity + lift, honoring reduced-motion below. */
+.ref-fade-rise {
+  animation: ref-fade-rise var(--dur-base) var(--ease-out);
+}
+@keyframes ref-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Settings (ported from settings.html mockup) ---- */
+
+/* The save-on-change toast fades up, then fades out, and the sticky
+   "unsaved changes" bar rises from the bottom edge. */
+.toast-in {
+  animation: toast-in var(--dur-base) var(--ease-out);
+}
+.toast-out {
+  animation: toast-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+.bar-rise {
+  animation: bar-rise var(--dur-base) var(--ease-out);
+}
+@keyframes bar-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
 /* Honor reduced-motion globally. The --dur-* tokens are zeroed in
    tokens/spacing.css, but components may use a hardcoded Tailwind duration
    (e.g. `duration-150`); this guard neutralizes those too, satisfying the

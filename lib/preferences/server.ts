@@ -3,8 +3,10 @@ import { cookies } from "next/headers";
 import {
   DENSITY_COOKIE,
   THEME_COOKIE,
+  KEYMAP_COOKIE,
   parseDensity,
   parseTheme,
+  parseKeymap,
   type Preferences,
 } from "./cookies";
 
@@ -19,5 +21,6 @@ export async function readPreferences(): Promise<Preferences> {
   return {
     density: parseDensity(store.get(DENSITY_COOKIE)?.value),
     theme: parseTheme(store.get(THEME_COOKIE)?.value),
+    keymap: parseKeymap(store.get(KEYMAP_COOKIE)?.value),
   };
 }

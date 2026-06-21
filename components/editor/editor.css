@@ -1,0 +1,329 @@
+/* ==========================================================================
+   Worksheet editor — chrome + canvas styles.
+   Ported from the design mockup (mathcad-like/project/editor.html <style>), on
+   the semantic _ds tokens so dark theme + density flow through. The global
+   tokens (.q-grid, .scroll-x/.scroll-y, shadows, motion, --tracking-eyebrow)
+   already live in app/globals.css + app/styles/tokens; only the editor-specific
+   rules live here, plus KaTeX sizing/colour overrides.
+   ========================================================================== */
+
+/* ---- app-bar spinner (autosave "Saving…") ---- */
+@keyframes q-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.q-spin {
+  animation: q-spin 0.9s linear infinite;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .q-spin {
+    animation: none;
+  }
+}
+
+.editor-root {
+  --canvas-field: #e7eaef;
+}
+[data-theme="dark"] .editor-root {
+  --canvas-field: #0f1216;
+}
+
+/* ---- canvas page ---- */
+.ed-field {
+  background: var(--canvas-field);
+}
+.ed-page {
+  width: 816px;
+  margin: 0 auto;
+  background: var(--surface-paper);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.ed-page-body {
+  padding: 26px 52px 40px;
+  position: relative;
+}
+
+/* ---- region chrome ---- */
+.region {
+  position: relative;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.region:hover {
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+}
+.region.is-selected {
+  background: var(--surface-selected);
+  border-color: var(--accent);
+}
+.region.is-editing {
+  background: var(--surface-paper);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.region.is-error:hover {
+  background: color-mix(in srgb, var(--status-error-bg) 55%, transparent);
+}
+
+/* Hover-revealed affordances (grip, toolbar, insert-below). */
+.region .reorder,
+.region .region-tools,
+.region .insert-below {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.region:hover .reorder,
+.region:hover .region-tools,
+.region:hover .insert-below,
+.region.is-selected .reorder,
+.region.is-selected .region-tools {
+  opacity: 1;
+}
+
+.indent-guide {
+  position: absolute;
+  left: -15px;
+  top: 4px;
+  bottom: 4px;
+  border-left: 1px dashed var(--accent);
+  opacity: 0.5;
+}
+
+/* ---- multi-column gutter + drag-to-resize split handle ---- */
+.ed-gutter {
+  width: 1px;
+  align-self: stretch;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--border-strong) 0 3px,
+    transparent 3px 7px
+  );
+}
+.ed-split-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+  background: var(--border-strong);
+  cursor: col-resize;
+  opacity: 0;
+  touch-action: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.ed-row:hover .ed-split-handle,
+.ed-split-handle[data-drag] {
+  opacity: 1;
+}
+.ed-split-handle:hover,
+.ed-split-handle[data-drag] {
+  background: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.ed-split-handle:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ---- long-document virtualization ----
+   content-visibility lets the browser skip layout/paint of off-screen rows while
+   keeping them in the DOM (so drag, selection, and scroll-to-region still work).
+   Off-screen rows get paint containment — which would clip the hover chrome that
+   overflows a row — so any "live" row (hovered, selected, or being edited) opts
+   back out to `visible`. */
+.ed-virtualize .ed-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+.ed-virtualize .ed-row:hover,
+.ed-virtualize .ed-row.is-live {
+  content-visibility: visible;
+}
+
+/* ---- left-panel rows (Outline / Variables / Files) ---- */
+.lp-row {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.lp-row:hover {
+  background: var(--surface-hover);
+}
+
+/* ---- ribbon / panel tabs ---- */
+.ed-tab {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ed-tab.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+
+/* ---- math keypad keys ---- */
+.kp-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-math);
+  font-size: 15px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.kp-key:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+/* ---- inline math-input palette (region edit state, Mockup 6.1 Frame A) ---- */
+.palette-key:hover {
+  background: var(--surface-hover) !important;
+  border-color: var(--border-strong) !important;
+}
+.palette-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- input-control slider (region type, Mockup 6.7) ---- */
+input[type="range"].q-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--border-strong);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].q-slider:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+input[type="range"].q-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+input[type="range"].q-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-raised);
+  cursor: pointer;
+}
+input[type="range"].q-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- KaTeX: inherit the ink colour; the bundled math font carries the look ---- */
+.ed-katex .katex {
+  color: var(--text-math);
+  font-size: 1em;
+}
+/* Show-steps "substituted" line renders muted (the rule above pins the colour,
+   so a muted variant must override at the same specificity). */
+.ed-katex.is-muted .katex {
+  color: var(--text-muted);
+}
+
+/* ---- MathLive 2D entry field (primary math entry) ---- */
+.ed-mathfield-host {
+  display: inline-flex;
+}
+.ed-mathfield {
+  min-width: 220px;
+  font-size: 18px;
+  padding: 2px 8px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: var(--radius-sm);
+  --selection-background-color: var(--accent-tint);
+  --caret-color: var(--accent);
+}
+.ed-mathfield:focus,
+.ed-mathfield:focus-within {
+  outline: none;
+}
+/* Manual virtual-keyboard policy — hide the built-in toggles (Quanta has its
+   own keypad). */
+.ed-mathfield::part(virtual-keyboard-toggle),
+.ed-mathfield::part(menu-toggle) {
+  display: none;
+}
+
+/* The editor owns its own full-bleed scroll regions; keep the body from
+   double-scrolling behind it. */
+.editor-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ *
+ * Print / export
+ * ------------------------------------------------------------------ */
+
+/* The print-only document is portaled to <body> and hidden on screen; the
+   browser print path reveals just it and hides everything else — see
+   ExportOverlay. */
+#export-print-root {
+  display: none;
+}
+
+@media print {
+  body > *:not(#export-print-root) {
+    display: none !important;
+  }
+  #export-print-root {
+    display: block !important;
+    width: 100%;
+  }
+  #export-print-root .ex-doc {
+    box-shadow: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Table region — gutter row-delete affordance (reveal on row hover)
+ * ------------------------------------------------------------------ */
+
+.tbl-gutter-del {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.tbl-gutter:hover .tbl-gutter-del {
+  opacity: 1;
+  background: var(--surface-chrome);
+}

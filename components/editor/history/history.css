@@ -1,0 +1,29 @@
+/* Version history — page-specific surfaces (ported from history.html). The
+   global .q-grid / .scroll-y / .q-link utilities live in app/globals.css and
+   the token sheets; these add only what's unique to this screen. Token-driven
+   so the light/dark themes flow through. */
+
+.vh-field {
+  background: color-mix(in srgb, var(--surface-chrome) 90%, var(--text-primary) 10%);
+}
+
+.vh-page {
+  width: 720px;
+  margin: 0 auto;
+  background: var(--surface-paper);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.vh-page.narrow {
+  width: 100%;
+  max-width: 560px;
+}
+
+.ver-item {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ver-item:hover {
+  background: var(--surface-hover);
+}
