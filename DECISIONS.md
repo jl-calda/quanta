@@ -1770,3 +1770,37 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   nav collapses), with a translucent overlay that layers over conditional/spill fills.
   The head cell stays `sel` so the formula bar, cell editing, and its remount `key`
   are unchanged; read mode (`TablePresent`) and neighbouring regions are untouched.
+
+## Plot trace styling, themes, legend positioning & multiple data sources (Phase 2)
+
+- **Per-trace styling added to `plotTraceSchema`; no new reducer action.** `width`
+  (Zod-clamped 0.5–6 px) joins the pre-existing `color`/`dash`, and the inspector's
+  `TraceEditor` finally exposes all three (color swatch picker + custom well + reset,
+  a dashed `Switch`, a width input). `dash` stays a boolean (renderer maps it to the
+  `"5 3"` pattern) for back-compat with existing worksheets. Every field flows through
+  the existing `SET_PLOT_TRACE` (`Object.assign(trace, patch)`), so the reducer is
+  untouched. Renderer defaults are preserved (`width ?? 2` line, `?? 1.75` polar,
+  `?? 1.5` stem) so unstyled traces look exactly as before.
+- **Per-trace `xData` = multiple data sources.** A trace may carry its own `xData`
+  vector/range; `evaluatePlot` resolves a per-trace `Sampling` for it (reusing the
+  unchanged `resolveSampling`) and otherwise falls back to the plot-level `xData` —
+  so one plot can overlay traces from different table ranges, each with its own x.
+  `computeBounds` takes an `anyTraceXData` flag and prefers the union point extent
+  over the sweep span when any trace overrides x, so an override trace is never
+  clipped; a pinned `x.min`/`x.max` always wins. `lib/calc` stays pure; `graph.ts`/
+  `recalc.ts` untouched.
+- **`theme` + `legendPos` are presentation-only.** They live on `plotRegionSchema`
+  (NOT on the engine `PlotSpec`/`TraceResult`), since colors and layout are not part
+  of the deterministic value model. `legendPos` defaults `"bottom"`; the editor view
+  (`plot-region.tsx`) and read-only view (`render-only.tsx`) arrange the figure +
+  legend with a shared `legendFlex(pos)` helper (column for bottom/top, row with
+  vertically-stacked chips for left/right). The same change finally gates the legend
+  on `region.legend` (the on/off Switch was previously inert on the canvas).
+- **Theme palettes live in one pure module (`lib/worksheet/plot-theme.ts`).** It holds
+  the named palettes as print-safe hex so all THREE plot renderers share one table:
+  the on-screen `PlotFigure`/`PolarFigure`, the read-only `render-only` path, and the
+  framework-agnostic PDF/print path (`lib/export/document.tsx`, which is intentionally
+  free of client imports). On screen the `default` theme is swapped for design-system
+  CSS variables (`--accent`, `--status-pass`, …) so it tracks the light/dark theme;
+  the curated `blueprint`/`earth`/`contrast` themes are intentional fixed hues from
+  the locked base palette. An explicit per-trace `color` always overrides the theme.

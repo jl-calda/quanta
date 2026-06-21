@@ -9,7 +9,7 @@
  * read-out, and pill legend chips. Interactivity is opt-in via callbacks — with
  * none passed (export/history) the figure is fully static.
  */
-import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import {
   contourBands,
   contourLines,
@@ -29,7 +29,8 @@ import {
   type ResolvedReference,
   type TraceResult,
 } from "@/lib/calc";
-import type { PlotRegion } from "@/lib/worksheet/content";
+import type { LegendPos, PlotRegion } from "@/lib/worksheet/content";
+import { themePalette } from "@/lib/worksheet/plot-theme";
 import { Icon } from "../icons";
 
 /* ------------------------------------------------------------------ *
@@ -51,8 +52,11 @@ function clampY(py: number): number {
   return Math.max(Y1, Math.min(Y0, py));
 }
 
-/** Default trace palette — design-system hues, blueprint first (mockup). */
-const PALETTE = [
+/**
+ * The on-screen DEFAULT palette uses design-system CSS variables so trace colors
+ * track the light/dark theme; the named themes (`plot-theme.ts`) are fixed hex hues.
+ */
+const SCREEN_DEFAULT_PALETTE = [
   "var(--accent)",
   "var(--status-pass)",
   "var(--status-warning)",
@@ -60,8 +64,35 @@ const PALETTE = [
   "var(--status-error)",
 ];
 
-export function traceColor(index: number, color?: string): string {
-  return color || PALETTE[index % PALETTE.length];
+/** Palette a plot draws with: theme-aware vars for the default, else the named hex palette. */
+function palette(theme?: string): string[] {
+  return !theme || theme === "default" ? SCREEN_DEFAULT_PALETTE : themePalette(theme);
+}
+
+/** Per-trace color: an explicit override wins, else the theme palette cycled by index. */
+export function traceColor(index: number, color?: string, theme?: string): string {
+  const p = palette(theme);
+  return color || p[index % p.length];
+}
+
+/** Default line weight (px) when a trace sets no explicit width. */
+const DEFAULT_LINE_W = 2;
+
+/**
+ * Flex arrangement for a legend position: bottom/top stack in a column (legend
+ * after/before the figure), left/right sit in a row with the chips stacked vertically.
+ */
+export function legendFlex(pos: LegendPos | undefined): { flexDirection: CSSProperties["flexDirection"]; vertical: boolean } {
+  switch (pos) {
+    case "top":
+      return { flexDirection: "column-reverse", vertical: false };
+    case "left":
+      return { flexDirection: "row-reverse", vertical: true };
+    case "right":
+      return { flexDirection: "row", vertical: true };
+    default:
+      return { flexDirection: "column", vertical: false };
+  }
 }
 
 /** Which engine styles draw markers / fills / bars (others map to a near neighbour). */
@@ -130,7 +161,7 @@ function AxisLabel({ symbol, unit }: { symbol: string; unit: string | null }): R
 
 export interface PlotFigureProps {
   result: PlotResult;
-  region: Pick<PlotRegion, "kind" | "x" | "y" | "y2" | "xVar">;
+  region: Pick<PlotRegion, "kind" | "x" | "y" | "y2" | "xVar" | "theme">;
   /** Index (into the primary trace) of the hovered sample, for the read-out. */
   hoverIndex?: number | null;
   /** Report the nearest sample under the cursor (omit ⇒ static, no hover). */
@@ -142,7 +173,7 @@ export interface PlotFigureProps {
 
 export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, height }: PlotFigureProps) {
   if (result.kind === "polar") {
-    return <PolarFigure result={result} height={height} />;
+    return <PolarFigure result={result} theme={region.theme} height={height} />;
   }
 
   const { xMin, xMax, yMin, yMax, y2Min, y2Max } = result.bounds;
@@ -279,6 +310,7 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
           key={t.id}
           trace={t}
           index={i}
+          theme={region.theme}
           sx={sx}
           sy={t.axis === "y2" ? sy2 : sy}
           baseY={t.axis === "y2" ? baseY2 : baseY}
@@ -305,7 +337,7 @@ export function PlotFigure({ result, region, hoverIndex, onHoverIndex, onPan, he
           y={hover.y}
           xUnit={result.xUnit}
           yUnit={hoverUnit}
-          color={traceColor(0, primary?.color)}
+          color={traceColor(0, primary?.color, region.theme)}
         />
       )}
 
@@ -341,6 +373,7 @@ function buildMapper(scale: AxisScale, linthresh: number, min: number, max: numb
 function TraceMarks({
   trace,
   index,
+  theme,
   sx,
   sy,
   baseY,
@@ -348,12 +381,14 @@ function TraceMarks({
 }: {
   trace: TraceResult;
   index: number;
+  theme?: string;
   sx: (v: number) => number;
   sy: (v: number) => number;
   baseY: number;
   barW: number;
 }) {
-  const color = traceColor(index, trace.color);
+  const color = traceColor(index, trace.color, theme);
+  const lineW = trace.width ?? DEFAULT_LINE_W;
   const f = styleFlags(trace.style);
   const pts = trace.points;
   const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
@@ -378,9 +413,9 @@ function TraceMarks({
           return <rect key={i} x={sx(p.x) - barW / 2} y={top} width={barW} height={Math.max(0.5, h)} fill={color} opacity={0.22} stroke={color} strokeWidth="1.2" />;
         })}
       {f.stem &&
-        pts.map((p, i) => <line key={i} x1={sx(p.x)} y1={sy(baseY)} x2={sx(p.x)} y2={sy(p.y)} stroke={color} strokeWidth="1.5" />)}
+        pts.map((p, i) => <line key={i} x1={sx(p.x)} y1={sy(baseY)} x2={sx(p.x)} y2={sy(p.y)} stroke={color} strokeWidth={lineW} />)}
       {f.line && pts.length > 1 && (
-        <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" strokeDasharray={trace.dash ? "5 3" : undefined} />
+        <path d={d} fill="none" stroke={color} strokeWidth={lineW} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={trace.dash ? "5 3" : undefined} />
       )}
       {/* error bars (whiskers) — clamped to the plot rect on log axes */}
       {hasErr && !band &&
@@ -587,7 +622,7 @@ function PanStrips({
  * Polar figure (r = f(θ))
  * ------------------------------------------------------------------ */
 
-function PolarFigure({ result, height }: { result: PlotResult; height?: number }) {
+function PolarFigure({ result, theme, height }: { result: PlotResult; theme?: string; height?: number }) {
   const cx = W / 2;
   const cy = (height ?? H) / 2;
   const R = Math.min(cx - M.r, cy - M.t) - 6;
@@ -611,14 +646,14 @@ function PolarFigure({ result, height }: { result: PlotResult; height?: number }
         </text>
       ))}
       {drawable.map((t, i) => {
-        const color = traceColor(i, t.color);
+        const color = traceColor(i, t.color, theme);
         const d = t.points
           .map((p, j) => {
             const [x, y] = project(p.x, p.y);
             return `${j ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
           })
           .join(" ");
-        return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
+        return <path key={t.id} d={d} fill="none" stroke={color} strokeWidth={t.width ?? 1.75} strokeLinejoin="round" strokeDasharray={t.dash ? "5 3" : undefined} />;
       })}
     </svg>
   );
@@ -1019,20 +1054,35 @@ export function PlotLegend({
   traces,
   boundLabel,
   onToggle,
+  theme,
+  vertical = false,
 }: {
   traces: TraceResult[];
   boundLabel?: string | null;
   onToggle?: (id: string) => void;
+  theme?: string;
+  /** Stack chips in a column (for a left/right legend position). */
+  vertical?: boolean;
 }) {
   if (traces.length === 0) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: vertical ? "column" : "row",
+        alignItems: vertical ? "flex-start" : "center",
+        gap: 8,
+        marginTop: vertical ? 0 : 9,
+        flexWrap: vertical ? "nowrap" : "wrap",
+        justifyContent: vertical ? "center" : undefined,
+      }}
+    >
       <span style={{ font: "10px/1 var(--font-sans)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)" }}>Series</span>
       {traces.map((t, i) => (
-        <LegendChip key={t.id} trace={t} color={traceColor(i, t.color)} onClick={onToggle ? () => onToggle(t.id) : undefined} />
+        <LegendChip key={t.id} trace={t} color={traceColor(i, t.color, theme)} onClick={onToggle ? () => onToggle(t.id) : undefined} />
       ))}
       {boundLabel && (
-        <span style={{ marginLeft: "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+        <span style={{ marginLeft: vertical ? 0 : "auto", font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
           bound to <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{boundLabel}</span>
         </span>
       )}

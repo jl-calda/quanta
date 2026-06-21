@@ -72,6 +72,10 @@ export interface PlotTraceSpec {
   style?: PlotTraceStyle;
   color?: string;
   dash?: boolean;
+  /** Line weight in px (renderer default 2). */
+  width?: number;
+  /** Per-trace x override (a vector expression) — its own data source; falls back to the plot `xData`. */
+  xData?: string;
   hidden?: boolean;
   /** Which y-axis this trace binds to (primary "y" or secondary "y2"). */
   axis?: PlotAxisId;
@@ -172,6 +176,8 @@ export interface TraceResult {
   style: PlotTraceStyle;
   color?: string;
   dash?: boolean;
+  /** Line weight in px (renderer default 2 when unset). */
+  width?: number;
   hidden: boolean;
   /** Which y-axis this trace maps onto (primary "y" or secondary "y2"). */
   axis: PlotAxisId;
@@ -323,14 +329,24 @@ export function evaluatePlot(
   const yScale = resolveScale(yAxis);
   const y2Scale = resolveScale(y2Axis);
 
-  // Resolve the x sampling: data vector, or a sweep of [min, max] (log-spaced on a log x).
+  // Resolve the plot-level x sampling: data vector, or a sweep of [min, max] (log-spaced on a log x).
   const sampling = resolveSampling(dataExpr, xAxis, xScale, polar, spec.samples, externalScope, system);
 
+  // A trace may carry its OWN x (multiple data sources): resolve a per-trace sampling
+  // for it, else fall back to the shared plot sampling. `anyTraceXData` tells the
+  // bounds pass to span the union of points rather than the plot sweep span.
+  let anyTraceXData = false;
   const traceResults: TraceResult[] = traces.map((t) => {
     const onY2 = t.axis === "y2";
+    const own = t.xData?.trim();
+    let traceSampling = sampling;
+    if (own) {
+      anyTraceXData = true;
+      traceSampling = resolveSampling(own, xAxis, xScale, polar, spec.samples, externalScope, system);
+    }
     return evaluateTrace(
       t,
-      sampling,
+      traceSampling,
       xVar,
       onY2 ? y2Unit : yUnit,
       onY2 ? y2Scale : yScale,
@@ -347,7 +363,7 @@ export function evaluatePlot(
   return {
     kind,
     traces: traceResults,
-    bounds: computeBounds(traceResults, xAxis, yAxis, y2Axis, sampling, polar),
+    bounds: computeBounds(traceResults, xAxis, yAxis, y2Axis, sampling, polar, anyTraceXData),
     xUnit: xUnit ?? null,
     yUnit: yUnit ?? null,
     y2Unit: y2Unit ?? null,
@@ -716,6 +732,7 @@ function evaluateTrace(
     style: trace.style ?? "line",
     color: trace.color,
     dash: trace.dash,
+    width: trace.width,
     hidden: !!trace.hidden,
     axis: trace.axis === "y2" ? ("y2" as const) : ("y" as const),
     errorMode: trace.errorMode,
@@ -864,17 +881,20 @@ function computeBounds(
   y2Axis: PlotAxisSpec | undefined,
   sampling: Sampling,
   polar: boolean,
+  anyTraceXData = false,
 ): PlotBounds {
   const visible = traces.filter((t) => !t.hidden);
   const yPts = visible.filter((t) => t.axis !== "y2").flatMap((t) => t.points);
   const y2Pts = visible.filter((t) => t.axis === "y2").flatMap((t) => t.points);
   const allPts = [...yPts, ...y2Pts];
 
-  // x bounds: pinned, else the sweep span, else the data extent.
+  // x bounds: pinned always wins; else the sweep span — but when a trace overrides x
+  // with its own data source the span only covers the plot-level x, so fall back to the
+  // union point extent so an override trace is never clipped.
   let xMin = xAxis.min;
   let xMax = xAxis.max;
   if (xMin == null || xMax == null) {
-    if (sampling.span) {
+    if (sampling.span && !anyTraceXData) {
       xMin = xMin ?? sampling.span.lo;
       xMax = xMax ?? sampling.span.hi;
     } else {
