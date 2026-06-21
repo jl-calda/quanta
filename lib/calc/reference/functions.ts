@@ -298,4 +298,125 @@ export const FUNCTIONS: FunctionRef[] = [
   /* ---- engineering ---- */
   F({ id: "reynolds", cat: "engineering", name: "Re", sig: "Re(ρ, v, L, μ)", tag: "Engineering", desc: "Reynolds number characterising a flow regime.", params: [["ρ", "density", "Fluid density."], ["v", "velocity", "Flow velocity."], ["L", "length", "Characteristic length."], ["μ", "viscosity", "Dynamic viscosity."]], units: "Dimensionless result; arguments are checked for consistency.", related: ["sqrt"], insert: "rho * v * L / mu" }),
   F({ id: "hypot", cat: "engineering", name: "hypot", sig: "hypot(a, b)", tag: "Engineering", desc: "Euclidean norm √(a² + b²) — resultant of two orthogonal components.", params: [["a", "real", "First component."], ["b", "real", "Second component."]], units: "Both arguments must share a dimension; the result keeps it.", related: ["sqrt", "max"], insert: "hypot(a, b)" }),
+
+  /* ---- math & trig (spreadsheet rounding) ---- */
+  F({
+    id: "roundup",
+    cat: "mathtrig",
+    name: "ROUNDUP",
+    sig: "ROUNDUP(x, [digits])",
+    tag: "Math & trig",
+    desc: "Rounds x away from zero to the given number of decimal places.",
+    params: [
+      ["x", "real | quantity", "Value to round."],
+      ["[digits]", "integer", "Decimal places (default 0)."],
+    ],
+    units: "Rounds the magnitude and keeps the unit (ROUNDUP(2.3 mm, 0) → 3 mm).",
+    related: ["mround", "int", "abs"],
+    insert: "ROUNDUP(x, 2)",
+    example: {
+      caption: "Sizing a bolt count up to the next whole unit:",
+      regions: ["n := ROUNDUP(2.345, 2)"],
+      format: { decimals: 2, trailingZeros: true },
+    },
+  }),
+  F({ id: "mround", cat: "mathtrig", name: "MROUND", sig: "MROUND(x, m)", tag: "Math & trig", desc: "Rounds x to the nearest multiple of m.", params: [["x", "real | quantity", "Value to round."], ["m", "real", "Multiple to snap to."]], units: "Rounds the magnitude and keeps x's unit.", related: ["roundup", "int"], insert: "MROUND(x, 5)" }),
+  F({ id: "int", cat: "mathtrig", name: "INT", sig: "INT(x)", tag: "Math & trig", desc: "Rounds x down to the nearest integer (toward negative infinity).", params: [["x", "real | quantity", "Value to floor."]], units: "Keeps the unit of the argument.", related: ["roundup", "mround"], insert: "INT(x)" }),
+  F({ id: "sumproduct", cat: "mathtrig", name: "SUMPRODUCT", sig: "SUMPRODUCT(a, b, …)", tag: "Math & trig", desc: "Sum of the element-wise products of equal-length ranges.", params: [["a, b, …", "vector", "Ranges of the same length."]], units: "Units multiply through each product and add into the sum.", related: ["sumif", "mean"], insert: "SUMPRODUCT(a, b)" }),
+
+  /* ---- statistics (criteria aggregates) ---- */
+  F({
+    id: "countif",
+    cat: "stats",
+    name: "COUNTIF",
+    sig: "COUNTIF(range, criteria)",
+    tag: "Statistics",
+    desc: "Counts the values in a range that meet a criterion.",
+    params: [
+      ["range", "vector", "Values to test."],
+      ["criteria", "string | real", 'A comparison like ">20", "<>0", or a value.'],
+    ],
+    units: "Compares each value's magnitude; a uniform-unit range compares consistently.",
+    related: ["sumif", "large", "mean"],
+    insert: 'COUNTIF(range, ">0")',
+    example: {
+      caption: "How many bay loads exceed 20 kN:",
+      regions: ['n := COUNTIF([12, 18, 41, 22], ">20")'],
+    },
+  }),
+  F({ id: "sumif", cat: "stats", name: "SUMIF", sig: "SUMIF(range, criteria, [sumRange])", tag: "Statistics", desc: "Sums the values that meet a criterion, optionally from an aligned sum range.", params: [["range", "vector", "Values to test."], ["criteria", "string | real", "Comparison or value to match."], ["[sumRange]", "vector", "Aligned values to sum instead."]], units: "The sum keeps the unit of the summed values.", related: ["countif", "sumproduct"], insert: 'SUMIF(range, ">0")' }),
+  F({ id: "large", cat: "stats", name: "LARGE", sig: "LARGE(range, k)", tag: "Statistics", desc: "Returns the k-th largest value in a range.", params: [["range", "vector", "Values to rank."], ["k", "integer", "Rank from the top (1 = largest)."]], units: "Keeps the unit of the selected value.", related: ["countif", "max", "min"], insert: "LARGE(range, 1)" }),
+
+  /* ---- programming (logical) ---- */
+  F({
+    id: "iferror",
+    cat: "programming",
+    name: "IFERROR",
+    sig: "IFERROR(value, fallback)",
+    tag: "Programming",
+    desc: "Returns value, or fallback if evaluating value raises an error.",
+    params: [
+      ["value", "any", "Expression to try (evaluated lazily)."],
+      ["fallback", "any", "Result when value errors."],
+    ],
+    units: "Pass-through: the result carries whichever branch's units apply.",
+    related: ["ifs", "switch", "if"],
+    insert: "IFERROR(value, 0)",
+    example: {
+      caption: "Falling back to a safe default when a check can't be computed:",
+      regions: ["safe := IFERROR(1 m + 1 s, -1)"],
+    },
+  }),
+  F({ id: "ifs", cat: "programming", name: "IFS", sig: "IFS(c1, v1, c2, v2, …)", tag: "Programming", desc: "Returns the value for the first condition that is true.", params: [["c1, c2, …", "boolean", "Conditions, tested in order."], ["v1, v2, …", "any", "Value for each condition."]], units: "Branch values should share a dimension.", related: ["iferror", "switch", "if"], insert: "IFS(c1, v1, c2, v2)" }),
+  F({ id: "switch", cat: "programming", name: "SWITCH", sig: "SWITCH(expr, case1, val1, …, [default])", tag: "Programming", desc: "Compares expr to each case and returns the matching value, or a trailing default.", params: [["expr", "any", "Value to match."], ["caseN, valN", "any", "Case/value pairs."], ["[default]", "any", "Result when nothing matches."]], units: "Branch values should share a dimension.", related: ["iferror", "ifs", "if"], insert: 'SWITCH(expr, 1, "a", 2, "b", "other")' }),
+
+  /* ---- string (text) ---- */
+  F({
+    id: "left",
+    cat: "string",
+    name: "LEFT",
+    sig: "LEFT(text, [n])",
+    tag: "String",
+    desc: "Returns the first n characters of text (default 1).",
+    params: [
+      ["text", "string", "Source text (numbers coerce to text)."],
+      ["[n]", "integer", "Number of characters."],
+    ],
+    units: "Not applicable — text is dimensionless.",
+    related: ["upper", "substitute", "concat"],
+    insert: "LEFT(text, 3)",
+    example: {
+      caption: "Taking the grid prefix from a member mark:",
+      regions: ['tag := LEFT("B12-edge", 3)'],
+    },
+  }),
+  F({ id: "upper", cat: "string", name: "UPPER", sig: "UPPER(text)", tag: "String", desc: "Converts text to upper case.", params: [["text", "string", "Source text."]], units: "Not applicable.", related: ["left", "substitute"], insert: "UPPER(text)" }),
+  F({ id: "substitute", cat: "string", name: "SUBSTITUTE", sig: "SUBSTITUTE(text, old, new, [instance])", tag: "String", desc: "Replaces occurrences of old with new (all, or only the nth).", params: [["text", "string", "Source text."], ["old", "string", "Substring to replace."], ["new", "string", "Replacement."], ["[instance]", "integer", "Which occurrence (default all)."]], units: "Not applicable.", related: ["left", "textjoin"], insert: 'SUBSTITUTE(text, "-", " ")' }),
+  F({ id: "textjoin", cat: "string", name: "TEXTJOIN", sig: "TEXTJOIN(delim, ignoreEmpty, …)", tag: "String", desc: "Joins values with a delimiter, optionally skipping empties.", params: [["delim", "string", "Separator between values."], ["ignoreEmpty", "boolean", "Skip empty values when true."], ["…", "any", "Values to join."]], units: "Not applicable.", related: ["concat", "substitute"], insert: 'TEXTJOIN(", ", true, a, b)' }),
+
+  /* ---- date & time ---- */
+  F({
+    id: "date",
+    cat: "date",
+    name: "DATE",
+    sig: "DATE(year, month, day)",
+    tag: "Date & time",
+    desc: "Builds a date as a serial day number (days since 1899-12-30).",
+    params: [
+      ["year", "integer", "Calendar year."],
+      ["month", "integer", "Month (1–12; overflow normalises)."],
+      ["day", "integer", "Day of month."],
+    ],
+    units: "Dimensionless — dates are plain serial numbers.",
+    related: ["year", "edate", "datedif"],
+    insert: "DATE(2024, 1, 1)",
+    example: {
+      caption: "The serial number for the first of the year:",
+      regions: ["d := DATE(2024, 1, 1)"],
+    },
+  }),
+  F({ id: "year", cat: "date", name: "YEAR", sig: "YEAR(serial)", tag: "Date & time", desc: "The calendar year of a date serial.", params: [["serial", "integer", "A date serial (e.g. from DATE)."]], units: "Dimensionless.", related: ["date", "weekday"], insert: "YEAR(d)" }),
+  F({ id: "weekday", cat: "date", name: "WEEKDAY", sig: "WEEKDAY(serial, [type])", tag: "Date & time", desc: "Day of week of a date serial.", params: [["serial", "integer", "A date serial."], ["[type]", "integer", "1 Sun=1…Sat=7 (default), 2 Mon=1…Sun=7, 3 Mon=0…Sun=6."]], units: "Dimensionless.", related: ["date", "year"], insert: "WEEKDAY(d)" }),
+  F({ id: "edate", cat: "date", name: "EDATE", sig: "EDATE(serial, months)", tag: "Date & time", desc: "Shifts a date by whole months, clamping the day to the month's length.", params: [["serial", "integer", "A date serial."], ["months", "integer", "Months to add (may be negative)."]], units: "Dimensionless.", related: ["date", "datedif"], insert: "EDATE(d, 1)" }),
+  F({ id: "datedif", cat: "date", name: "DATEDIF", sig: 'DATEDIF(start, end, unit)', tag: "Date & time", desc: 'Difference between two dates in "D" days, "M" complete months, or "Y" complete years.', params: [["start", "integer", "Start date serial."], ["end", "integer", "End date serial."], ["unit", "string", '"D", "M", or "Y".']], units: "Dimensionless.", related: ["date", "edate", "year"], insert: 'DATEDIF(start, end, "Y")' }),
 ];
