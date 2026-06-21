@@ -11,8 +11,14 @@
  * identically on the client, the Web Worker, and Node (for server-side export).
  */
 import { create, all } from "mathjs";
+import { registerMatrixFunctions } from "./matrix";
 
 export const math = create(all, {});
+
+// Unit-aware Mathcad-named linear algebra (eigenvalues, lsolve). Registered once,
+// here, so every module shares one configured instance. matrix.ts takes the
+// instance as an argument (no static import back to ./math) to stay cycle-free.
+registerMatrixFunctions(math);
 
 export type MathNode = import("mathjs").MathNode;
 export type Unit = import("mathjs").Unit;

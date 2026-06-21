@@ -164,7 +164,42 @@ export const FUNCTIONS: FunctionRef[] = [
   F({ id: "identity", cat: "matrix", name: "identity", sig: "identity(n)", tag: "Matrix & vector", desc: "Returns the n × n identity matrix.", params: [["n", "integer", "Matrix order."]], units: "Dimensionless.", related: ["transpose", "inv", "det"], insert: "identity(n)" }),
   F({ id: "transpose", cat: "matrix", name: "transpose", sig: "transpose(M)", tag: "Matrix & vector", desc: "Swaps the rows and columns of a matrix.", params: [["M", "matrix", "Input matrix."]], units: "Element units are preserved.", related: ["identity", "inv", "det"], insert: "transpose(M)" }),
   F({ id: "det", cat: "matrix", name: "det", sig: "det(M)", tag: "Matrix & vector", desc: "Determinant of a square matrix.", params: [["M", "matrix", "Square input matrix."]], units: "Carries the product of the element units.", related: ["inv", "identity"], insert: "det(M)" }),
-  F({ id: "inv", cat: "matrix", name: "inv", sig: "inv(M)", tag: "Matrix & vector", desc: "Inverse of a square, non-singular matrix.", params: [["M", "matrix", "Square input matrix."]], units: "Element units invert.", related: ["det", "transpose"], insert: "inv(M)" }),
+  F({ id: "inv", cat: "matrix", name: "inv", sig: "inv(M)", tag: "Matrix & vector", desc: "Inverse of a square, non-singular matrix.", params: [["M", "matrix", "Square input matrix."]], units: "Element units invert.", related: ["det", "transpose", "lsolve"], insert: "inv(M)" }),
+  F({
+    id: "eigenvalues",
+    cat: "matrix",
+    name: "eigenvalues",
+    sig: "eigenvalues(M)",
+    tag: "Matrix & vector",
+    desc: "Eigenvalues of a square matrix, returned as a vector (may be complex).",
+    params: [["M", "matrix", "Square input matrix with one consistent unit, or unitless."]],
+    units: "Every entry must share one dimension; each eigenvalue carries that unit.",
+    related: ["det", "inv", "lsolve"],
+    insert: "eigenvalues(M)",
+    example: {
+      caption: "Principal values of a diagonal stiffness-like matrix:",
+      regions: ["lambda := eigenvalues([[2, 0], [0, 3]])"],
+    },
+  }),
+  F({
+    id: "lsolve",
+    cat: "matrix",
+    name: "lsolve",
+    sig: "lsolve(M, b)",
+    tag: "Matrix & vector",
+    desc: "Solves the linear system M·x = b for the vector x.",
+    params: [
+      ["M", "matrix", "Square n × n coefficient matrix (non-singular)."],
+      ["b", "vector", "Right-hand-side vector of length n."],
+    ],
+    units: "x carries unit(b) / unit(M); a singular M is flagged rather than guessed.",
+    related: ["inv", "det", "eigenvalues"],
+    insert: "lsolve(M, b)",
+    example: {
+      caption: "Solving a 2-equation system for the unknown vector x:",
+      regions: ["x := lsolve([[2, 1], [1, 3]], [3, 5])"],
+    },
+  }),
 
   /* ---- programming ---- */
   F({ id: "if", cat: "programming", name: "if", sig: "if(cond, then, else)", tag: "Programming", desc: "Returns then when cond is true, otherwise else.", params: [["cond", "boolean", "Condition to test."], ["then", "any", "Value if true."], ["else", "any", "Value if false."]], units: "then and else should share a dimension.", related: ["and", "or"], insert: "if(cond, then, else)" }),
