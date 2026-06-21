@@ -1,6 +1,6 @@
 "use client";
 
-import type { TableCellResult, TableResult } from "@/lib/calc";
+import { tableViewOrder, type TableCellResult, type TableResult } from "@/lib/calc";
 import type { TableColumn, TableRegion } from "@/lib/worksheet/content";
 
 /**
@@ -47,6 +47,15 @@ export function cellOf(result: TableResult | undefined, r: number, c: number): T
 export function TablePresent({ region, result }: { region: TableRegion; result?: TableResult }) {
   const title = region.eyebrow || region.name;
   const cols = region.columns;
+  // Sort/filter are a display-only view over the data-order grid; `order` holds the
+  // original row indices to render (engine results and lookups stay in data order).
+  const order = tableViewOrder({
+    rows: region.rows,
+    columns: cols,
+    cells: result?.cells,
+    sort: region.sort,
+    filter: region.filter,
+  });
   return (
     <div>
       {title && (
@@ -82,11 +91,11 @@ export function TablePresent({ region, result }: { region: TableRegion; result?:
           </tr>
         </thead>
         <tbody>
-          {region.rows.map((_, r) => (
+          {order.map((r, i) => (
             <tr
               key={r}
               style={{
-                background: r % 2 ? "color-mix(in srgb, var(--surface-chrome) 40%, transparent)" : "transparent",
+                background: i % 2 ? "color-mix(in srgb, var(--surface-chrome) 40%, transparent)" : "transparent",
                 borderBottom: "1px solid var(--border-hairline)",
               }}
             >
