@@ -121,6 +121,7 @@ export function toResultFormat(f: FormatSettings): ResultFormat {
   const fmt: ResultFormat = {
     notation: f.notation,
     radix: f.radix,
+    complex: f.complex,
   };
 
   if (f.sigFigs === "auto") {

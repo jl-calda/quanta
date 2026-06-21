@@ -2,13 +2,16 @@
 
 import { useMemo, type CSSProperties } from "react";
 import type { Row, WorksheetContent } from "@/lib/worksheet/content";
-import { SI_SYSTEM, evaluateSheet, type RegionResult } from "@/lib/calc";
+import { SI_SYSTEM, evaluateSheet, registerUserUnits, type RegionResult } from "@/lib/calc";
 import { flattenToRegionInputs, mapResults, walkRegions } from "@/lib/worksheet/flatten";
 import { diffContents, type DiffStatus } from "@/lib/worksheet/diff";
 import { DiffRegion, LeafRegion, RegionNode } from "./history-region";
 
-/** Compute read-only engine results for a content snapshot (pure, synchronous). */
+/** Compute read-only engine results for a content snapshot (pure, synchronous).
+ *  Custom units are registered so a snapshot that uses them still resolves; the
+ *  history view renders in SI display. */
 function resultsFor(content: WorksheetContent): Map<string, RegionResult> {
+  registerUserUnits(content.units?.defs ?? []);
   return mapResults(evaluateSheet(flattenToRegionInputs(content), { unitSystem: SI_SYSTEM }));
 }
 

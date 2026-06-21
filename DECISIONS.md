@@ -2,6 +2,56 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Complex numbers, result formatting & user-defined units (Phase 2, Func §2 / §2.4)
+
+- **Complex results render (rect / polar).** `formatValue` now formats mathjs
+  `Complex` values: rectangular `a + b i` (signs split, pure-real/-imaginary tidied,
+  `±1 i` → `±i`) or polar `r ∠ θ°` (angle in degrees). Each part runs through the
+  existing `formatNumber`, so decimals / sig-figs / notation apply; radix and
+  fraction are dropped for complex parts. `ResultFormat.complex` (`"rect"|"polar"`,
+  default rect) is the new knob, threaded settings → region → engine
+  (`toResultFormat` now passes `complex`; the inspector + result-format dialog expose
+  it; the workspace-settings control already existed and is now live).
+- **Imaginary unit `i` is a dependency-filter constant, not an undefined symbol.**
+  mathjs parses `3 + 4i` as `3 + 4*i` (a `SymbolNode`), so the engine flagged `i` as
+  undefined. `filterUnitLiterals` (parse layer — NOT recalc.ts/graph.ts) now drops
+  `i` like a unit literal, but only when no region defines it, so a sheet can still
+  shadow `i` with its own variable. Rendering needs nothing new: `splitResultUnit`
+  only splits unit values, so a complex string flows through as the pill magnitude.
+- **Unit systems = display-only re-convert; stored values never change.** SI / USCS /
+  CGS / custom are `UnitSystem` preferred-unit catalogs in `units.ts` (USCS → kip,
+  psi, kip·ft, in², in…; CGS → dyn, erg, cm, g…), each composed with the SI list as a
+  fallback tail so an unmapped dimension always resolves. `unitSystemFor(selection,
+  customPreferred)` builds the active system. Conversion reuses the existing
+  `toDisplayUnit`/`EvaluateOptions.unitSystem` seam — **recalc.ts and graph.ts are
+  untouched**; the worksheet layer threads the system (`settleTables`/
+  `evaluatePlotsWith` gained a `system` param; the provider rebuilds the engine when
+  the selection or custom units change). A switch re-displays immediately (even in
+  Manual mode) since base values are not mutated → no round-trip drift.
+- **Selection is worksheet-level, persisted in `layout_settings`.** Added `unitSystem`
+  to `layoutSettingsSchema`; the status-bar selector (now incl. "Custom") and the
+  worksheet-settings Units tab share `state.unitsSystem` (one field, two entry
+  points), persisted via the existing `updateLayoutSettings` Zod action. Legacy sheets
+  default to SI — which is what they displayed before the selector was wired.
+  Per-region unit-system override is a typed-but-inert seam (`MathRegion.unitSystem`).
+- **User-defined units live in `worksheets.content` JSONB.** New `content.units =
+  { defs, preferred }`; because `saveWorksheetSchema.content === contentSchema`, adding
+  it there makes it round-trip through the existing RLS-gated `saveWorksheet` autosave
+  (no new table/action). The Units tab (un-gated and fully built in
+  `worksheet-settings-dialog.tsx`) does add/edit/remove + the preferred list, writing
+  via the reducer; Calculation/Format tabs stay a gated shell.
+- **Custom units register on the shared mathjs instance via `createUnit` (reuse
+  conversion, no forked resolver).** A definition is a value-unit (`kip := 4.4482216
+  kN`); `registerUserUnits` (`/lib/calc/user-units.ts`) topologically orders defs so
+  cross-references resolve (`ksi := kip / in^2`), rejects cycles, duplicates, invalid/
+  reserved names, and dimensionally-broken/unknown definitions as typed app-voice
+  errors, and normalizes a missing leading scalar (`kN` → `1 kN`, mathjs's required
+  form). A name mathjs already provides (e.g. the built-in `kip`) is **used as-is, not
+  overridden**, so a worksheet can never clobber a shared built-in like `kN`/`m`.
+  Known limitation: a custom name registered for one sheet persists for the tab/session
+  (mathjs has no de-register) — benign (gone on reload); each sheet re-registers its
+  own before evaluation. Author/workspace-level shared unit libraries left as a seam.
+
 ## Range variables & ∑ / ∏ / ∫ operators (Phase 2, Func §2 / Matrix Part A)
 
 - **New function names, NOT overrides of mathjs `sum`/`prod`.** The live operators

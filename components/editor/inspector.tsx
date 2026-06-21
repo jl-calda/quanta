@@ -5,6 +5,7 @@ import { Badge, IconButton, Input, Select, Switch } from "@/components/ds";
 import { findRegion } from "@/lib/worksheet/flatten";
 import type {
   CellAlign,
+  ComplexForm,
   ControlKind,
   ControlOption,
   ControlRegion,
@@ -122,6 +123,15 @@ function MathInspector({ region, set }: { region: MathRegion; set: (p: RegionPat
         </Row>
         <Row label="Radix">
           <Segmented options={["dec", "bin", "oct", "hex"]} value={radix} set={(v) => set({ format: { ...fmt, radix: v as Radix } })} />
+        </Row>
+        <Row label="Complex form">
+          <div style={{ width: 120 }}>
+            <Select
+              value={fmt.complex ?? "rect"}
+              onChange={(e) => set({ format: { ...fmt, complex: e.target.value as ComplexForm } })}
+              options={[{ value: "rect", label: "a + b i" }, { value: "polar", label: "Polar (r∠θ)" }]}
+            />
+          </div>
         </Row>
       </Group>
 

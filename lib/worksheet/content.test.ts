@@ -24,6 +24,35 @@ describe("parseContent", () => {
     expect(out.rows[0].cells[0].regions[0]).toMatchObject({ id: "m1", type: "math" });
   });
 
+  it("round-trips worksheet-level custom units and the complex format", () => {
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                { id: "m1", type: "math", indent: 0, source: "z := 3 + 4i", format: { complex: "polar" } },
+              ],
+            },
+          ],
+        },
+      ],
+      units: { defs: [{ name: "kip", definition: "4.4482216 kN" }], preferred: ["kip"] },
+    };
+    const out = parseContent(input);
+    expect(out.units).toEqual({
+      defs: [{ name: "kip", definition: "4.4482216 kN" }],
+      preferred: ["kip"],
+    });
+    const region = out.rows[0].cells[0].regions[0];
+    expect(region.type === "math" && region.format?.complex).toBe("polar");
+    // validateContent (the save path) preserves them too.
+    expect(validateContent(input)?.units?.preferred).toEqual(["kip"]);
+  });
+
   it("falls back to an empty document on garbage", () => {
     expect(parseContent(null)).toEqual(EMPTY_CONTENT);
     expect(parseContent("nope")).toEqual(EMPTY_CONTENT);

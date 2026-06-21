@@ -70,6 +70,21 @@ describe("evaluateSheet — typed errors", () => {
     expect(byId(sheet, "c").status).toBe("current");
   });
 
+  it("evaluates a complex literal without flagging the imaginary unit as undefined", () => {
+    const sheet = evaluateSheet([{ id: "z", source: "z := 3 + 4i" }]);
+    expect(byId(sheet, "z").status).toBe("current");
+    expect(byId(sheet, "z").formatted).toBe("3 + 4 i");
+  });
+
+  it("still lets a region shadow `i` with its own definition", () => {
+    const sheet = evaluateSheet([
+      { id: "i", source: "i := 10" },
+      { id: "y", source: "y := i + 5" },
+    ]);
+    expect(byId(sheet, "y").status).toBe("current");
+    expect(byId(sheet, "y").formatted).toBe("15");
+  });
+
   it("detects a circular reference", () => {
     const sheet = evaluateSheet([
       { id: "a", source: "a := b" },

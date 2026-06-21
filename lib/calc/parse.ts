@@ -152,16 +152,30 @@ export function collectDeps(node: MathNode): string[] {
 }
 
 /**
- * Drop references that are unit literals rather than dependencies: a name no
- * region defines, which mathjs recognizes as a unit (`kN`, `mm`, `MPa`). A name
- * the sheet defines is always kept — definitions shadow units.
+ * Built-in symbols that resolve at evaluation time but are NOT worksheet
+ * dependencies. The imaginary unit `i` is the key case: mathjs parses `3 + 4i`
+ * as `3 + 4*i` (a `SymbolNode`), and without this it would be flagged as an
+ * undefined name before evaluation. Like a unit literal, it is only dropped when
+ * no region defines it — a sheet that uses `i` as its own variable still shadows
+ * it. (Numeric constants such as `e`/`pi` are already handled downstream because
+ * mathjs exposes them as numbers.)
+ */
+const BUILTIN_CONSTANTS = new Set(["i"]);
+
+/**
+ * Drop references that are unit literals or built-in constants rather than
+ * dependencies: a name no region defines, which mathjs recognizes as a unit
+ * (`kN`, `mm`, `MPa`) or as the imaginary unit `i`. A name the sheet defines is
+ * always kept — definitions shadow units and constants.
  */
 export function filterUnitLiterals(
   deps: string[],
   definedNames: Set<string>,
 ): string[] {
   return deps.filter(
-    (name) => definedNames.has(name) || !math.Unit.isValuelessUnit(name),
+    (name) =>
+      definedNames.has(name) ||
+      (!math.Unit.isValuelessUnit(name) && !BUILTIN_CONSTANTS.has(name)),
   );
 }
 

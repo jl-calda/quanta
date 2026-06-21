@@ -61,3 +61,36 @@ describe("formatValue — units", () => {
     expect(formatValue(moment, { decimals: 0 })).toBe("15 kN·m");
   });
 });
+
+describe("formatValue — complex", () => {
+  it("defaults to rectangular a + b i", () => {
+    expect(formatValue(math.complex(3, 4))).toBe("3 + 4 i");
+  });
+
+  it("splits the sign for a negative imaginary part", () => {
+    expect(formatValue(math.complex(2, -5), { complex: "rect" })).toBe("2 - 5 i");
+  });
+
+  it("tidies pure-real, pure-imaginary, and unit-imaginary parts", () => {
+    expect(formatValue(math.complex(3, 0), { complex: "rect" })).toBe("3");
+    expect(formatValue(math.complex(0, 4), { complex: "rect" })).toBe("4 i");
+    expect(formatValue(math.complex(0, 1), { complex: "rect" })).toBe("i");
+    expect(formatValue(math.complex(0, -1), { complex: "rect" })).toBe("-i");
+  });
+
+  it("applies number formatting to each part", () => {
+    expect(formatValue(math.complex(1.23456, 2.34567), { complex: "rect", decimals: 2 })).toBe(
+      "1.23 + 2.35 i",
+    );
+  });
+
+  it("renders polar r ∠ θ° with the angle in degrees", () => {
+    expect(formatValue(math.complex(3, 4), { complex: "polar", decimals: 2 })).toBe("5 ∠ 53.13°");
+  });
+
+  it("snaps near-zero parts to zero before structuring", () => {
+    expect(
+      formatValue(math.complex(3, 1e-14), { complex: "rect", zeroThreshold: 1e-9 }),
+    ).toBe("3");
+  });
+});

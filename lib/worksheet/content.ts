@@ -19,6 +19,7 @@ import type { ProgramBranch, ProgramStatement } from "@/lib/calc";
 
 const notationSchema = z.enum(["auto", "decimal", "sci", "eng"]);
 const radixSchema = z.enum(["dec", "bin", "oct", "hex"]);
+const complexFormSchema = z.enum(["rect", "polar"]);
 
 const resultFormatSchema = z.object({
   decimals: z.number().int().min(0).max(15).optional(),
@@ -30,6 +31,7 @@ const resultFormatSchema = z.object({
   expThreshold: z.number().optional(),
   zeroThreshold: z.number().optional(),
   fraction: z.boolean().optional(),
+  complex: complexFormSchema.optional(),
 });
 
 const condOpSchema = z.enum([">", ">=", "=", "!=", "<", "<="]);
@@ -111,6 +113,9 @@ const mathRegionSchema = z.object({
   format: resultFormatSchema.optional(),
   conditional: z.array(condRuleSchema).optional(),
   display: displayFlagsSchema.partial().optional(),
+  /** Per-region display unit-system override — typed-but-inert seam (uses the
+   *  worksheet system today; round-tripped for the future per-region picker). */
+  unitSystem: z.enum(["si", "uscs", "cgs", "custom"]).optional(),
   /** Cached worker-computed symbolic result, read by server-side export. */
   cache: symbolicCacheSchema.optional(),
 });
@@ -449,9 +454,28 @@ const rowSchema = z.object({
   cells: z.array(cellSchema).default([]),
 });
 
+/*
+ * Worksheet-level custom units (Functional Brief §2 — user-defined units & unit
+ * systems). `defs` are value-unit definitions (`kip := 4.4482216 kN`) registered
+ * on the engine before evaluation; `preferred` is the display-unit list the
+ * status-bar "custom" system uses. Stored in content JSONB (no new table); the
+ * one source of truth shared by the status-bar selector and the worksheet-settings
+ * Units tab.
+ */
+const userUnitDefSchema = z.object({
+  name: z.string().default(""),
+  definition: z.string().default(""),
+});
+const worksheetUnitsSchema = z.object({
+  defs: z.array(userUnitDefSchema).default([]),
+  preferred: z.array(z.string()).default([]),
+});
+
 const contentSchema = z.object({
   version: z.literal(1).default(1),
   rows: z.array(rowSchema).default([]),
+  /** Worksheet-defined custom units + preferred display list. */
+  units: worksheetUnitsSchema.optional(),
 });
 
 /* ------------------------------------------------------------------ *
@@ -460,6 +484,7 @@ const contentSchema = z.object({
 
 export type Notation = z.infer<typeof notationSchema>;
 export type Radix = z.infer<typeof radixSchema>;
+export type ComplexForm = z.infer<typeof complexFormSchema>;
 export type ResultFormat = z.infer<typeof resultFormatSchema>;
 export type CondRule = z.infer<typeof condRuleSchema>;
 export type CondOp = z.infer<typeof condOpSchema>;
@@ -482,6 +507,8 @@ export type SolveAlgorithm = z.infer<typeof solveAlgoSchema>;
 export type SolveGuess = z.infer<typeof solveGuessSchema>;
 export type OdeConfig = z.infer<typeof odeConfigSchema>;
 export type SymbolicCache = z.infer<typeof symbolicCacheSchema>;
+export type UserUnitDef = z.infer<typeof userUnitDefSchema>;
+export type WorksheetUnits = z.infer<typeof worksheetUnitsSchema>;
 
 export interface RegionBase {
   id: string;
@@ -498,6 +525,8 @@ export interface MathRegion extends RegionBase {
   format?: ResultFormat;
   conditional?: CondRule[];
   display?: Partial<DisplayFlags>;
+  /** Per-region display unit-system override — typed-but-inert seam. */
+  unitSystem?: "si" | "uscs" | "cgs" | "custom";
   /** Cached worker-computed symbolic result, read by server-side export. */
   cache?: SymbolicCache;
 }
@@ -646,6 +675,8 @@ export interface Row {
 export interface WorksheetContent {
   version: 1;
   rows: Row[];
+  /** Worksheet-defined custom units + preferred display list. */
+  units?: WorksheetUnits;
 }
 
 /* ------------------------------------------------------------------ *
@@ -843,7 +874,7 @@ export function parseContent(json: unknown): WorksheetContent {
   const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return emptyContent();
   const data = result.data as WorksheetContent;
-  return { version: 1, rows: data.rows.map(normalizeRow) };
+  return { version: 1, rows: data.rows.map(normalizeRow), units: data.units };
 }
 
 /** Validate a content tree before persisting; returns the parsed value or null. */
@@ -851,7 +882,7 @@ export function validateContent(json: unknown): WorksheetContent | null {
   const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return null;
   const data = result.data as WorksheetContent;
-  return { version: 1, rows: data.rows.map(normalizeRow) };
+  return { version: 1, rows: data.rows.map(normalizeRow), units: data.units };
 }
 
 export { contentSchema };

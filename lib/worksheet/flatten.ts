@@ -25,6 +25,7 @@ import type {
   SheetResult,
   SolveResult,
   TableResult,
+  UnitSystem,
 } from "@/lib/calc";
 import type {
   ControlRegion,
@@ -176,9 +177,10 @@ function programFunctionInput(region: ProgramRegion): RegionInput | null {
 export function evaluatePlotsWith(
   specs: PlotRegion[],
   scope: Record<string, unknown>,
+  system: UnitSystem = SI_SYSTEM,
 ): Map<string, PlotResult> {
   const out = new Map<string, PlotResult>();
-  for (const spec of specs) out.set(spec.id, evaluatePlot(spec, scope, SI_SYSTEM));
+  for (const spec of specs) out.set(spec.id, evaluatePlot(spec, scope, system));
   return out;
 }
 
@@ -340,6 +342,7 @@ function stripSynthetic(sheet: SheetResult): SheetResult {
 export function settleTables(
   content: WorksheetContent,
   engine: TableEngine,
+  system: UnitSystem = SI_SYSTEM,
 ): {
   sheet: SheetResult;
   tables: Map<string, TableResult>;
@@ -357,7 +360,7 @@ export function settleTables(
     syncPrograms(new Map()); // clear any registry left by a previous worksheet
     engine.setRegions(buildEngineInputs(content));
     const sheet = engine.getResult();
-    const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions));
+    const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions), system);
     return { sheet, tables: new Map(), plots, solves: new Map(), programs: new Map() };
   }
 
@@ -409,7 +412,7 @@ export function settleTables(
     const nextBySource = new Map<string, Record<string, string>>();
 
     for (const spec of programSpecs) {
-      const result = evaluateProgram(spec, scope, SI_SYSTEM);
+      const result = evaluateProgram(spec, scope, system);
       programs.set(spec.id, result);
       // A value program folds its result back like a table/solve export.
       if (result.status === "value" && result.name && result.value !== undefined) {
@@ -422,7 +425,7 @@ export function settleTables(
     }
 
     for (const spec of tableSpecs) {
-      const result = evaluateTable(spec, scope, SI_SYSTEM);
+      const result = evaluateTable(spec, scope, system);
       tables.set(spec.id, result);
       const sources: Record<string, string> = {};
       for (const [name, value] of Object.entries(result.exports)) {
@@ -434,7 +437,7 @@ export function settleTables(
     }
 
     for (const spec of solveSpecs) {
-      const result = evaluateSolve(spec, scope, SI_SYSTEM);
+      const result = evaluateSolve(spec, scope, system);
       solves.set(spec.id, result);
       const sources: Record<string, string> = {};
       for (const out of result.outputs) {
@@ -464,7 +467,7 @@ export function settleTables(
     const fn = programFns.get(id);
     if (fn) plotScope[name] = fn;
   }
-  const plots = evaluatePlotsWith(plotSpecs, plotScope);
+  const plots = evaluatePlotsWith(plotSpecs, plotScope, system);
 
   return { sheet: stripSynthetic(sheet), tables, plots, solves, programs };
 }

@@ -32,6 +32,51 @@ export const SI_SYSTEM: UnitSystem = {
   ],
 };
 
+/**
+ * US customary structural/mechanical display units, tried before falling back to
+ * SI for any dimension USCS doesn't map. Force → kip, stress/pressure → psi,
+ * moment → kip·ft, area → in², length → in/ft, mass → lbm. (mathjs has no `ksi`,
+ * so structural stress shows in psi.) Display-only: stored values stay in base.
+ */
+export const USCS_SYSTEM: UnitSystem = {
+  id: "USCS",
+  preferred: ["kip", "psi", "kip ft", "in^2", "in", "ft", "lbf", "lbm", ...SI_SYSTEM.preferred],
+};
+
+/**
+ * CGS display units (force → dyn, length → cm, mass → g, energy → erg), with SI
+ * fallback for unmapped dimensions (e.g. mathjs has no barye, so stress → MPa).
+ */
+export const CGS_SYSTEM: UnitSystem = {
+  id: "CGS",
+  preferred: ["dyn", "erg", "cm", "g", ...SI_SYSTEM.preferred],
+};
+
+/** Worksheet-level unit-system selection, as persisted (lowercase). */
+export type WorksheetUnitSystem = "si" | "uscs" | "cgs" | "custom";
+
+/**
+ * Build the display {@link UnitSystem} for a worksheet's selection. `custom` puts
+ * the worksheet's user-defined preferred units first, then SI fallback — so an
+ * unmapped dimension always resolves. Pure; no engine state is touched.
+ */
+export function unitSystemFor(
+  id: WorksheetUnitSystem,
+  customPreferred: string[] = [],
+): UnitSystem {
+  switch (id) {
+    case "uscs":
+      return USCS_SYSTEM;
+    case "cgs":
+      return CGS_SYSTEM;
+    case "custom":
+      return { id: "custom", preferred: [...customPreferred, ...SI_SYSTEM.preferred] };
+    case "si":
+    default:
+      return SI_SYSTEM;
+  }
+}
+
 export function isUnit(value: unknown): value is Unit {
   return math.isUnit(value);
 }

@@ -8,8 +8,9 @@ import { Icon } from "./icons";
 
 /**
  * Status bar (28px): calc status + region/error counts · page indicator ·
- * units-system selector · zoom slider + fit-width. (SI is wired through the
- * engine; USCS/CGS are display selections for now.)
+ * units-system selector · zoom slider + fit-width. The selector re-displays
+ * results in the chosen system (display-only — stored values stay in base);
+ * "Custom" uses the worksheet's user-defined units (worksheet settings → Units).
  */
 export function StatusBar() {
   const { state, dispatch } = useEditor();
@@ -48,7 +49,12 @@ export function StatusBar() {
             size="sm"
             value={state.unitsSystem}
             onChange={(e) => dispatch({ type: "SET_UNITS", system: e.target.value as UnitsSystem })}
-            options={[{ value: "si", label: "SI" }, { value: "uscs", label: "USCS" }, { value: "cgs", label: "CGS" }]}
+            options={[
+              { value: "si", label: "SI" },
+              { value: "uscs", label: "USCS" },
+              { value: "cgs", label: "CGS" },
+              { value: "custom", label: "Custom" },
+            ]}
           />
         </div>
       </div>
