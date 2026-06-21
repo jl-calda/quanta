@@ -6,6 +6,7 @@
  * scope). It is pure: the same input always yields the same output.
  */
 import { math } from "./math";
+import { normalizeRanges } from "./parse";
 import { classifyThrow } from "./errors";
 import { toDisplayUnit, SI_SYSTEM } from "./units";
 import { formatValue } from "./format";
@@ -22,7 +23,7 @@ export function evaluate(
 ): CalcResult {
   let tex = expression;
   try {
-    const node = math.parse(expression);
+    const node = math.parse(normalizeRanges(expression));
     tex = node.toTex();
     const value = node.evaluate();
     const display = toDisplayUnit(

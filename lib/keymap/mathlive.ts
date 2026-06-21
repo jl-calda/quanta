@@ -13,6 +13,7 @@
  * portable — the editor casts this onto MathLive's option types.
  */
 import type { Keymap } from "./types";
+import { OPERATOR_TEMPLATES } from "./symbols";
 
 export interface MathfieldKeybinding {
   key: string;
@@ -65,6 +66,12 @@ function commandForAction(action: string): MathfieldKeybinding["command"] | null
     case "insertGreek":
       // Switch to LaTeX command mode so the next typed name becomes a symbol.
       return ["switchMode", "latex"];
+    case "insertSummation":
+      return ["insert", OPERATOR_TEMPLATES.summation.latex];
+    case "insertProduct":
+      return ["insert", OPERATOR_TEMPLATES.product.latex];
+    case "insertIntegral":
+      return ["insert", OPERATOR_TEMPLATES.integral.latex];
     default:
       return null;
   }

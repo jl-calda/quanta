@@ -35,6 +35,61 @@ const ASSIGN_COLON = new RegExp(`^\\s*(${NAME})\\s*:(?!=)\\s*([\\s\\S]+)$`);
 /** Constructs that only appear in LaTeX, never in the engine's plain text. */
 const LATEX_SIGNAL = /[\\{}~]/;
 
+/* ------------------------------------------------------------------ *
+ * Range variables — `a..b` (and stepped `a, s .. b`) → an inclusive
+ * `__quantaRange(...)` call the engine evaluates (see ./iterators). The Mathcad
+ * `..` operator has no mathjs equivalent, so we rewrite it to a function call
+ * before parsing. Operates on a bare EXPRESSION (callers split the `name :=`
+ * prefix first), so the stepped-form anchor comma is never confused with the
+ * assignment. `..`-gated and TOTAL: returns the input unchanged when there is no
+ * top-level range, leaving any malformed `..` for the parser to flag.
+ * ------------------------------------------------------------------ */
+
+/** Index of the first top-level `..` (bracket depth 0), or -1. */
+function findTopLevelRangeOp(expr: string): number {
+  let depth = 0;
+  for (let i = 0; i < expr.length - 1; i += 1) {
+    const c = expr[i];
+    if (c === "(" || c === "[" || c === "{") depth += 1;
+    else if (c === ")" || c === "]" || c === "}") depth -= 1;
+    else if (depth === 0 && c === "." && expr[i + 1] === ".") return i;
+  }
+  return -1;
+}
+
+/** Index of the first top-level comma (bracket depth 0), or -1. */
+function findTopLevelComma(expr: string): number {
+  let depth = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i];
+    if (c === "(" || c === "[" || c === "{") depth += 1;
+    else if (c === ")" || c === "]" || c === "}") depth -= 1;
+    else if (depth === 0 && c === ",") return i;
+  }
+  return -1;
+}
+
+/** Rewrite the Mathcad `..` range operator in an expression to `__quantaRange(...)`. */
+export function normalizeRanges(expr: string): string {
+  if (!expr.includes("..")) return expr;
+  const op = findTopLevelRangeOp(expr);
+  if (op === -1) return expr;
+
+  const left = expr.slice(0, op).trim();
+  const right = normalizeRanges(expr.slice(op + 2)).trim();
+  if (!left || !right) return expr; // half-typed `..x` / `x..` — let the parser flag it
+
+  const comma = findTopLevelComma(left);
+  if (comma !== -1) {
+    const first = left.slice(0, comma).trim();
+    const second = left.slice(comma + 1).trim();
+    if (first && second) {
+      return `__quantaRange(${first}, ${right}, (${second})-(${first}))`;
+    }
+  }
+  return `__quantaRange(${left}, ${right})`;
+}
+
 /**
  * Normalize incoming source to the engine's plain-text expression form.
  *
@@ -75,7 +130,14 @@ export function collectDeps(node: MathNode): string[] {
   const calleeNames = new Set<string>();
   const boundParams = new Set<string>();
   node.traverse((n) => {
-    if (isFunctionNode(n) && n.fn?.name) calleeNames.add(n.fn.name);
+    if (isFunctionNode(n) && n.fn?.name) {
+      calleeNames.add(n.fn.name);
+      // An iterator's index is bound locally, not a worksheet dependency:
+      // `summation(i, 1, n, i^2)` depends on `n`, never `i`. The range-driven
+      // 2-arg form `summation(i, expr)` keeps `i` (it IS the range variable).
+      const bound = iteratorBoundVar(n);
+      if (bound) boundParams.add(bound);
+    }
     if (isFunctionAssignmentNode(n)) for (const p of n.params) boundParams.add(p);
   });
 
@@ -123,17 +185,33 @@ export function parseRegion(source: string): ParsedRegion {
   }
 
   try {
-    const node = math.parse(expr);
+    const node = math.parse(normalizeRanges(expr));
     return { name, node, deps: collectDeps(node) };
   } catch (error) {
     return { name, node: null, deps: [], error: classifyThrow(error) };
   }
 }
 
+/**
+ * The locally-bound index of an iterator call, or null. The index of a 4-arg
+ * `summation`/`product` (`(i, lo, hi, body)`) and of any `integral`
+ * (`(x, a, b, f)`) is bound, not a dependency. The 2-arg `summation(i, expr)`
+ * form returns null — there `i` is a real range-variable reference.
+ */
+function iteratorBoundVar(n: FunctionNodeLike): string | null {
+  const name = n.fn?.name;
+  const first = n.args?.[0];
+  if (!isSymbolNode(first)) return null;
+  if ((name === "summation" || name === "product") && n.args?.length === 4) return first.name;
+  if (name === "integral") return first.name;
+  return null;
+}
+
 /* mathjs node-type guards (its TS types don't narrow `traverse` callbacks). */
 interface FunctionNodeLike extends MathNode {
   isFunctionNode: true;
   fn: { name?: string };
+  args: MathNode[];
 }
 interface SymbolNodeLike extends MathNode {
   isSymbolNode: true;

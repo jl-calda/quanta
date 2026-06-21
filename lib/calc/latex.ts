@@ -16,7 +16,7 @@
  * best-effort string that the engine's typed error model can surface.
  */
 import { math } from "./math";
-import { splitDefinition } from "./parse";
+import { splitDefinition, normalizeRanges } from "./parse";
 
 /** Greek command names mathjs accepts as symbols (it re-renders them to TeX). */
 const GREEK = new Set([
@@ -79,6 +79,120 @@ function nextOperand(s: string, i: number): { body: string; next: number } {
   return { body: "", next: i };
 }
 
+/** Skip a `\left`/`\right` delimiter token (a command like `\|` or a single char). */
+function skipDelimiter(s: string, i: number): number {
+  const j = skipSpaces(s, i);
+  if (s[j] === "\\") {
+    const m = /^\\([a-zA-Z]+|.)/.exec(s.slice(j));
+    if (m) return j + m[0].length;
+  } else if (j < s.length) {
+    return j + 1;
+  }
+  return j;
+}
+
+/** Read a balanced `\left(…\right)` group (assumes `s[i]` begins `\left`); inner body. */
+function readLeftRight(s: string, i: number): { body: string; next: number } | null {
+  let j = skipDelimiter(s, i + "\\left".length); // past `\left` + its open delimiter
+  const start = j;
+  let depth = 1;
+  while (j < s.length) {
+    if (s.startsWith("\\left", j)) {
+      depth += 1;
+      j = skipDelimiter(s, j + "\\left".length);
+      continue;
+    }
+    if (s.startsWith("\\right", j)) {
+      const bodyEnd = j;
+      const next = skipDelimiter(s, j + "\\right".length);
+      depth -= 1;
+      if (depth === 0) return { body: s.slice(start, bodyEnd), next };
+      j = next;
+      continue;
+    }
+    if (s[j] === "\\") {
+      j += 2; // skip an escaped char / short command
+      continue;
+    }
+    j += 1;
+  }
+  return null;
+}
+
+/** The summand/integrand body: a `\left(…\right)`, `(…)`, `{…}`, or single operand. */
+function readBodyOperand(s: string, i: number): { body: string; next: number } {
+  const j = skipSpaces(s, i);
+  if (s.startsWith("\\left", j)) {
+    const lr = readLeftRight(s, j);
+    if (lr) return lr;
+  }
+  if (s[j] === "(") return readGroup(s, j, "(", ")");
+  return nextOperand(s, j);
+}
+
+/**
+ * Convert a `\sum` / `\prod` / `\int` operator (with its `_`/`^` bounds and a
+ * delimited body) to the engine's `summation` / `product` / `integral` call.
+ * Defensive — degrades to the bare body if the structure can't be read.
+ */
+function convertOperator(
+  cmd: "sum" | "prod" | "int",
+  s: string,
+  i: number,
+): { out: string; next: number } {
+  let lower = "";
+  let upper = "";
+  let j = skipSpaces(s, i);
+  for (let g = 0; g < 2; g += 1) {
+    if (s[j] === "_") {
+      const op = nextOperand(s, j + 1);
+      lower = op.body;
+      j = skipSpaces(s, op.next);
+    } else if (s[j] === "^") {
+      const op = nextOperand(s, j + 1);
+      upper = op.body;
+      j = skipSpaces(s, op.next);
+    } else break;
+  }
+  const bodyOp = readBodyOperand(s, j);
+  const body = convert(bodyOp.body);
+  let k = bodyOp.next;
+
+  if (cmd === "int") {
+    k = skipSpaces(s, k);
+    const spacer = /^\\[,;: ]/.exec(s.slice(k)); // a `\,` thin space before `d`
+    if (spacer) k = skipSpaces(s, k + spacer[0].length);
+    let dvar = "x";
+    const mathrmD = /^\\mathrm\s*\{d\}/.exec(s.slice(k)); // `\mathrm{d}`
+    let hasD = false;
+    if (mathrmD) {
+      k += mathrmD[0].length;
+      hasD = true;
+    } else if (s[k] === "d") {
+      k += 1;
+      hasD = true;
+    }
+    if (hasD) {
+      const vop = nextOperand(s, k);
+      const v = convert(vop.body).replace(/\s+/g, "");
+      if (v) {
+        dvar = v;
+        k = vop.next;
+      }
+    }
+    return { out: `integral(${dvar},${convert(lower)},${convert(upper)},${body})`, next: k };
+  }
+
+  const fn = cmd === "sum" ? "summation" : "product";
+  const eq = lower.indexOf("=");
+  const idx = convert(eq === -1 ? lower : lower.slice(0, eq)).replace(/\s+/g, "");
+  const lo = eq === -1 ? "" : convert(lower.slice(eq + 1));
+  const hi = convert(upper);
+  if (idx && lo && hi) return { out: `${fn}(${idx},${lo},${hi},${body})`, next: k };
+  if (idx) return { out: `${fn}(${idx},${body})`, next: k };
+  return { out: body, next: k };
+}
+
 function normalizeGreek(cmd: string): string {
   // mathjs has no `varphi`/`varepsilon` — fold the variants onto the base name.
   return cmd.replace(/^var/, "");
@@ -118,6 +232,10 @@ function convert(s: string): string {
         const inner = convert(g.body);
         out += index !== null ? `nthRoot(${inner}, ${convert(index)})` : `sqrt(${inner})`;
         i = g.next;
+      } else if (cmd === "sum" || cmd === "prod" || cmd === "int") {
+        const op = convertOperator(cmd, s, i);
+        out += op.out;
+        i = op.next;
       } else if (WRAPPERS.has(cmd)) {
         const g = nextOperand(s, i);
         out += convert(g.body);
@@ -241,7 +359,7 @@ export function sourceToLatex(source: string): string {
   if (!expr.trim()) return trimmed; // half-typed (`x :=`) — seed verbatim
   let rhs: string;
   try {
-    rhs = math.parse(expr).toTex();
+    rhs = math.parse(normalizeRanges(expr)).toTex();
   } catch {
     return trimmed;
   }
@@ -253,7 +371,7 @@ export function exprToLatex(src: string): string {
   const t = src.trim();
   if (!t) return "";
   try {
-    return math.parse(t).toTex();
+    return math.parse(normalizeRanges(t)).toTex();
   } catch {
     return t;
   }

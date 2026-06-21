@@ -111,6 +111,90 @@ export const FUNCTIONS: FunctionRef[] = [
   F({ id: "abs", cat: "mathtrig", name: "abs", sig: "abs(x)", tag: "Math & trig", desc: "Absolute value (magnitude) of a real number.", params: [["x", "real", "Input value."]], units: "Keeps the unit of the argument.", related: ["sqrt", "max"], insert: "abs(x)" }),
   F({ id: "sin", cat: "mathtrig", name: "sin", sig: "sin(θ)", tag: "Math & trig", desc: "Sine of an angle.", params: [["θ", "angle", "Angle in radians (or a unit-tagged angle)."]], units: "Argument is an angle; the result is dimensionless.", related: ["abs", "sqrt"], insert: "sin(theta)" }),
 
+  /* ---- range variables & iterator operators ---- */
+  F({
+    id: "summation",
+    cat: "mathtrig",
+    name: "summation",
+    sig: "summation(i, lo, hi, expr) · summation(i, expr)",
+    tag: "Math & trig",
+    desc: "The ∑ operator: sums an expression over an index i from lo to hi, or over a range variable.",
+    params: [
+      ["i", "index", "The summation index, bound locally to each step."],
+      ["lo, hi", "integer", "Inclusive lower and upper bounds (4-argument form)."],
+      ["expr", "real | quantity", "Term evaluated for each i and added up."],
+    ],
+    units: "Terms must share a dimension; the sum keeps it. Pair with a range variable i := 1..n for the two-argument form.",
+    related: ["product", "integral", "mean"],
+    insert: "summation(i, 1, n, expr)",
+    example: {
+      caption: "Summing the first five squares, ∑ k² for k = 1…5:",
+      regions: ["S := summation(k, 1, 5, k^2)"],
+    },
+  }),
+  F({
+    id: "product",
+    cat: "mathtrig",
+    name: "product",
+    sig: "product(i, lo, hi, expr) · product(i, expr)",
+    tag: "Math & trig",
+    desc: "The ∏ operator: multiplies an expression over an index i from lo to hi, or over a range variable.",
+    params: [
+      ["i", "index", "The product index, bound locally to each step."],
+      ["lo, hi", "integer", "Inclusive lower and upper bounds (4-argument form)."],
+      ["expr", "real | quantity", "Factor evaluated for each i and multiplied together."],
+    ],
+    units: "Each factor multiplies its unit into the result. Pair with a range variable i := 1..n for the two-argument form.",
+    related: ["summation", "integral"],
+    insert: "product(i, 1, n, expr)",
+    example: {
+      caption: "5! as a running product, ∏ k for k = 1…5:",
+      regions: ["fact5 := product(k, 1, 5, k)"],
+    },
+  }),
+  F({
+    id: "integral",
+    cat: "mathtrig",
+    name: "integral",
+    sig: "integral(x, a, b, f)",
+    tag: "Math & trig",
+    desc: "The ∫ operator: the definite integral of f with respect to x from a to b, evaluated numerically.",
+    params: [
+      ["x", "variable", "The variable of integration, bound locally."],
+      ["a, b", "real | quantity", "Lower and upper limits (may carry a unit)."],
+      ["f", "real | quantity", "The integrand, evaluated across the interval."],
+    ],
+    units: "Unit-aware: the result carries unit(f)·unit(x), so ∫ of a force over a length gives a moment/work.",
+    related: ["summation", "product"],
+    insert: "integral(x, a, b, f)",
+    example: {
+      caption: "Work done by a force that ramps with distance, ∫₀^2m x·(1 N/m) dx:",
+      regions: ["W := integral(x, 0 m, 2 m, x * 1 N / m)"],
+      units: ["N*m"],
+      format: { decimals: 2, trailingZeros: true },
+    },
+  }),
+  F({
+    id: "range",
+    cat: "mathtrig",
+    name: "range (..)",
+    sig: "i := first .. last · i := first, second .. last",
+    tag: "Math & trig",
+    desc: "A range variable: an inclusive sequence of values that drives summations, products, and tables.",
+    params: [
+      ["first", "real | quantity", "The first value in the sequence."],
+      ["second", "real | quantity", "Optional second value — its gap from first sets the step."],
+      ["last", "real | quantity", "The inclusive final value."],
+    ],
+    units: "Bounds may carry a unit (0 m .. 5 m); every value in the range then carries it.",
+    related: ["summation", "product"],
+    insert: "i := 1..n",
+    example: {
+      caption: "A range variable from 1 to n, ready to drive a summation:",
+      regions: ["n := 5", "i := 1..n"],
+    },
+  }),
+
   /* ---- statistics ---- */
   F({
     id: "mean",

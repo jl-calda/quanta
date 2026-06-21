@@ -2,6 +2,45 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Range variables & ∑ / ∏ / ∫ operators (Phase 2, Func §2 / Matrix Part A)
+
+- **New function names, NOT overrides of mathjs `sum`/`prod`.** The live operators
+  register as `summation`, `product`, `integral` (+ internal `__quantaRange`) on the
+  shared instance (`/lib/calc/iterators.ts`, registered from `math.ts` like
+  `registerMatrixFunctions`). Overriding the builtins was the first plan, but a 4-arg
+  iterated form collides with table aggregates (`=sum(A2,A3,A4,A5)` parses to a 4-arg
+  call whose first arg is a symbol) and risks statistics that route through them. New
+  names keep `sum`/`prod`/`mean`/`std` 100% intact; the ribbon's ∑/∏ buttons and the
+  `latexToSource` reader emit the new names, so the UI is unaffected.
+- **Two summation/product forms, dispatched on the unevaluated arg nodes:**
+  `summation(i, lo, hi, body)` (inline bounds) and `summation(i, body)` where `i` is a
+  range variable (a vector in scope). rawArgs functions, so the **unmodified** recalc
+  engine evaluates them via `node.evaluate(scope)`. The index is bound in a private
+  window of `scope` and restored in a `finally`, so it never leaks to other regions.
+  Loops are hard-bounded (`MAX_ITERATIONS`), like `program.ts`.
+- **`integral` is the DEFINITE, NUMERIC integral** (composite Simpson, N=1000), pure &
+  synchronous like `solve.ts` — kept out of the worker because it's light and
+  deterministic. The symbolic indefinite `integrate` stays on the SymPy path
+  (`symbolic.ts` CAS_FUNCTIONS, untouched). Both `integral` and the iterators are
+  unit-aware: a sum keeps its terms' unit; `integral(x,a,b,f)` yields unit(f)·unit(x).
+- **Range syntax `a..b` (and stepped `a, s .. b`) → `__quantaRange(...)`** via a pure,
+  `..`-gated, total `normalizeRanges()` in `parse.ts`, applied on the bare expression in
+  `parseRegion` and the `latex.ts`/`evaluate.ts` parse paths. The stored `region.source`
+  keeps the `..` form (`latexToSource` is NOT changed to expand it). `__quantaRange`
+  caps its length by `MAX_ITERATIONS`.
+- **`collectDeps` excludes an iterator's bound index** — arg0 of a 4-arg
+  `summation`/`product` and of any `integral`. The 2-arg `summation(i, body)` keeps `i`
+  (it IS the range-variable dependency). (parse.ts, not graph/recalc core.)
+- **Rendering rides a function-level `.toTex`** attached at registration, so recalc's
+  bare `node.toTex()` (built OUTSIDE its try/catch) renders `\sum`/`\prod`/`\int`/`..`
+  with no recalc change. Every handler is TOTAL (never throws) — a throwing toTex would
+  crash the whole sheet sweep — degrading to `\mathrm{name}(args)` for odd shapes.
+- **Known limitation (cosmetic):** if a worksheet variable shares a name with a 4-arg
+  iterator's index (e.g. a region `i := 3` and `summation(i, 1, n, i^2)`), the
+  show-steps middle line substitutes that `i` (the computed result is still correct —
+  the evaluator shadows `i` locally). Mathcad avoids this because its range variable IS
+  the worksheet variable; our 4-arg form invents a local binder show-steps can't see.
+
 ## Programming operators — program blocks (Phase 2, Func §2 / Matrix B8)
 
 - **A new `program` region type, not a new entity/table.** Programs live in the
