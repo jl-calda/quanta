@@ -8,9 +8,9 @@ import type { KeyBinding, Keymap, KeymapId } from "./types";
  */
 const operatorBindings: KeyBinding[] = [
   { action: "insertGreek", label: "Convert letters to Greek — p then Ctrl+G makes π", keys: ["Ctrl", "+", "G"], group: "Operators & Greek", scope: "math", chord: "Ctrl+G" },
-  { action: "insertSummation", label: "Insert summation", keys: ["Ctrl", "+", "Shift", "+", "S"], group: "Operators & Greek", scope: "math" },
-  { action: "insertProduct", label: "Insert product", keys: ["Ctrl", "+", "Shift", "+", "P"], group: "Operators & Greek", scope: "math" },
-  { action: "insertIntegral", label: "Insert integral", keys: ["Ctrl", "+", "Shift", "+", "I"], group: "Operators & Greek", scope: "math" },
+  { action: "insertSummation", label: "Insert summation", keys: ["Ctrl", "+", "Shift", "+", "S"], group: "Operators & Greek", scope: "math", chord: "Ctrl+Shift+S" },
+  { action: "insertProduct", label: "Insert product", keys: ["Ctrl", "+", "Shift", "+", "P"], group: "Operators & Greek", scope: "math", chord: "Ctrl+Shift+P" },
+  { action: "insertIntegral", label: "Insert integral", keys: ["Ctrl", "+", "Shift", "+", "I"], group: "Operators & Greek", scope: "math", chord: "Ctrl+Shift+I" },
   { action: "insertDerivative", label: "Insert derivative", keys: ["Ctrl", "+", "/"], group: "Operators & Greek", scope: "math" },
   { action: "insertPartial", label: "Insert partial derivative", keys: ["Ctrl", "+", "Shift", "+", "D"], group: "Operators & Greek", scope: "math" },
   { action: "insertLimit", label: "Insert limit", keys: ["Ctrl", "+", "L"], group: "Operators & Greek", scope: "math" },

@@ -140,3 +140,33 @@ describe("normalizeSource LaTeX detection", () => {
     expect(normalizeSource("x^{2}")).toBe("x^2");
   });
 });
+
+describe("iterator operators ⇄ source", () => {
+  it("reads a MathLive summation into a summation() call", () => {
+    expect(latexToSource("\\sum_{i=1}^{n}\\left(i^2\\right)")).toBe("summation(i,1,n,i^2)");
+    // the engine's own toTex spacing (`i = 1`) round-trips too
+    expect(latexToSource("\\sum_{i = 1}^{n}\\left({i}^{2}\\right)")).toBe("summation(i,1,n,i^2)");
+  });
+
+  it("reads a product", () => {
+    expect(latexToSource("\\prod_{i=1}^{5}\\left(i\\right)")).toBe("product(i,1,5,i)");
+  });
+
+  it("reads a definite integral, taking the variable from the differential", () => {
+    expect(latexToSource("\\int_{0}^{1}\\left(x^2\\right)\\,dx")).toBe("integral(x,0,1,x^2)");
+    expect(latexToSource("\\int_{0}^{L}\\left(w \\cdot x\\right)\\,\\mathrm{d}t")).toBe(
+      "integral(t,0,L,w*x)",
+    );
+  });
+
+  it("renders operators back to ∑ / ∏ / ∫ notation", () => {
+    expect(sourceToLatex("S := summation(i, 1, n, i^2)")).toContain("\\sum");
+    expect(sourceToLatex("P := product(i, 1, 5, i)")).toContain("\\prod");
+    expect(sourceToLatex("A := integral(x, 0, 1, x^2)")).toContain("\\int");
+  });
+
+  it("keeps the `..` range form in source (round-trips through the editor seed)", () => {
+    expect(latexToSource("1..n")).toBe("1..n");
+    expect(sourceToLatex("i := 1..n")).toContain("..");
+  });
+});

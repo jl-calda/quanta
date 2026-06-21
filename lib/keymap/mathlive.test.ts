@@ -23,6 +23,15 @@ describe("mathfieldOptionsFromKeymap — Mathcad keymap", () => {
   it("binds Ctrl+G for Greek entry", () => {
     expect(config.keybindings.map((k) => k.key)).toContain("ctrl+g");
   });
+
+  it("binds the ∑ / ∏ / ∫ operator shortcuts to insert their templates", () => {
+    const keys = config.keybindings.map((k) => k.key);
+    expect(keys).toContain("ctrl+shift+s");
+    expect(keys).toContain("ctrl+shift+p");
+    expect(keys).toContain("ctrl+shift+i");
+    const sum = config.keybindings.find((k) => k.key === "ctrl+shift+s")!;
+    expect(sum.command).toEqual(["insert", expect.stringContaining("\\sum")]);
+  });
 });
 
 describe("mathfieldOptionsFromKeymap — Default keymap", () => {
