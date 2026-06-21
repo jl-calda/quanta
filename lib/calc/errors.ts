@@ -100,6 +100,14 @@ export function classifyThrow(error: unknown): CalcError {
     );
   }
 
+  if (lower.includes("must be square")) {
+    return makeError(
+      "domain",
+      "This needs a square matrix.",
+      "Check that the matrix has the same number of rows and columns.",
+    );
+  }
+
   if (
     lower.includes("singular") ||
     lower.includes("not invertible") ||
