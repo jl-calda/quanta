@@ -14,6 +14,7 @@ import { create, all } from "mathjs";
 import { registerMatrixFunctions } from "./matrix";
 import { registerProgramDispatcher } from "./program-registry";
 import { registerIteratorFunctions } from "./iterators";
+import { registerLibraryFunctions } from "./functions";
 
 export const math = create(all, {});
 
@@ -33,6 +34,13 @@ registerIteratorFunctions(math);
 // Registered once here so a program region folded into the worksheet as a
 // synthetic function-assignment is callable through the unmodified recalc engine.
 registerProgramDispatcher(math);
+
+// Engine-native function library — the math/statistical/logical/text/date
+// families under Excel-style UPPERCASE names (see ./functions). Registered once,
+// here, so the unmodified recalc engine resolves them in worksheet regions AND
+// table cells through the one shared instance. functions/ takes the instance as
+// an argument (no static import back to ./math) to stay cycle-free.
+registerLibraryFunctions(math);
 
 export type MathNode = import("mathjs").MathNode;
 export type Unit = import("mathjs").Unit;

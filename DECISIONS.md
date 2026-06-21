@@ -2,6 +2,52 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Function-library expansion — math / statistical / logical / text / date (Phase 2)
+
+- **Registered engine-wide on the shared mathjs instance, NOT in `table.ts`.** The
+  refinement card said "engine-native in `table.ts`", but `table.ts` is the
+  spreadsheet-cell *evaluator*; the real function library is the single shared mathjs
+  instance in `lib/calc/math.ts`. The new families register there via
+  `registerLibraryFunctions(math)` (`lib/calc/functions/index.ts`), called alongside
+  `registerMatrixFunctions` / `registerIteratorFunctions`. One registration reaches
+  **both** worksheet math regions and table cells (both evaluate against the one shared
+  instance), so they are deliberately **not** also injected into the table scope — no
+  duplicate wiring. **`graph.ts` and `recalc.ts` are untouched.**
+- **UPPERCASE Excel-style names (naming convention).** `ROUNDUP`, `MROUND`, `INT`,
+  `SUMSQ`, `SUMPRODUCT`; `COUNT(A)`, `COUNTIF`, `SUMIF`, `AVERAGEIF`, `GEOMEAN`,
+  `HARMEAN`, `LARGE`, `SMALL`; `IF`, `IFS`, `SWITCH`, `IFERROR`, `IFNA`, `AND`, `OR`,
+  `NOT`, `XOR`; `LEN`, `LEFT`, `RIGHT`, `MID`, `UPPER`, `LOWER`, `PROPER`, `TRIM`,
+  `SUBSTITUTE`, `FIND`, `SEARCH`, `CONCAT`, `TEXTJOIN`, `REPT`, `VALUE`; `DATE`, `YEAR`,
+  `MONTH`, `DAY`, `WEEKDAY`, `EDATE`, `EOMONTH`, `DAYS`, `DATEDIF`, `DATEVALUE`.
+  Uppercase keeps mathjs's lowercase builtins (`round`, `mod`, `and`, `or`, `concat` =
+  matrix concat, `string`, `format`, `number`, `mean`, `median`, `std`, …) 100% intact
+  — same "new names, not overrides" rule the ∑/∏/∫ operators followed.
+- **Lazy logicals via `rawArgs`.** `IF / IFS / SWITCH / IFERROR / IFNA` set
+  `fn.rawArgs = true` and evaluate their argument nodes lazily against the call scope
+  (`a[2]`) — the proven `iterators.ts` mechanism. Laziness lets the untaken branch stay
+  uncomputed and lets `IFERROR`/`IFNA` catch a throw (unit mismatch, undefined name).
+  No custom `.toTex` — the default FunctionNode rendering is total, so it can't crash
+  recalc's out-of-try `node.toTex()`.
+- **Unit-aware where meaningful; text/date dimensionless.** Math rounding rounds the
+  magnitude and reattaches the unit (`ROUNDUP(2.3 mm,0) → 3 mm`); `SUMSQ`/`SUMPRODUCT`
+  and `SUMIF`/`AVERAGEIF`/`GEOMEAN`/`HARMEAN` flow units through mathjs arithmetic;
+  `COUNTIF`/`SUMIF` compare each value's magnitude (a uniform-unit range compares
+  consistently). Text coerces args to strings (locale-INDEPENDENT casing) and returns
+  plain strings.
+- **Dates are pure serial numbers — no `TODAY()`/`NOW()`.** Dates are days since
+  1899-12-30 UTC, computed only from explicit args via `Date.UTC` (`shared.ts`). A
+  clock-reading `TODAY`/`NOW` is deliberately omitted: it would break the engine's
+  determinism guarantee and its purity tests (`recalc.test.ts`).
+- **Cycle-free module shape.** `lib/calc/functions/{shared,math,statistical,logical,
+  text,date,index}.ts`. Family factories take the `math` instance as an argument (never
+  `import ../math`); `shared.ts` is dependency-free of `math` (duck-typed `Unit`
+  detection) since it's transitively imported by `math.ts`.
+- **Reference catalog: representative, not exhaustive.** `reference/functions.ts` gained
+  grouped entries (sig/params/units/insert, evaluable worked examples) whose names match
+  the engine registration exactly — one source of truth for search/insert/eval. Added a
+  `date` ("Date & time") category to the reference tree. Long-tail coverage is left to
+  the separate "Reference: coverage, search & inline docs" row.
+
 ## Complex numbers, result formatting & user-defined units (Phase 2, Func §2 / §2.4)
 
 - **Complex results render (rect / polar).** `formatValue` now formats mathjs
