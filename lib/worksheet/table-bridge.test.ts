@@ -140,6 +140,31 @@ describe("settleTables (scope-bridge)", () => {
     expect(passes()).toBeLessThanOrEqual(9);
   });
 
+  it("folds a SPILLED named range back so a downstream region reads it", () => {
+    // The cell `=[10,20,30]` spills down into A2:A4; the named range `vec` exports the
+    // spilled column, which the math region below sums — proving spill → rangeValue →
+    // exports → synthetic `vec := [10, 20, 30]` → the unmodified engine resolves it.
+    const content = doc([
+      {
+        id: "t1",
+        type: "table",
+        indent: 0,
+        ranges: { vec: "A2:A4" },
+        columns: [{ key: "a", label: "V" }],
+        rows: [["=[10, 20, 30]"], [""], [""]],
+      },
+      { id: "total", type: "math", indent: 0, source: "total := sum(vec)" },
+    ]);
+    const { engine, passes } = countingEngine();
+    const { sheet, tables } = settleTables(content, engine);
+
+    expect(tables.get("t1")!.cells[1][0].kind).toBe("spill"); // A3 was spilled into
+    const total = sheet.regions.find((r) => r.name === "total");
+    expect(total?.error).toBeUndefined();
+    expect(total?.formatted).toMatch(/^60\b/);
+    expect(passes()).toBeLessThanOrEqual(9);
+  });
+
   it("samples a plot against table-exported ranges + a math definition", () => {
     // A table exports `ids` and `forces`; a plot binds x→ids, y→forces·gamma — so
     // the plot reads both a table export and a worksheet name from the settled scope.

@@ -25,7 +25,7 @@ import { collectDeps } from "./parse";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 import { formatValue } from "./format";
 import { applyConditional } from "./conditional";
-import { classifyThrow, makeError, cycle as cycleError, blockedBy } from "./errors";
+import { classifyThrow, makeError, cycle as cycleError, blockedBy, spillError } from "./errors";
 import { LOOKUP_FUNCTIONS } from "./lookups";
 import type { CalcError, CondRule, CondStyle, ResultFormat, UnitSystem } from "./types";
 
@@ -53,7 +53,11 @@ export interface TableSpec {
   ranges?: Record<string, string>;
 }
 
-export type TableCellKind = "literal" | "formula" | "empty";
+/**
+ * `spill` is a cell that an array formula filled — the cell's own source is empty,
+ * its value is one element of a neighbour's spilled result.
+ */
+export type TableCellKind = "literal" | "formula" | "empty" | "spill";
 
 export interface TableCellResult {
   /** Raw evaluated value (number, Unit, string, bool); `undefined` on error/empty. */
@@ -63,6 +67,10 @@ export interface TableCellResult {
   style?: CondStyle;
   error?: CalcError;
   kind: TableCellKind;
+  /** Set on the anchor of an array formula: the rectangle (incl. anchor) it fills. */
+  spill?: { rows: number; cols: number };
+  /** Set on a spilled cell: the A1 address of the array formula it came from. */
+  spilledFrom?: string;
 }
 
 export interface TableResult {
@@ -259,14 +267,18 @@ export function evaluateTable(
     parsed.push(row);
   }
 
-  // Resolved raw values, keyed by linear index (literals available immediately).
-  const values = new Map<number, unknown>();
+  // Resolved raw values, keyed by linear index. Literals are constant; `values` is
+  // re-seeded from them at the start of each spill pass. It is reassigned (not mutated
+  // in place) each pass, so the `rangeValue`/`gridValue` closures below always read the
+  // current pass's map.
+  const literalValues = new Map<number, unknown>();
   for (let r = 0; r < nRows; r += 1) {
     for (let c = 0; c < nCols; c += 1) {
       const p = parsed[r][c];
-      if (p.kind === "literal" && !p.literal?.error) values.set(idx(r, c), p.literal!.value);
+      if (p.kind === "literal" && !p.literal?.error) literalValues.set(idx(r, c), p.literal!.value);
     }
   }
+  let values = new Map<number, unknown>(literalValues);
 
   // Range resolution (used both for dependency edges and for the eval scope).
   const rangeValue = (range: string): unknown => {
@@ -321,49 +333,115 @@ export function evaluateTable(
     }
   }
 
-  // 3) Kahn topological order over formula cells (stable, index tie-break); the
-  //    rest are cyclic. A cell that (transitively) references itself never readies.
-  const { order, cyclic } = topoOrder(formulaIdx, edges);
-
-  // 4) Evaluate formula cells in order, maintaining the resolved value map.
-  const errored = new Set<number>();
-  const cellError = new Map<number, CalcError>();
-  for (const self of order) {
-    const r = Math.floor(self / nCols);
-    const c = self % nCols;
-    const p = parsed[r][c];
-    if (p.parseError) {
-      errored.add(self);
-      cellError.set(self, p.parseError);
-      continue;
-    }
-    // Blocked when a dependency cell errored.
-    const blocker = [...(edges.get(self) ?? [])].find((d) => errored.has(d));
-    if (blocker !== undefined) {
-      errored.add(self);
-      cellError.set(self, blockedBy(cellAddress(Math.floor(blocker / nCols), blocker % nCols)));
-      continue;
-    }
-    try {
-      const scope: Record<string, unknown> = { ...externalScope, ...LOOKUP_FUNCTIONS };
-      for (const dep of p.deps ?? []) {
-        if (p.placeholders?.has(dep)) scope[dep] = rangeValue(p.placeholders.get(dep)!);
-        else if (A1_CELL.test(dep)) {
-          const a1 = parseA1(dep);
-          if (a1 && inGrid(a1.r, a1.c)) scope[dep] = values.get(idx(a1.r, a1.c));
-        } else if (table.ranges && dep in table.ranges) scope[dep] = rangeValue(table.ranges[dep]);
-        else if (table.name && dep === table.name) scope[dep] = gridValue();
+  // 3) Evaluate formula cells in topological order, spilling array results across
+  //    cells. A spilled-into cell is NOT a formula cell, so a downstream formula that
+  //    reads a non-anchor spill cell has its edge dropped from the topo order and could
+  //    run before the anchor. We resolve this with a bounded geometry-fixpoint: pass 0
+  //    runs the static order to LEARN each spill's shape; subsequent passes redirect
+  //    every edge that points at a spill cell to its anchor (so readers order after the
+  //    anchor) and re-run, until the spill geometry stops changing (or the cap /
+  //    oscillation guard trips). The graph core (`graph.ts`/`recalc.ts`) stays untouched.
+  const evalInOrder = (order: number[], cyclic: Set<number>): PassResult => {
+    values = new Map(literalValues);
+    const errored = new Set<number>();
+    const cellError = new Map<number, CalcError>();
+    const anchorSpill = new Map<number, SpillRect>();
+    const spillOwner = new Map<number, number>(); // spilled cell idx → its anchor idx
+    const claimed = new Map<number, number>(); // spill target idx → claiming anchor idx
+    for (const self of order) {
+      const r = Math.floor(self / nCols);
+      const c = self % nCols;
+      const p = parsed[r][c];
+      if (p.parseError) {
+        errored.add(self);
+        cellError.set(self, p.parseError);
+        continue;
       }
-      values.set(self, p.node!.evaluate(scope));
-    } catch (error) {
-      errored.add(self);
-      cellError.set(self, classifyThrow(error));
+      // Blocked when a dependency cell errored.
+      const blocker = [...(edges.get(self) ?? [])].find((d) => errored.has(d));
+      if (blocker !== undefined) {
+        errored.add(self);
+        cellError.set(self, blockedBy(cellAddress(Math.floor(blocker / nCols), blocker % nCols)));
+        continue;
+      }
+      let result: unknown;
+      try {
+        const scope: Record<string, unknown> = { ...externalScope, ...LOOKUP_FUNCTIONS };
+        for (const dep of p.deps ?? []) {
+          if (p.placeholders?.has(dep)) scope[dep] = rangeValue(p.placeholders.get(dep)!);
+          else if (A1_CELL.test(dep)) {
+            const a1 = parseA1(dep);
+            if (a1 && inGrid(a1.r, a1.c)) scope[dep] = values.get(idx(a1.r, a1.c));
+          } else if (table.ranges && dep in table.ranges) scope[dep] = rangeValue(table.ranges[dep]);
+          else if (table.name && dep === table.name) scope[dep] = gridValue();
+        }
+        result = p.node!.evaluate(scope);
+      } catch (error) {
+        errored.add(self);
+        cellError.set(self, classifyThrow(error));
+        continue;
+      }
+      // A non-array result occupies just its own cell, exactly as before.
+      const shape = spillShape(result);
+      if (!shape) {
+        values.set(self, result);
+        continue;
+      }
+      // Place the array: the anchor keeps the top-left element; every other element
+      // must claim an EMPTY, in-grid, un-claimed neighbour, else the whole spill is
+      // blocked (#SPILL!, no partial write — like a spreadsheet).
+      const targets: { idx: number; value: unknown }[] = [];
+      let blocked: CalcError | undefined;
+      for (let i = 0; i < shape.rows && !blocked; i += 1) {
+        for (let j = 0; j < shape.cols; j += 1) {
+          if (i === 0 && j === 0) continue;
+          const tr = r + i;
+          const tc = c + j;
+          if (!inGrid(tr, tc)) {
+            blocked = spillError("out-of-grid", cellAddress(tr, tc));
+            break;
+          }
+          const tIdx = idx(tr, tc);
+          if (parsed[tr][tc].kind !== "empty" || claimed.has(tIdx)) {
+            blocked = spillError("blocked", cellAddress(tr, tc));
+            break;
+          }
+          targets.push({ idx: tIdx, value: shape.grid[i][j] });
+        }
+      }
+      if (blocked) {
+        errored.add(self);
+        cellError.set(self, blocked);
+        continue;
+      }
+      values.set(self, shape.grid[0][0]);
+      anchorSpill.set(self, { rows: shape.rows, cols: shape.cols });
+      for (const t of targets) {
+        values.set(t.idx, t.value);
+        spillOwner.set(t.idx, self);
+        claimed.set(t.idx, self);
+      }
     }
+    for (const self of cyclic) {
+      errored.add(self);
+      cellError.set(self, cycleErrorFor(self, edges, nCols));
+    }
+    return { values, errored, cellError, anchorSpill, spillOwner };
+  };
+
+  const base = topoOrder(formulaIdx, edges);
+  let pass = evalInOrder(base.order, base.cyclic);
+  let geomSig = spillSignature(pass.anchorSpill, pass.cellError);
+  const seen = new Set<string>([geomSig]);
+  for (let i = 1; i < MAX_SPILL_PASSES && pass.anchorSpill.size > 0; i += 1) {
+    const reordered = topoOrder(formulaIdx, augmentEdges(edges, pass.spillOwner));
+    pass = evalInOrder(reordered.order, reordered.cyclic);
+    const sig = spillSignature(pass.anchorSpill, pass.cellError);
+    if (sig === geomSig || seen.has(sig)) break; // fixpoint or oscillation guard
+    seen.add(sig);
+    geomSig = sig;
   }
-  for (const self of cyclic) {
-    errored.add(self);
-    cellError.set(self, cycleErrorFor(self, edges, nCols));
-  }
+  const { cellError, anchorSpill, spillOwner } = pass;
 
   // 5) Build per-cell results (display + conditional), reusing the engine helpers.
   const cells: TableCellResult[][] = [];
@@ -373,6 +451,27 @@ export function evaluateTable(
     for (let c = 0; c < nCols; c += 1) {
       const self = idx(r, c);
       const p = parsed[r][c];
+      // A cell an array formula spilled into: its source is empty, its value is one
+      // element of the anchor's result — displayed (and conditionally styled) in THIS
+      // column, so a 12 kN element in a kN column reads as "12".
+      if (p.kind === "empty" && spillOwner.has(self)) {
+        const anchor = spillOwner.get(self)!;
+        const value = values.get(self);
+        try {
+          const { formatted, displayValue } = displayCell(value, col(c), system);
+          row.push({
+            value,
+            formatted,
+            style: applyConditional(displayValue, col(c)?.conditional),
+            kind: "spill",
+            spilledFrom: cellAddress(Math.floor(anchor / nCols), anchor % nCols),
+          });
+        } catch (error) {
+          errorCount += 1;
+          row.push({ value: undefined, formatted: "", error: classifyThrow(error), kind: "spill" });
+        }
+        continue;
+      }
       const err = cellError.get(self) ?? p.literal?.error;
       if (p.kind === "empty") {
         row.push({ value: undefined, formatted: "", kind: "empty" });
@@ -386,12 +485,15 @@ export function evaluateTable(
       const value = values.get(self);
       try {
         const { formatted, displayValue } = displayCell(value, col(c), system);
-        row.push({
+        const cell: TableCellResult = {
           value,
           formatted,
           style: applyConditional(displayValue, col(c)?.conditional),
           kind: p.kind,
-        });
+        };
+        const span = anchorSpill.get(self);
+        if (span) cell.spill = span;
+        row.push(cell);
       } catch (error) {
         errorCount += 1;
         row.push({ value: undefined, formatted: "", error: classifyThrow(error), kind: p.kind });
@@ -409,6 +511,95 @@ export function evaluateTable(
   }
 
   return { cells, exports, errorCount };
+}
+
+/* ------------------------------------------------------------------ *
+ * Array-formula spill (pure; bounded geometry-fixpoint, no graph changes)
+ * ------------------------------------------------------------------ */
+
+/** Hard cap on spill re-passes — also the deepest chain of spill-reads-spill. */
+const MAX_SPILL_PASSES = 16;
+
+interface SpillRect {
+  rows: number;
+  cols: number;
+}
+
+interface SpillShape extends SpillRect {
+  /** Row-major elements; `grid[0][0]` stays in the anchor cell. */
+  grid: unknown[][];
+}
+
+/** One spill evaluation pass over the grid (re-run as geometry settles). */
+interface PassResult {
+  values: Map<number, unknown>;
+  errored: Set<number>;
+  cellError: Map<number, CalcError>;
+  anchorSpill: Map<number, SpillRect>;
+  spillOwner: Map<number, number>;
+}
+
+/**
+ * The spill footprint of an evaluated value, or null when it shouldn't spill (a
+ * scalar, a Unit, an empty or 1×1 array). `isUnit` is checked FIRST so a unit value
+ * (which is an object, and a unit matrix passes `isMatrix`) never spills. A 1-D
+ * vector spills DOWN as a column; a 2-D matrix spills rows×cols.
+ */
+function spillShape(value: unknown): SpillShape | null {
+  if (isUnit(value)) return null;
+  let arr: unknown[];
+  if (math.isMatrix(value)) arr = (value as { toArray(): unknown[] }).toArray();
+  else if (Array.isArray(value)) arr = value;
+  else return null;
+  if (arr.length === 0) return null;
+  if (arr.every((el) => Array.isArray(el))) {
+    const grid = arr as unknown[][];
+    const rows = grid.length;
+    const cols = grid.reduce((m, r) => Math.max(m, r.length), 0);
+    if (rows * cols <= 1) return null;
+    // mathjs matrices are rectangular; pad any ragged literal row so indexing is safe.
+    const norm = grid.map((r) => {
+      const out = r.slice();
+      while (out.length < cols) out.push(undefined);
+      return out;
+    });
+    return { rows, cols, grid: norm };
+  }
+  if (arr.length <= 1) return null;
+  return { rows: arr.length, cols: 1, grid: arr.map((el) => [el]) };
+}
+
+/**
+ * Redirect every edge that points at a spilled cell to that cell's anchor (which IS a
+ * formula cell, so it survives the topo filter). This is what orders a downstream
+ * formula AFTER the array formula it reads through a spill cell.
+ */
+function augmentEdges(
+  edges: Map<number, Set<number>>,
+  spillOwner: Map<number, number>,
+): Map<number, Set<number>> {
+  if (spillOwner.size === 0) return edges;
+  const out = new Map<number, Set<number>>();
+  for (const [self, deps] of edges) {
+    const set = new Set<number>();
+    for (const d of deps) set.add(spillOwner.get(d) ?? d);
+    out.set(self, set);
+  }
+  return out;
+}
+
+/**
+ * A compact, deterministic signature of the pass's spill GEOMETRY (anchor footprints +
+ * blocked anchors). The fixpoint settles when geometry stops changing; comparing only
+ * geometry — not every value — keeps the guard cheap and convergence fast.
+ */
+function spillSignature(
+  anchorSpill: Map<number, SpillRect>,
+  cellError: Map<number, CalcError>,
+): string {
+  const anchors = [...anchorSpill.entries()].map(([i, g]) => `${i}:${g.rows}x${g.cols}`).sort();
+  const blocked = [...cellError.entries()].filter(([, e]) => e.kind === "spill").map(([i]) => `!${i}`).sort();
+  return [...anchors, ...blocked].join("|");
 }
 
 /* ------------------------------------------------------------------ *

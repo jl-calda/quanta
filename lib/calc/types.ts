@@ -18,7 +18,8 @@ export type CalcErrorKind =
   | "parse"
   | "domain"
   | "singular"
-  | "no-solution";
+  | "no-solution"
+  | "spill";
 
 export interface CalcError {
   kind: CalcErrorKind;
