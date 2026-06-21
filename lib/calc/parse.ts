@@ -63,22 +63,27 @@ export function splitDefinition(
 
 /**
  * Collect every variable name an AST references, excluding only function callees
- * (`sqrt`, `max`). Unit literals (`kN`, `mm`) are intentionally KEPT here: many
- * single letters are also mathjs units (`b`, `h`, `t`, `g`…) but engineers use
- * them as variables, and a user-defined name must shadow a unit. The resolution
- * step ({@link filterUnitLiterals}) drops only the references that no region
- * defines AND that are valid units — those are genuine unit literals.
+ * (`sqrt`, `max`) and the bound parameters of any function definition it contains
+ * (`f(x) = …` — `x` is local, not a worksheet dependency). Unit literals (`kN`,
+ * `mm`) are intentionally KEPT here: many single letters are also mathjs units
+ * (`b`, `h`, `t`, `g`…) but engineers use them as variables, and a user-defined
+ * name must shadow a unit. The resolution step ({@link filterUnitLiterals}) drops
+ * only the references that no region defines AND that are valid units — those are
+ * genuine unit literals.
  */
 export function collectDeps(node: MathNode): string[] {
   const calleeNames = new Set<string>();
+  const boundParams = new Set<string>();
   node.traverse((n) => {
     if (isFunctionNode(n) && n.fn?.name) calleeNames.add(n.fn.name);
+    if (isFunctionAssignmentNode(n)) for (const p of n.params) boundParams.add(p);
   });
 
   const deps = new Set<string>();
   node.traverse((n) => {
     if (!isSymbolNode(n)) return;
     if (calleeNames.has(n.name)) return;
+    if (boundParams.has(n.name)) return;
     deps.add(n.name);
   });
   return [...deps];
@@ -134,9 +139,16 @@ interface SymbolNodeLike extends MathNode {
   isSymbolNode: true;
   name: string;
 }
+interface FunctionAssignmentNodeLike extends MathNode {
+  isFunctionAssignmentNode: true;
+  params: string[];
+}
 function isFunctionNode(n: MathNode): n is FunctionNodeLike {
   return (n as { isFunctionNode?: boolean }).isFunctionNode === true;
 }
 function isSymbolNode(n: MathNode): n is SymbolNodeLike {
   return (n as { isSymbolNode?: boolean }).isSymbolNode === true;
+}
+function isFunctionAssignmentNode(n: MathNode): n is FunctionAssignmentNodeLike {
+  return (n as { isFunctionAssignmentNode?: boolean }).isFunctionAssignmentNode === true;
 }

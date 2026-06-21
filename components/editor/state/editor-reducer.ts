@@ -25,6 +25,7 @@ import {
   type PlotKind,
   type PlotTrace,
   type PlotZ,
+  type ProgramStatement,
   type Region,
   type RegionType,
   type ResultFormat,
@@ -155,6 +156,9 @@ export interface RegionPatch {
   maxIter?: number;
   onNonConverge?: "error" | "last";
   ode?: OdeConfig;
+  /** Program-block fields (Functional Brief §2) — `name`/`unit` shared above. */
+  params?: string[];
+  body?: ProgramStatement[];
 }
 
 /** Inspector-editable table-column properties (Object.assigned onto the column). */

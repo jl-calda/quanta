@@ -11,6 +11,7 @@
  * reading-order `RegionInput[]` produced by `./flatten`.
  */
 import { z } from "zod";
+import type { ProgramBranch, ProgramStatement } from "@/lib/calc";
 
 /* ------------------------------------------------------------------ *
  * Calc-payload schemas (mirror the `/lib/calc` types — one source of truth).
@@ -367,6 +368,62 @@ const solveRegionSchema = z
   })
   .passthrough();
 
+/*
+ * Program-block region — fully typed (Functional Brief §2 "inline programs /
+ * natural-math logic", Coverage Matrix B8). A program is the RHS of a Mathcad
+ * definition: `name(params) := body` defines a callable user function; `name :=
+ * body` (no params) defines a value. The body is a structured statement tree —
+ * local assignment, if / else-if / otherwise, for, while, return — so the read
+ * view renders the Mathcad 2D layout directly and the pure engine
+ * (`lib/calc/program`) evaluates the structure (no bespoke text parser). Each
+ * statement's expressions are math source, evaluated by the shared engine, so
+ * units flow through control flow. Folded into worksheet scope by `./flatten`
+ * (value programs as `name := value`, function programs via a synthetic
+ * function-assignment) so the UNMODIFIED engine resolves references downstream.
+ * `.passthrough()` keeps any unknown payload non-lossy; the field defaults mean a
+ * legacy render-only `{type:"program"}` still validates, so no migration is needed.
+ */
+const programStatementSchema: z.ZodType<ProgramStatement> = z.lazy(() =>
+  z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("assign"), target: z.string().default(""), expr: z.string().default("") }),
+    z.object({ kind: z.literal("return"), expr: z.string().default("") }),
+    z.object({
+      kind: z.literal("if"),
+      branches: z
+        .array(z.object({ cond: z.string().default(""), body: z.array(programStatementSchema).default([]) }))
+        .default([]),
+      otherwise: z.array(programStatementSchema).optional(),
+    }),
+    z.object({
+      kind: z.literal("for"),
+      var: z.string().default("i"),
+      from: z.string().default("1"),
+      to: z.string().default("1"),
+      step: z.string().optional(),
+      body: z.array(programStatementSchema).default([]),
+    }),
+    z.object({
+      kind: z.literal("while"),
+      cond: z.string().default(""),
+      body: z.array(programStatementSchema).default([]),
+    }),
+  ]) as unknown as z.ZodType<ProgramStatement>,
+);
+const programRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("program"),
+    /** Defined name (function or value), e.g. "factorial". */
+    name: z.string().optional(),
+    /** Parameter names — non-empty ⇒ a callable function. */
+    params: z.array(z.string()).default([]),
+    /** The statement body, evaluated top to bottom. */
+    body: z.array(programStatementSchema).default([]),
+    /** Display unit for a no-parameter (value) program's result. */
+    unit: z.string().optional(),
+  })
+  .passthrough();
+
 export const regionSchema: z.ZodType<Region> = z.discriminatedUnion("type", [
   mathRegionSchema,
   textRegionSchema,
@@ -377,6 +434,7 @@ export const regionSchema: z.ZodType<Region> = z.discriminatedUnion("type", [
   areaRegionSchema,
   includeRegionSchema,
   solveRegionSchema,
+  programRegionSchema,
 ]) as unknown as z.ZodType<Region>;
 
 const cellSchema = z.object({
@@ -539,6 +597,23 @@ export interface SolveRegion extends RegionBase {
   [key: string]: unknown;
 }
 
+/** Program block: a user-defined function or value with control flow (§2 · B8). */
+export interface ProgramRegion extends RegionBase {
+  type: "program";
+  /** Defined name (function or value), e.g. "factorial". */
+  name?: string;
+  /** Parameter names — non-empty ⇒ a callable function. */
+  params: string[];
+  /** The statement body, evaluated top to bottom. */
+  body: ProgramStatement[];
+  /** Display unit for a no-parameter (value) program's result. */
+  unit?: string;
+  [key: string]: unknown;
+}
+
+/** Re-exported from the engine so the editor/content layer shares one shape. */
+export type { ProgramStatement, ProgramBranch };
+
 /** Render-only payloads keep an open shape so nothing is lost on round-trip. */
 export interface RenderOnlyRegion extends RegionBase {
   type: "image" | "include";
@@ -553,6 +628,7 @@ export type Region =
   | AreaRegion
   | ControlRegion
   | SolveRegion
+  | ProgramRegion
   | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
@@ -662,6 +738,27 @@ export function newRegion(type: RegionType): Region {
         algorithm: "find",
         guesses: [{ var: "x", value: "1" }],
         constraints: ["x^2 = 9"],
+      };
+    case "program":
+      // A factorial seed — a counted loop with a conditional guard — so the block
+      // opens on a runnable example that defines a callable function.
+      return {
+        ...base,
+        type: "program",
+        name: "factorial",
+        params: ["n"],
+        body: [
+          { kind: "assign", target: "result", expr: "1" },
+          {
+            kind: "if",
+            branches: [{ cond: "n > 1", body: [
+              { kind: "for", var: "i", from: "2", to: "n", body: [
+                { kind: "assign", target: "result", expr: "result * i" },
+              ] },
+            ] }],
+          },
+          { kind: "return", expr: "result" },
+        ],
       };
     default:
       return { ...base, type } as RenderOnlyRegion;

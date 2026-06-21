@@ -13,6 +13,7 @@ import { TableRegionView } from "./table-region";
 import { PlotRegionView } from "./plot-region";
 import { ControlRegionView } from "./control-region";
 import { SolveRegionView } from "./solve-region";
+import { ProgramRegionView } from "./program-region";
 import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
@@ -148,6 +149,8 @@ function RegionBody(props: RegionRenderProps) {
       return <ControlRegionView {...props} region={region} />;
     case "solve":
       return <SolveRegionView {...props} region={region} />;
+    case "program":
+      return <ProgramRegionView {...props} region={region} />;
     default:
       return <GenericRegionView {...props} region={region} />;
   }

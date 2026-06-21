@@ -15,6 +15,7 @@ import type {
   PlotKind,
   PlotRegion,
   PlotTrace,
+  ProgramRegion,
   Radix,
   Region,
   SolveAlgorithm,
@@ -26,6 +27,7 @@ import type {
   TraceStyle,
 } from "@/lib/worksheet/content";
 import { DEFAULT_DISPLAY } from "@/lib/worksheet/content";
+import { parseProgramBody, programBodyToText } from "@/lib/worksheet/program-text";
 import { useEditor } from "./state/editor-provider";
 import type { EditorAction, RegionPatch, TableColumnPatch } from "./state/editor-reducer";
 import { Icon } from "./icons";
@@ -74,6 +76,7 @@ export function Inspector() {
           {region.type === "plot" && <PlotInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "control" && <ControlInspector region={region} set={set} />}
           {region.type === "solve" && <SolveInspector region={region} set={set} />}
+          {region.type === "program" && <ProgramInspector region={region} set={set} />}
           <Group eyebrow="Region">
             <Row label="Show border">
               <Switch checked={!!region.border} onChange={(e) => set({ border: e.target.checked })} />
@@ -1030,6 +1033,68 @@ function OdeInspector({ region, set }: { region: SolveRegion; set: (p: RegionPat
   );
 }
 
+function ProgramInspector({ region, set }: { region: ProgramRegion; set: (p: RegionPatch) => void }) {
+  const params = region.params ?? [];
+  const isFunction = !!region.name?.trim() && params.some((p) => p.trim());
+  return (
+    <>
+      <Group eyebrow="Definition">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>Name</span>
+          <Input mono defaultValue={region.name ?? ""} placeholder="factorial" onBlur={(e) => set({ name: e.target.value.trim() || undefined })} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>Parameters</span>
+          <Input
+            mono
+            key={`${region.id}:params`}
+            defaultValue={params.join(", ")}
+            placeholder="n  (comma-separated)"
+            onBlur={(e) => set({ params: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+          />
+          <span style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+            {isFunction
+              ? "Defines a callable function — reference it as name(args) in any region below."
+              : "Leave empty to define a value (the program runs and shows its result)."}
+          </span>
+        </div>
+      </Group>
+
+      <Group eyebrow="Program">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>One statement per line; indent for blocks</span>
+          <textarea
+            key={`${region.id}:body`}
+            defaultValue={programBodyToText(region.body ?? [])}
+            onBlur={(e) => set({ body: parseProgramBody(e.target.value) })}
+            rows={Math.min(16, Math.max(5, programBodyToText(region.body ?? []).split("\n").length + 1))}
+            spellCheck={false}
+            placeholder={"result := 1\nif n > 1\n  for i in 2..n\n    result := result * i\nreturn result"}
+            style={{ ...textareaStyle, minHeight: 120, whiteSpace: "pre", overflowWrap: "normal" }}
+          />
+          <span style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+            Use <code style={{ fontFamily: "var(--font-mono)" }}>:=</code> for locals,{" "}
+            <code style={{ fontFamily: "var(--font-mono)" }}>if / else if / otherwise</code>,{" "}
+            <code style={{ fontFamily: "var(--font-mono)" }}>for i in a..b</code>,{" "}
+            <code style={{ fontFamily: "var(--font-mono)" }}>while</code>, and{" "}
+            <code style={{ fontFamily: "var(--font-mono)" }}>return</code>.
+          </span>
+        </div>
+      </Group>
+
+      {!isFunction && (
+        <Group eyebrow="Units">
+          <Row label="Result unit">
+            <div style={{ width: 110 }}>
+              <Input mono defaultValue={region.unit ?? ""} placeholder="kN" onBlur={(e) => set({ unit: e.target.value.trim() || undefined })} />
+            </div>
+          </Row>
+        </Group>
+      )}
+    </>
+  );
+}
+
 function Group({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return (
     <div style={{ padding: "13px 14px", borderBottom: "1px solid var(--border-hairline)" }}>
@@ -1081,6 +1146,7 @@ function regionLabel(type: Region["type"]): string {
   const map: Record<Region["type"], string> = {
     math: "Math region", text: "Text region", table: "Table", plot: "Plot",
     image: "Image", control: "Control", area: "Area", include: "Include", solve: "Solve block",
+    program: "Program",
   };
   return map[type] ?? "Region";
 }

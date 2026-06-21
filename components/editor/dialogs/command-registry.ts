@@ -43,6 +43,8 @@ export function buildCommands(ctx: CommandContext): Command[] {
     edit({ id: "insert.text", label: "Insert text region", hint: "Insert", run: () => ctx.insertRegion("text") }),
     edit({ id: "insert.table", label: "Insert table", hint: "Insert", run: () => ctx.insertRegion("table") }),
     edit({ id: "insert.plot", label: "Insert plot", hint: "Insert", run: () => ctx.insertRegion("plot") }),
+    edit({ id: "insert.solve", label: "Insert solve block", hint: "Insert", run: () => ctx.insertRegion("solve") }),
+    edit({ id: "insert.program", label: "Insert program", hint: "Insert", run: () => ctx.insertRegion("program") }),
     edit({ id: "insert.symbolDialog", label: "Insert symbol…", hint: "Insert", run: () => ctx.open("insertSymbol") }),
     { id: "ref.functions", label: "Insert function…", hint: "Reference", run: () => ctx.openReference("FUNCTIONS") },
     { id: "ref.units", label: "Insert unit…", hint: "Reference", run: () => ctx.openReference("UNITS") },
