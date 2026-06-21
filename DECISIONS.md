@@ -2,6 +2,48 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Programming operators — program blocks (Phase 2, Func §2 / Matrix B8)
+
+- **A new `program` region type, not a new entity/table.** Programs live in the
+  `worksheets.content` JSONB tree like math/table/solve. The body is a **structured
+  `ProgramStatement[]` tree** (assign / if·else-if·otherwise / for / while / return),
+  not parsed text — so the read view renders the exact Mathcad 2D layout and the
+  engine evaluates structure (robust, no bespoke control-flow parser). Statement
+  *expressions* are math source, evaluated by the shared mathjs instance, so units
+  flow through control flow.
+- **`/lib/calc/program.ts` is a pure, synchronous tree-walking interpreter.** Same
+  contract as `solve.ts`: never throws into the UI (typed `CalcError`), deterministic
+  on client/worker/Node. Loops are hard-bounded (`MAX_ITERATIONS = 100_000`) so a
+  runaway program can't hang the synchronous engine. A no-param program is a **value**
+  (runs now); a parameterised program is a **function** (definition only — run on call).
+- **Referenceable as a function through the UNMODIFIED engine.** `graph.ts`/`recalc.ts`
+  are untouched. A function program is folded into the engine as a synthetic
+  **function-assignment** `name(p) = __quantaProgram("id", p)` (emitted by
+  `buildEngineInputs`). `__quantaProgram` is a single **static dispatcher** registered
+  once on the math instance (like `registerMatrixFunctions`), in the cycle-free
+  `program-registry.ts`; it looks the compiled closure up by token. Evaluating the
+  function-assignment defines `name` in the engine's scope (a FunctionAssignmentNode's
+  evaluate mutates scope), so downstream math regions resolve `name(args)` normally —
+  units included. Value programs fold back as `name := value` exactly like a table/solve
+  export.
+- **`collectDeps` now excludes FunctionAssignmentNode parameters.** A bound param
+  (`x` in `f(x) = …`) was wrongly collected as a worksheet dependency (→ false
+  `undefined`). Fixing it in `parse.ts` is correct generally and is what makes the
+  synthetic function-assignment resolve cleanly. (parse.ts is not graph/recalc core.)
+- **Closures capture a stable `scopeRef`, settled by a sheet signature.** Function
+  closures are built ONCE per `settleTables` run, capturing `scopeRef.current`
+  (updated each pass) so pure functions work from pass 0 and scope-capturing ones
+  converge. Because a function program changes no *export* snapshot, the settle loop
+  also compares a compact **sheet signature** (id·status·formatted) so it keeps
+  iterating until the engine result stops changing — bounded by the existing cap +
+  oscillation guard. The registry is fully replaced (`syncPrograms`) each run, so no
+  stale closure leaks across worksheets (settle is synchronous, Node-safe for export).
+- **Authoring: structured tree edited as indented text.** The inspector edits the body
+  as Mathcad-like indented text (`lib/worksheet/program-text.ts`, pure + round-trip
+  tested) — fast to type, diffable — converted to/from the structured tree on blur.
+  `newRegion("program")` seeds `factorial(n)` (a loop guarded by a conditional) so the
+  block opens on a runnable, referenceable example.
+
 ## Symbolic-evaluate operator — the producer (Phase 2 refinement, Math region)
 
 - **Trigger = the CAS function call, not a new `→` operator (user-confirmed).** A math region is

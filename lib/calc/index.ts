@@ -84,6 +84,24 @@ export {
   type SolveRun,
 } from "./solve";
 
+// Program block (pure, engine-native — see ./program).
+export {
+  evaluateProgram,
+  compileProgram,
+  type ProgramSpec,
+  type ProgramStatement,
+  type ProgramBranch,
+  type ProgramResult,
+  type ProgramStatus,
+  type Compiled,
+} from "./program";
+export {
+  setProgram,
+  clearProgram,
+  syncPrograms,
+  type ProgramFn,
+} from "./program-registry";
+
 export type {
   CalcResult,
   CalcOk,

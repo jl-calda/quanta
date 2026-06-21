@@ -131,7 +131,10 @@ function InsertTab({ cmd, sel }: TabProps) {
           <SmBtn icon="text" label="Text" onClick={() => cmd.insertRegion("text")} disabled={d} />
           <SmBtn icon="table" label="Table" onClick={() => cmd.insertRegion("table")} disabled={d} />
         </SmStack>
-        <BigBtn icon="solve" label="Solve block" onClick={() => cmd.insertRegion("solve")} disabled={d} />
+        <SmStack w={104}>
+          <SmBtn icon="solve" label="Solve block" onClick={() => cmd.insertRegion("solve")} disabled={d} />
+          <SmBtn icon="func" label="Program" onClick={() => cmd.insertRegion("program")} disabled={d} />
+        </SmStack>
       </Group>
       <Group caption="Visuals">
         <BigBtn icon="plot" label="Plot" dropdown onClick={() => cmd.insertRegion("plot")} disabled={d} />

@@ -5,9 +5,37 @@
  * maps `RegionResult`s back onto region ids for O(1) render lookup. Reading order
  * is what enforces "a name must be defined earlier than it is used".
  */
-import { evaluatePlot, evaluateSolve, evaluateTable, serializeForScope, SI_SYSTEM } from "@/lib/calc";
-import type { PlotResult, RegionInput, RegionResult, SheetResult, SolveResult, TableResult } from "@/lib/calc";
-import type { ControlRegion, PlotRegion, Region, Row, SolveRegion, TableRegion, WorksheetContent } from "./content";
+import {
+  compileProgram,
+  evaluatePlot,
+  evaluateProgram,
+  evaluateSolve,
+  evaluateTable,
+  serializeForScope,
+  syncPrograms,
+  SI_SYSTEM,
+} from "@/lib/calc";
+import { DISPATCH_NAME } from "@/lib/calc/program-registry";
+import type {
+  PlotResult,
+  ProgramFn,
+  ProgramResult,
+  RegionInput,
+  RegionResult,
+  SheetResult,
+  SolveResult,
+  TableResult,
+} from "@/lib/calc";
+import type {
+  ControlRegion,
+  PlotRegion,
+  ProgramRegion,
+  Region,
+  Row,
+  SolveRegion,
+  TableRegion,
+  WorksheetContent,
+} from "./content";
 
 /** Yield every region in reading order, descending into area children. */
 export function* walkRegions(content: WorksheetContent): Generator<Region> {
@@ -109,6 +137,38 @@ export function solveRegions(content: WorksheetContent): SolveRegion[] {
   return out;
 }
 
+/** Every program block, in reading order — drives the provider's program evaluation. */
+export function programRegions(content: WorksheetContent): ProgramRegion[] {
+  const out: ProgramRegion[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "program") out.push(region);
+  }
+  return out;
+}
+
+/** A program region is a callable function when it has a name and ≥1 parameter. */
+function isFunctionProgram(region: ProgramRegion): boolean {
+  return !!region.name?.trim() && (region.params ?? []).some((p) => p.trim());
+}
+
+/**
+ * The synthetic engine input that makes a function program callable from ordinary
+ * math regions: a mathjs function-assignment whose body delegates to the static
+ * dispatcher (`name(p1, p2) = __quantaProgram("id", p1, p2)`). Evaluating it
+ * defines `name` in the engine's scope; calling `name(…)` later routes through the
+ * registry to the compiled closure. Null when the program isn't a function.
+ */
+function programFunctionInput(region: ProgramRegion): RegionInput | null {
+  if (!isFunctionProgram(region)) return null;
+  const name = region.name!.trim();
+  const params = (region.params ?? []).map((p) => p.trim()).filter(Boolean);
+  const args = params.join(", ");
+  return {
+    id: `${PROG_PREFIX}${region.id}`,
+    source: `${name}(${args}) = ${DISPATCH_NAME}(${JSON.stringify(region.id)}, ${args})`,
+  };
+}
+
 /**
  * Sample every plot against a settled worksheet scope (pure — plots are read-only
  * consumers that export nothing, so they evaluate once after tables settle).
@@ -149,6 +209,7 @@ export function buildEngineInputs(
   content: WorksheetContent,
   tableExports?: Map<string, Record<string, string>>,
   solveExports?: Map<string, Record<string, string>>,
+  programExports?: Map<string, Record<string, string>>,
 ): RegionInput[] {
   const inputs: RegionInput[] = [];
   for (const region of walkRegions(content)) {
@@ -182,6 +243,21 @@ export function buildEngineInputs(
           inputs.push({ id: `${SOLVE_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
         }
       }
+    } else if (region.type === "program") {
+      // A function program emits a synthetic function-assignment delegating to the
+      // dispatcher (defined unconditionally — its closure is registered by the
+      // settle loop). A value program folds its computed result back like a table.
+      const fnInput = programFunctionInput(region);
+      if (fnInput) {
+        inputs.push(fnInput);
+      } else {
+        const exp = programExports?.get(region.id);
+        if (exp) {
+          for (const [name, source] of Object.entries(exp)) {
+            inputs.push({ id: `${PROG_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
+          }
+        }
+      }
     }
   }
   return inputs;
@@ -200,10 +276,15 @@ export function buildEngineInputs(
 const MAX_SETTLE_ITERS = 8;
 const SYNTHETIC_PREFIX = "tbl:";
 const SOLVE_PREFIX = "slv:";
+const PROG_PREFIX = "prog:";
 
-/** True for an engine input id that is a folded-back table/solve export. */
+/** True for an engine input id that is a folded-back table/solve/program export. */
 function isSynthetic(id: string): boolean {
-  return id.startsWith(SYNTHETIC_PREFIX) || id.startsWith(SOLVE_PREFIX);
+  return (
+    id.startsWith(SYNTHETIC_PREFIX) ||
+    id.startsWith(SOLVE_PREFIX) ||
+    id.startsWith(PROG_PREFIX)
+  );
 }
 
 /** The minimal slice of `CalcEngine` the settle loop drives. */
@@ -224,6 +305,15 @@ function snapshotExports(map: Map<string, Record<string, string>>): string {
   return JSON.stringify(obj);
 }
 
+/**
+ * A compact, deterministic signature of the engine result — id, status, and
+ * formatted value per region. Function programs change no export snapshot, so the
+ * settle loop also compares this to know when the sheet has stopped changing.
+ */
+function sheetSignature(sheet: SheetResult): string {
+  return sheet.regions.map((r) => `${r.id}:${r.status}:${r.formatted}`).join("\n");
+}
+
 /** Drop synthetic table/solve export regions so results reflect real regions only. */
 function stripSynthetic(sheet: SheetResult): SheetResult {
   const regions = sheet.regions.filter((r) => !isSynthetic(r.id));
@@ -234,15 +324,18 @@ function stripSynthetic(sheet: SheetResult): SheetResult {
 }
 
 /**
- * Run the engine + its exporters (tables AND solve blocks) to a settled fixpoint.
- * Both read the worksheet scope from the engine's results; their serialized named
- * outputs are folded back as synthetic definitions and the engine re-runs, until
- * the combined export snapshot stops changing (or the cap / oscillation guard
- * trips). Solve blocks are unit-aware exporters just like tables — the pure,
- * synchronous `evaluateSolve` runs here, so the whole loop stays deterministic
- * and Node-safe (the solve recomputes during server-side PDF export). Returns the
- * real-region sheet (synthetic defs stripped) plus the per-table, per-plot, and
- * per-solve results, keyed by region id.
+ * Run the engine + its exporters (tables, solve blocks, AND program blocks) to a
+ * settled fixpoint. Each reads the worksheet scope from the engine's results;
+ * their serialized named outputs are folded back as synthetic definitions and the
+ * engine re-runs, until the combined export snapshot stops changing (or the cap /
+ * oscillation guard trips). Tables, solves, and value programs are unit-aware
+ * exporters; function programs are compiled to closures, registered in the
+ * dispatcher registry (so math regions resolve `f(x)` through the UNMODIFIED
+ * engine) and injected by name into the shared scope (so tables / solves / plots /
+ * other programs can call them too). The pure, synchronous engine modules run
+ * here, so the whole loop stays deterministic and Node-safe (programs recompute
+ * during server-side PDF export). Returns the real-region sheet (synthetic defs
+ * stripped) plus the per-table, per-plot, per-solve, and per-program results.
  */
 export function settleTables(
   content: WorksheetContent,
@@ -252,37 +345,81 @@ export function settleTables(
   tables: Map<string, TableResult>;
   plots: Map<string, PlotResult>;
   solves: Map<string, SolveResult>;
+  programs: Map<string, ProgramResult>;
 } {
   const plotSpecs = plotRegions(content);
   const tableSpecs = tableRegions(content);
   const solveSpecs = solveRegions(content);
+  const programSpecs = programRegions(content);
 
   // No exporters ⇒ a single engine pass, then sample plots against its scope.
-  if (tableSpecs.length === 0 && solveSpecs.length === 0) {
+  if (tableSpecs.length === 0 && solveSpecs.length === 0 && programSpecs.length === 0) {
+    syncPrograms(new Map()); // clear any registry left by a previous worksheet
     engine.setRegions(buildEngineInputs(content));
     const sheet = engine.getResult();
     const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions));
-    return { sheet, tables: new Map(), plots, solves: new Map() };
+    return { sheet, tables: new Map(), plots, solves: new Map(), programs: new Map() };
   }
 
   // One combined export map keyed by region id (ids are unique, so it can serve
-  // as both the table- and solve-export source for `buildEngineInputs`).
+  // as the table-, solve-, AND program-value export source for `buildEngineInputs`).
   let exportsBySource = new Map<string, Record<string, string>>();
   let exportsRaw: Record<string, unknown> = {};
+
+  // Function-program closures are built ONCE and capture a stable scope reference
+  // (`scopeRef.current`), updated each pass. So `f(x)` always sees the latest
+  // settled scope — pure functions work from pass 0, scope-capturing ones converge
+  // as the loop re-runs — without re-registering closures every pass.
+  const scopeRef: { current: Record<string, unknown> } = { current: {} };
+  const programFns = new Map<string, ProgramFn>();
+  const programNameById = new Map<string, string>();
+  for (const spec of programSpecs) {
+    if (!isFunctionProgram(spec)) continue;
+    const compiled = compileProgram(spec);
+    if (compiled.ok && compiled.params.length > 0) {
+      programFns.set(spec.id, (...args) => compiled.run(args, scopeRef.current));
+      if (compiled.name) programNameById.set(spec.id, compiled.name);
+    }
+  }
+  syncPrograms(programFns); // registered before any engine pass
+
   let sheet = engine.getResult();
   let tables = new Map<string, TableResult>();
   let solves = new Map<string, SolveResult>();
+  let programs = new Map<string, ProgramResult>();
+  let prevSheetSig = "";
   const seen = new Set<string>();
 
   for (let iter = 0; iter < MAX_SETTLE_ITERS; iter += 1) {
-    engine.setRegions(buildEngineInputs(content, exportsBySource, exportsBySource));
+    engine.setRegions(buildEngineInputs(content, exportsBySource, exportsBySource, exportsBySource));
     sheet = engine.getResult();
-    const scope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+    const scope: Record<string, unknown> = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+    // Inject function closures by name (so tables / solves / plots / programs can
+    // call them) and point the closures' shared scope at this pass's scope.
+    for (const [id, name] of programNameById) {
+      const fn = programFns.get(id);
+      if (fn) scope[name] = fn;
+    }
+    scopeRef.current = scope;
 
     tables = new Map();
     solves = new Map();
+    programs = new Map();
     const nextRaw: Record<string, unknown> = {};
     const nextBySource = new Map<string, Record<string, string>>();
+
+    for (const spec of programSpecs) {
+      const result = evaluateProgram(spec, scope, SI_SYSTEM);
+      programs.set(spec.id, result);
+      // A value program folds its result back like a table/solve export.
+      if (result.status === "value" && result.name && result.value !== undefined) {
+        const serialized = serializeForScope(result.value);
+        if (serialized !== null) {
+          nextRaw[result.name] = result.value;
+          nextBySource.set(spec.id, { [result.name]: serialized });
+        }
+      }
+    }
 
     for (const spec of tableSpecs) {
       const result = evaluateTable(spec, scope, SI_SYSTEM);
@@ -309,18 +446,27 @@ export function settleTables(
     }
 
     const snapshot = snapshotExports(nextBySource);
-    const settled = snapshot === snapshotExports(exportsBySource);
+    // A function program changes no export, so also settle on the engine result:
+    // re-run while the sheet keeps changing (a scope-capturing program converging).
+    const sheetSig = sheetSignature(sheet);
+    const settled = snapshot === snapshotExports(exportsBySource) && sheetSig === prevSheetSig;
     exportsBySource = nextBySource;
     exportsRaw = nextRaw;
-    if (settled || seen.has(snapshot)) break; // fixpoint or oscillation guard
-    seen.add(snapshot);
+    prevSheetSig = sheetSig;
+    if (settled || seen.has(snapshot + "|" + sheetSig)) break; // fixpoint or oscillation guard
+    seen.add(snapshot + "|" + sheetSig);
   }
 
-  // Plots read the final settled scope (worksheet names + table + solve exports).
-  const plotScope = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+  // Plots read the final settled scope (worksheet names + table / solve / program
+  // value exports + function-program closures), so a plot can call a program too.
+  const plotScope: Record<string, unknown> = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
+  for (const [id, name] of programNameById) {
+    const fn = programFns.get(id);
+    if (fn) plotScope[name] = fn;
+  }
   const plots = evaluatePlotsWith(plotSpecs, plotScope);
 
-  return { sheet: stripSynthetic(sheet), tables, plots, solves };
+  return { sheet: stripSynthetic(sheet), tables, plots, solves, programs };
 }
 
 /** All region ids in reading order (every type), e.g. for selection navigation. */

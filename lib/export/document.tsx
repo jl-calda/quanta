@@ -18,6 +18,7 @@ import katex from "katex";
 import {
   constraintToLatex,
   evaluatePlot,
+  evaluateProgram,
   evaluateSolve,
   evaluateTable,
   exprToLatex,
@@ -29,6 +30,7 @@ import {
   DEFAULT_DISPLAY,
   type MathRegion,
   type PlotRegion,
+  type ProgramRegion,
   type Region,
   type RenderOnlyRegion,
   type SolveRegion,
@@ -575,6 +577,68 @@ function SolveBlock({ region }: { region: SolveRegion }): ReactNode {
   );
 }
 
+function ProgramBlock({ region }: { region: ProgramRegion }): ReactNode {
+  if (region.disabled) return null;
+  const result = evaluateProgram(region, {});
+  const name = region.name?.trim();
+  const params = (region.params ?? []).map((p) => p.trim()).filter(Boolean);
+  const signature = name
+    ? params.length > 0
+      ? `${exprToLatex(name)}\\left(${params.map(exprToLatex).join(",\\ ")}\\right)`
+      : exprToLatex(name)
+    : null;
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${STRONG_RULE}`,
+        borderLeft: "2.5px solid #1F5FBF",
+        borderRadius: 3,
+        background: "#fff",
+        padding: "8px 11px 9px",
+        marginBottom: 8,
+        marginLeft: (region.indent || 0) * 22,
+        breakInside: "avoid",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginBottom: 4 }}>
+        <span style={{ font: "600 10px/1 var(--font-sans)", color: INK }}>Program</span>
+        {name && (
+          <span style={{ font: "8.5px/1 var(--font-mono)", color: MUTED }}>
+            {name}
+            {params.length > 0 ? `(${params.join(", ")})` : ""}
+          </span>
+        )}
+      </div>
+
+      {signature && (
+        <div style={{ paddingLeft: 3 }}>
+          <Tex tex={`${signature} :=`} size={12} />
+        </div>
+      )}
+
+      <div style={{ marginTop: 7, paddingTop: 6, borderTop: `1px solid ${HAIRLINE}` }}>
+        {result.status === "value" ? (
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+            {result.name && <Tex tex={`${exprToLatex(result.name)} =`} size={12} />}
+            <span style={{ font: "600 11px/1.2 var(--font-math)", color: "#1F5FBF" }}>{result.formatted}</span>
+          </div>
+        ) : result.status === "error" ? (
+          <div style={{ font: "9.5px/1.4 var(--font-sans)", color: "#C2392B" }}>
+            {result.error?.message ?? "This program could not run."} {result.error?.fixHint ?? ""}
+          </div>
+        ) : result.status === "function" ? (
+          <div style={{ font: "9.5px/1.4 var(--font-sans)", color: MUTED }}>
+            Defines {result.name}({result.params.join(", ")}) — called from regions below.
+          </div>
+        ) : (
+          <div style={{ font: "9.5px/1.4 var(--font-sans)", color: MUTED }}>Empty program.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RegionBlock({
   region,
   results,
@@ -595,6 +659,8 @@ function RegionBlock({
       return <PlotBlock region={region} borders={options.borders || region.border === true} />;
     case "solve":
       return <SolveBlock region={region} />;
+    case "program":
+      return <ProgramBlock region={region} />;
     case "image":
       return <ImageBlock region={region} />;
     case "area":
