@@ -17,6 +17,7 @@ export const TREE: ReferenceTree = {
     { id: "lookup", label: "Lookup & data" },
     { id: "programming", label: "Programming" },
     { id: "string", label: "String" },
+    { id: "date", label: "Date & time" },
     { id: "engineering", label: "Engineering" },
   ],
   UNITS: [
