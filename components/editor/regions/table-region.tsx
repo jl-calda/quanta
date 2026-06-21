@@ -7,6 +7,7 @@ import {
   tableToMatrix,
   tableViewOrder,
   toDelimited,
+  validateCellSource,
   type TableCellResult,
   type TableResult,
 } from "@/lib/calc";
@@ -22,10 +23,21 @@ import {
   cellOf,
   colAlign,
   colFontFamily,
+  colWidthsOf,
   columnLabel,
+  isFrozen,
   numericColumn,
 } from "./table-present";
+import { freezeStyle, freezeZIndex } from "./table-frozen";
+import { TableGroupSummary } from "./table-group-summary";
 import type { RegionRenderProps } from "./types";
+
+/* Edit-grid freeze geometry — the gutter + add-column rails make the editor's
+ * fixed widths/heights differ from read mode (see DECISIONS.md). */
+const GUTTER_W = 26;
+const ADD_COL_W = 28;
+const EDIT_HEADER_H = 34;
+const EDIT_ROW_H = 30;
 
 /**
  * Table / spreadsheet region (Functional Brief §6.3, mockup `table-region.html`).
@@ -59,7 +71,11 @@ function TableEditor({
   const nRows = region.rows.length;
   const nCols = cols.length;
   const [sel, setSel] = useState<{ r: number; c: number }>({ r: 0, c: 0 });
+  const [cellError, setCellError] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // A rejected value is per-cell; clear the message whenever the selection moves.
+  useEffect(() => setCellError(null), [sel.r, sel.c]);
 
   const clamp = (r: number, c: number) => ({
     r: Math.max(0, Math.min(nRows - 1, r)),
@@ -67,6 +83,36 @@ function TableEditor({
   });
   const rawAt = (r: number, c: number) => region.rows[r]?.[c] ?? "";
   const errorCount = result?.errorCount ?? 0;
+
+  // Frozen panes (display-only). The edit grid stays in data order, so freeze
+  // pins the first N data rows/cols; offsets are exact because we pin widths.
+  const frozen = isFrozen(region);
+  const freeze = region.freeze;
+  const colWidths = colWidthsOf(cols);
+  const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+  const fzHead = (c: number): CSSProperties =>
+    frozen && freeze
+      ? freezeStyle({ row: 0, col: c, frozenRows: freeze.frozenRows, frozenCols: freeze.frozenCols, colWidths, rowHeight: EDIT_ROW_H, headerHeight: EDIT_HEADER_H, leftBase: GUTTER_W, isHeader: true, surface: "var(--surface-chrome)", headerSurface: "var(--surface-chrome)" })
+      : {};
+  const fzCell = (r: number, c: number, surface: string): CSSProperties =>
+    frozen && freeze
+      ? freezeStyle({ row: r, col: c, frozenRows: freeze.frozenRows, frozenCols: freeze.frozenCols, colWidths, rowHeight: EDIT_ROW_H, headerHeight: EDIT_HEADER_H, leftBase: GUTTER_W, surface })
+      : {};
+  // Gutter (row-number rail) pins left with the frozen columns and top with the
+  // frozen rows; it isn't a data column so its sticky style is computed directly.
+  const fzGutter = (r: number): CSSProperties => {
+    if (!frozen || !freeze) return {};
+    const onCol = freeze.frozenCols > 0;
+    const onRow = r < freeze.frozenRows;
+    if (!onCol && !onRow) return {};
+    return {
+      position: "sticky",
+      ...(onCol ? { left: 0 } : {}),
+      ...(onRow ? { top: EDIT_HEADER_H + r * EDIT_ROW_H } : {}),
+      zIndex: freezeZIndex(false, onRow, onCol),
+      background: "var(--surface-chrome)",
+    };
+  };
 
   const select = (r: number, c: number) => {
     setSel(clamp(r, c));
@@ -82,14 +128,32 @@ function TableEditor({
   };
 
   const selCell = cellOf(result, sel.r, sel.c);
+  const selCol = cols[sel.c];
   const selSpilledFrom = selCell?.kind === "spill" ? selCell.spilledFrom : undefined;
+  const selRaw = rawAt(sel.r, sel.c);
+  // A `list`-validated cell becomes a dropdown (bad input impossible), unless it
+  // already holds a formula — then keep the formula bar so it stays editable.
+  const listOptions =
+    selCol?.validation?.kind === "list" && selCell?.kind !== "spill" && !selRaw.startsWith("=")
+      ? selCol.validation.options ?? []
+      : null;
 
-  const commitCell = (source: string) => {
+  /** Commit a cell after validation. Returns false (and shows why) when rejected. */
+  const commitCell = (source: string): boolean => {
     // A spilled cell is owned by its array formula — its source stays empty.
-    if (selCell?.kind === "spill") return;
-    if (source !== rawAt(sel.r, sel.c)) {
-      dispatch({ type: "EDIT_TABLE_CELL", id: region.id, r: sel.r, c: sel.c, source });
+    if (selCell?.kind === "spill") return false;
+    if (source === selRaw) {
+      setCellError(null);
+      return true;
     }
+    const check = validateCellSource(selCol?.validation, source);
+    if (!check.ok) {
+      setCellError(check.message);
+      return false;
+    }
+    setCellError(null);
+    dispatch({ type: "EDIT_TABLE_CELL", id: region.id, r: sel.r, c: sel.c, source });
+    return true;
   };
 
   return (
@@ -132,19 +196,42 @@ function TableEditor({
         >
           {nRows > 0 && nCols > 0 ? cellAddress(sel.r, sel.c) : "—"}
         </span>
-        <FormulaBar
-          key={`${region.id}:${sel.r}:${sel.c}`}
-          source={rawAt(sel.r, sel.c)}
-          disabled={nRows === 0 || nCols === 0}
-          spilledFrom={selSpilledFrom}
-          onCommit={commitCell}
-          onCommitNext={(source) => {
-            commitCell(source);
-            setSel((s) => clamp(s.r + 1, s.c));
-            gridRef.current?.focus();
-          }}
-        />
+        {listOptions ? (
+          <CellDropdown
+            key={`${region.id}:${sel.r}:${sel.c}`}
+            value={selRaw}
+            options={listOptions}
+            disabled={nRows === 0 || nCols === 0}
+            onPick={(value) => {
+              commitCell(value);
+              gridRef.current?.focus();
+            }}
+          />
+        ) : (
+          <FormulaBar
+            key={`${region.id}:${sel.r}:${sel.c}`}
+            source={selRaw}
+            disabled={nRows === 0 || nCols === 0}
+            spilledFrom={selSpilledFrom}
+            onCommit={commitCell}
+            onCommitNext={(source) => {
+              if (commitCell(source)) setSel((s) => clamp(s.r + 1, s.c));
+              gridRef.current?.focus();
+            }}
+          />
+        )}
       </div>
+      {cellError && (
+        <div
+          role="alert"
+          style={{ display: "flex", alignItems: "center", gap: 5, font: "11.5px/1.3 var(--font-sans)", color: "var(--status-error)" }}
+        >
+          <span style={{ display: "inline-flex", flex: "0 0 auto" }}>
+            <Icon name="alertCirc" size={13} />
+          </span>
+          {cellError}
+        </div>
+      )}
 
       {/* the grid */}
       <div
@@ -154,12 +241,28 @@ function TableEditor({
         style={{
           border: "1px solid var(--border-strong)",
           borderRadius: "var(--radius-sm)",
-          overflow: "hidden",
+          overflow: frozen ? "auto" : "hidden",
+          maxHeight: frozen && freeze && freeze.frozenRows > 0 ? 360 : undefined,
           background: "var(--surface-raised)",
           outline: "none",
         }}
       >
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table
+          style={{
+            borderCollapse: "collapse",
+            width: frozen ? GUTTER_W + totalWidth + ADD_COL_W : "100%",
+            tableLayout: frozen ? "fixed" : "auto",
+          }}
+        >
+          {frozen && (
+            <colgroup>
+              <col style={{ width: GUTTER_W }} />
+              {colWidths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+              <col style={{ width: ADD_COL_W }} />
+            </colgroup>
+          )}
           <thead>
             <tr>
               <th
@@ -168,6 +271,15 @@ function TableEditor({
                   background: "var(--surface-chrome)",
                   borderRight: "1px solid var(--border-hairline)",
                   borderBottom: "1px solid var(--border-strong)",
+                  height: frozen ? EDIT_HEADER_H : undefined,
+                  ...(frozen
+                    ? {
+                        position: "sticky",
+                        top: 0,
+                        ...(freeze && freeze.frozenCols > 0 ? { left: 0 } : {}),
+                        zIndex: freeze && freeze.frozenCols > 0 ? 6 : 4,
+                      }
+                    : {}),
                 }}
               />
               {cols.map((col, c) => (
@@ -181,6 +293,8 @@ function TableEditor({
                     borderBottom: "1px solid var(--border-strong)",
                     verticalAlign: "top",
                     whiteSpace: "nowrap",
+                    height: frozen ? EDIT_HEADER_H : undefined,
+                    ...fzHead(c),
                   }}
                 >
                   <ColumnHead region={region} col={col} dispatch={dispatch} />
@@ -192,6 +306,7 @@ function TableEditor({
                   background: "var(--surface-chrome)",
                   borderBottom: "1px solid var(--border-strong)",
                   borderLeft: "1px solid var(--border-hairline)",
+                  ...(frozen ? { position: "sticky", top: 0, zIndex: 4 } : {}),
                 }}
               >
                 <button
@@ -224,6 +339,8 @@ function TableEditor({
                     background: "var(--surface-chrome)",
                     borderRight: "1px solid var(--border-hairline)",
                     borderTop: r ? "1px solid var(--border-hairline)" : "none",
+                    height: frozen ? EDIT_ROW_H : undefined,
+                    ...fzGutter(r),
                   }}
                 >
                   {r + 2}
@@ -245,6 +362,10 @@ function TableEditor({
                   // Cells an array formula filled read as derived: faint accent tint +
                   // muted text, so the spilled block is legible but clearly not typed in.
                   const isSpill = cell?.kind === "spill";
+                  // Sticky frozen cells need an opaque fill so the scrolled grid
+                  // can't bleed through; fall back to the row band.
+                  const bandBg = r % 2 ? "color-mix(in srgb, var(--surface-chrome) 45%, var(--surface-raised))" : "var(--surface-raised)";
+                  const frozenBg = style?.fill ?? (isSpill ? "var(--accent-tint)" : bandBg);
                   return (
                     <td
                       key={col.key}
@@ -267,6 +388,8 @@ function TableEditor({
                         boxShadow: isSel ? "inset 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)" : "none",
                         whiteSpace: "nowrap",
                         transition: "background var(--dur-fast) var(--ease-out)",
+                        height: frozen ? EDIT_ROW_H : undefined,
+                        ...fzCell(r, c, frozenBg),
                       }}
                     >
                       <EditCellContent region={region} cell={cell} r={r} c={c} />
@@ -307,6 +430,8 @@ function TableEditor({
           </button>
         </div>
       </div>
+
+      {region.group && <TableGroupSummary region={region} result={result} />}
     </div>
   );
 }
@@ -564,6 +689,39 @@ function FormulaBar({
           font: "12.5px/1 var(--font-mono)",
           color: "var(--text-primary)",
         }}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Cell dropdown — a `list`-validated column edits via a Select, so only
+ * allowed values can be entered (bad input is impossible by construction).
+ * ------------------------------------------------------------------ */
+
+function CellDropdown({
+  value,
+  options,
+  disabled,
+  onPick,
+}: {
+  value: string;
+  options: string[];
+  disabled: boolean;
+  onPick: (value: string) => void;
+}) {
+  // Blank clears the cell; a pre-existing off-list value stays selectable (and
+  // flagged) so switching a populated column to a list never hides data.
+  const list = [{ value: "", label: "—" }, ...options.map((o) => ({ value: o, label: o }))];
+  if (value && !options.includes(value)) list.push({ value, label: `${value} (off list)` });
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <Select
+        size="sm"
+        value={value}
+        disabled={disabled}
+        options={list}
+        onChange={(e) => onPick(e.target.value)}
       />
     </div>
   );

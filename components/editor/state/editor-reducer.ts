@@ -34,7 +34,10 @@ import {
   type SolveGuess,
   type SurfaceOptions,
   type SymbolicCache,
+  type ColumnValidation,
   type TableFilter,
+  type TableFreeze,
+  type TableGroup,
   type TableSort,
   type WorksheetContent,
 } from "@/lib/worksheet/content";
@@ -171,6 +174,8 @@ export interface TableColumnPatch {
   align?: CellAlign;
   format?: ResultFormat;
   conditional?: CondRule[];
+  /** `null` clears the rule; `undefined` leaves it unchanged. */
+  validation?: ColumnValidation | null;
 }
 
 export type EditorAction =
@@ -200,6 +205,8 @@ export type EditorAction =
       columns?: { label: string; unit?: string }[];
       rows: string[][];
     }
+  | { type: "SET_TABLE_FREEZE"; id: string; freeze: TableFreeze | null }
+  | { type: "SET_TABLE_GROUP"; id: string; group: TableGroup | null }
   | { type: "SET_PLOT_AXIS"; id: string; axis: "x" | "y"; patch: Partial<PlotAxis> }
   | { type: "ADD_PLOT_TRACE"; id: string }
   | { type: "DELETE_PLOT_TRACE"; id: string; traceId: string }
@@ -558,7 +565,9 @@ export function editorReducer(
         if (!column) return;
         const target = column as Record<string, unknown>;
         for (const [key, value] of Object.entries(action.patch)) {
-          if (value !== undefined) target[key] = value;
+          // `null` clears a key (e.g. validation); `undefined` leaves it alone.
+          if (value === null) delete target[key];
+          else if (value !== undefined) target[key] = value;
         }
       });
       return touched(state, content);
@@ -590,8 +599,8 @@ export function editorReducer(
         const region = findRegion(next, action.id);
         if (!region || region.type !== "table") return;
         if (action.mode === "replace") {
-          // New columns get fresh keys; sort/filter/ranges keyed off the old
-          // columns no longer apply, so clear them.
+          // New columns get fresh keys; sort/filter/ranges and the key-/count-bound
+          // freeze/group keyed off the old columns no longer apply, so clear them.
           region.columns = (action.columns ?? []).map((col) => ({
             key: newId(),
             label: col.label,
@@ -602,11 +611,43 @@ export function editorReducer(
           delete region.sort;
           delete region.filter;
           delete region.ranges;
+          delete region.freeze;
+          delete region.group;
         } else {
           // Append: keep existing columns/units; align each new row to the grid.
           const width = Math.max(region.columns.length, 1);
           for (const row of action.rows) region.rows.push(fitRow(row, width));
         }
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_FREEZE": {
+      // Display-only pane freeze. Clamp below the row/col count so the whole grid
+      // can never be frozen (nothing would be left to scroll). Drop a zero/empty
+      // freeze to keep the JSONB clean.
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (!action.freeze) {
+          delete region.freeze;
+          return;
+        }
+        const maxRows = Math.max(0, region.rows.length - 1);
+        const maxCols = Math.max(0, region.columns.length - 1);
+        const frozenRows = Math.max(0, Math.min(action.freeze.frozenRows, maxRows));
+        const frozenCols = Math.max(0, Math.min(action.freeze.frozenCols, maxCols));
+        if (frozenRows === 0 && frozenCols === 0) delete region.freeze;
+        else region.freeze = { frozenRows, frozenCols };
+      });
+      return touched(state, content);
+    }
+    case "SET_TABLE_GROUP": {
+      // Display-only grouping summary (renders below the grid from the live grid).
+      const content = mutate(state.content, (next) => {
+        const region = findRegion(next, action.id);
+        if (!region || region.type !== "table") return;
+        if (action.group) region.group = action.group;
+        else delete region.group;
       });
       return touched(state, content);
     }

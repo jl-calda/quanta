@@ -143,6 +143,18 @@ const renderOnlyRegion = <T extends string>(type: T) =>
  * keys pass through) instead of failing the union and wiping the document.
  */
 const cellAlignSchema = z.enum(["left", "center", "right"]);
+/**
+ * Per-column data validation (Phase 2). `list` turns the cell into a dropdown of
+ * `options` (bad input impossible); `number` rejects non-numeric / out-of-range
+ * literals on commit. Formulas (`=…`) and empty cells are never rejected — the
+ * pure rule lives in `lib/calc/table-validation`.
+ */
+const tableValidationSchema = z.object({
+  kind: z.enum(["list", "number"]),
+  options: z.array(z.string()).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+});
 const tableColumnSchema = z.object({
   key: z.string(),
   label: z.string().default(""),
@@ -151,12 +163,39 @@ const tableColumnSchema = z.object({
   width: z.number().optional(),
   format: resultFormatSchema.optional(),
   conditional: z.array(condRuleSchema).optional(),
+  validation: tableValidationSchema.optional(),
 });
 const tableSortSchema = z.object({ key: z.string(), dir: z.enum(["asc", "desc"]) });
 const tableFilterSchema = z.object({
   key: z.string(),
   op: condOpSchema,
   value: z.union([z.number(), z.string()]),
+});
+const tableAggSchema = z.enum(["count", "sum", "mean", "min", "max"]);
+/** Frozen panes (Phase 2): leading data rows/cols stay pinned while scrolling. */
+const tableFreezeSchema = z.object({
+  frozenRows: z.number().int().min(0).default(0),
+  frozenCols: z.number().int().min(0).default(0),
+});
+/**
+ * Grouping summary (Phase 2): group rows by `by` and summarise `value` with
+ * `agg`. Display-only (renders from the live grid via `lib/calc/table-group`),
+ * never reorders `rows`. `count` ignores `value`.
+ */
+const tableGroupSchema = z.object({
+  by: z.string(),
+  value: z.string().optional(),
+  agg: tableAggSchema,
+});
+/**
+ * 2-D pivot — typed-but-inert seam (deferred). Validated and round-tripped so a
+ * future pass can wire the UI without a migration; nothing renders it yet.
+ */
+const tablePivotSchema = z.object({
+  rowKey: z.string(),
+  colKey: z.string(),
+  value: z.string().optional(),
+  agg: tableAggSchema,
 });
 const tableRegionSchema = z
   .object({
@@ -169,6 +208,9 @@ const tableRegionSchema = z
     ranges: z.record(z.string()).optional(),
     sort: tableSortSchema.optional(),
     filter: tableFilterSchema.optional(),
+    freeze: tableFreezeSchema.optional(),
+    group: tableGroupSchema.optional(),
+    pivot: tablePivotSchema.optional(),
   })
   .passthrough();
 /*
@@ -491,8 +533,13 @@ export type CondOp = z.infer<typeof condOpSchema>;
 export type DisplayFlags = z.infer<typeof displayFlagsSchema>;
 export type CellAlign = z.infer<typeof cellAlignSchema>;
 export type TableColumn = z.infer<typeof tableColumnSchema>;
+export type ColumnValidation = z.infer<typeof tableValidationSchema>;
 export type TableSort = z.infer<typeof tableSortSchema>;
 export type TableFilter = z.infer<typeof tableFilterSchema>;
+export type TableAgg = z.infer<typeof tableAggSchema>;
+export type TableFreeze = z.infer<typeof tableFreezeSchema>;
+export type TableGroup = z.infer<typeof tableGroupSchema>;
+export type TablePivot = z.infer<typeof tablePivotSchema>;
 export type PlotKind = z.infer<typeof plotKindSchema>;
 export type TraceStyle = z.infer<typeof traceStyleSchema>;
 export type PlotAxis = z.infer<typeof plotAxisSchema>;
@@ -557,9 +604,15 @@ export interface TableRegion extends RegionBase {
   rows: string[][];
   /** Named A1 sub-ranges, e.g. `{ anchor_db: "A2:C5" }`. */
   ranges?: Record<string, string>;
-  /** Typed-but-inert seams (sort/filter ship in the follow-up). */
+  /** Display-only sort/filter view over the data-order grid. */
   sort?: TableSort;
   filter?: TableFilter;
+  /** Frozen leading rows/cols (display-only). */
+  freeze?: TableFreeze;
+  /** Grouping summary config (display-only, renders below the grid). */
+  group?: TableGroup;
+  /** 2-D pivot — typed-but-inert seam (deferred). */
+  pivot?: TablePivot;
   [key: string]: unknown;
 }
 
