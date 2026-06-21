@@ -565,7 +565,7 @@ function PlotInspector({
                 </div>
               </Row>
               <Row label="Filled bands">
-                <Switch checked={!!region.surface?.filled} onChange={(e) => set({ surface: { ...region.surface, filled: e.target.checked } })} />
+                <Switch checked={region.surface?.filled ?? true} onChange={(e) => set({ surface: { ...region.surface, filled: e.target.checked } })} />
               </Row>
             </>
           ) : (

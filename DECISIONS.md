@@ -529,6 +529,23 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   `sel.plotLegend`). Controls with no backing field yet (trace-style dropdown, gridlines, scale,
   axis-labels, title, frame, "Chart") stay `disabled` with the existing "coming soon" treatment
   rather than faking behaviour.
+- **Contour now renders real iso-bands; only 3D surface stays inert.** The deferred 2D renderer
+  shipped for `contour`: `evaluatePlot` runs a new pure, synchronous `sampleGrid` (a default 24×24
+  grid = ~576 closed-form evals, the same order as a 1D sweep — no worker, the worker stays for
+  symbolic/heavy SciPy) that binds `xVar`/`yVar` carrying their axis units and converts each `z` to
+  the z display unit, returning a `ContourResult` (`x`/`y`/`z` grid, `zMin`/`zMax`, `levels`,
+  `zUnit`/`zLabel`) on `PlotResult.contour`. Per-point throws / non-finite results are NaN gaps; a
+  z-expr that fails to parse, throws everywhere, or never converts surfaces one typed error —
+  mirroring the 1D trace model. Iso-band geometry lives in pure `lib/calc/contour.ts`, computed
+  **per cell with no global stitching**: `contourBands` clips each cell quad to `z≥lo` then `z≤hi`
+  (Sutherland–Hodgman, linear edge crossings = the marching-squares chord), and `contourLines` is
+  per-cell marching squares (16-case table; saddles resolved by the cell-centre average) — both
+  emit data-space geometry, so they're unit-tested and the renderer just projects. `ContourFigure`
+  (still hook-free in `plot-present.tsx`, shared by editor/history/export) fills bands with a
+  **blueprint sequential ramp** — `var(--accent)` at increasing opacity (deeper = higher z),
+  theme-aware and design-system-faithful (no rainbow gradient) — with hairline band boundaries, a
+  lines-only mode (`filled === false`), and a compact colour scale (`showScale`). 3D `surface`
+  keeps the typed 'configure' placeholder (needs WebGL — next pass). No schema/entity change.
 
 ## Table / spreadsheet region (Func §6.3 + Claude Design `table-region.html`)
 

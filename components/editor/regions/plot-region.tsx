@@ -9,6 +9,8 @@ import type { EditorAction } from "../state/editor-reducer";
 import { IconButton } from "@/components/ds";
 import { Icon } from "../icons";
 import {
+  ContourEmptyState,
+  ContourFigure,
   PlotEmptyState,
   PlotFigure,
   PlotLegend,
@@ -28,14 +30,79 @@ export function PlotRegionView({ region, canEdit, dispatch }: RegionRenderProps<
   const { plotResults } = useEditor();
   const result = plotResults.get(region.id);
 
-  if (region.kind === "contour" || region.kind === "surface") {
-    return <PlotPlaceholder region={region} />;
+  // 3D surface stays a typed 'configure' placeholder this pass.
+  if (region.kind === "surface") return <PlotPlaceholder region={region} />;
+  // Contour: real iso-bands once z = f(x, y) + an x/y range are set, else a hint.
+  if (region.kind === "contour") {
+    if (!result?.contour) return <ContourEmptyState region={region} />;
+    return <ContourEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
   }
   // No traces yet ⇒ the "pick variables" empty state (mockup (c)).
   if (region.traces.length === 0) return <PlotEmptyState />;
   if (!result) return <PlotEmptyState />;
 
   return <PlotEditor region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
+}
+
+/**
+ * Contour editing chrome — an inline-editable title, x/y range controls, and the
+ * shared `ContourFigure` (iso-bands). No trace legend / hover read-out: the field
+ * is a z = f(x, y) surface, so the figure carries its own colour scale.
+ */
+function ContourEditor({
+  region,
+  result,
+  canEdit,
+  dispatch,
+}: {
+  region: PlotRegion;
+  result: PlotResult;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const { state, dispatch: rawDispatch } = useEditor();
+
+  const setAxis = (axis: "x" | "y", patch: Partial<PlotAxis>) =>
+    dispatch({ type: "SET_PLOT_AXIS", id: region.id, axis, patch });
+
+  const openInspector = () => {
+    dispatch({ type: "SELECT", id: region.id });
+    if (!state.ui.rightOpen) rawDispatch({ type: "TOGGLE_RIGHT" });
+  };
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+      {/* title row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <TitleInput
+          key={region.id}
+          value={region.title ?? ""}
+          canEdit={canEdit}
+          onCommit={(title) => dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: title || undefined } })}
+        />
+        {canEdit && <span style={{ display: "inline-flex", color: "var(--text-muted)", flex: "0 0 auto" }}><Icon name="sketch" size={13} /></span>}
+        <IconButton label="Plot settings" size="sm" onClick={openInspector}>
+          <Icon name="gear" size={16} />
+        </IconButton>
+        <IconButton label="More" size="sm" onClick={() => dispatch({ type: "SELECT", id: region.id })}>
+          <Icon name="kebab" size={16} />
+        </IconButton>
+      </div>
+
+      {/* axis range controls */}
+      {canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6, padding: "0 2px", flexWrap: "wrap" }}>
+          <AxisRange label="x range" axis={region.x} onMin={(v) => setAxis("x", { min: v })} onMax={(v) => setAxis("x", { max: v })} />
+          <AxisRange label="y range" axis={region.y} onMin={(v) => setAxis("y", { min: v })} onMax={(v) => setAxis("y", { max: v })} />
+        </div>
+      )}
+
+      {/* the contour */}
+      <div style={{ border: "1px solid var(--border-hairline)", borderRadius: "var(--radius-sm)", padding: "8px 8px 2px", background: "var(--surface-paper)" }}>
+        <ContourFigure result={result} region={region} />
+      </div>
+    </div>
+  );
 }
 
 function PlotEditor({
