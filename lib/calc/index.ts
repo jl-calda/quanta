@@ -73,6 +73,20 @@ export {
   type TableViewFilter,
 } from "./table-view";
 
+// Table import / export — pure text ⇄ grid transforms with per-column unit inference.
+export {
+  parseDelimited,
+  inferColumn,
+  isUnitExpr,
+  buildTableImport,
+  tableToMatrix,
+  toDelimited,
+  type ImportColumn,
+  type TableImport,
+  type BuildImportOptions,
+  type Delimiter,
+} from "./table-io";
+
 // Plot region (pure, engine-native — see ./plot).
 export {
   evaluatePlot,

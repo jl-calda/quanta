@@ -12,6 +12,7 @@ import { GoToPageDialog } from "./go-to-page-dialog";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { CommandPalette } from "./command-palette";
 import { WorksheetSettingsDialog } from "./worksheet-settings-dialog";
+import { TableImportDialog } from "./table-import-dialog";
 
 /**
  * DialogHost — the single mount point for every centrally-hosted editor dialog.
@@ -47,6 +48,8 @@ export function DialogHost() {
       return <CommandPalette onClose={close} />;
     case "worksheetSettings":
       return <WorksheetSettingsDialog onClose={close} />;
+    case "tableImport":
+      return <TableImportDialog regionId={dialog.regionId ?? null} onClose={close} />;
     default:
       return null;
   }
