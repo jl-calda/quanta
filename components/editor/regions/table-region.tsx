@@ -74,7 +74,12 @@ function TableEditor({
     else if (e.key === "ArrowRight" || e.key === "Tab") { e.preventDefault(); setSel((s) => clamp(s.r, s.c + 1)); }
   };
 
+  const selCell = cellOf(result, sel.r, sel.c);
+  const selSpilledFrom = selCell?.kind === "spill" ? selCell.spilledFrom : undefined;
+
   const commitCell = (source: string) => {
+    // A spilled cell is owned by its array formula — its source stays empty.
+    if (selCell?.kind === "spill") return;
     if (source !== rawAt(sel.r, sel.c)) {
       dispatch({ type: "EDIT_TABLE_CELL", id: region.id, r: sel.r, c: sel.c, source });
     }
@@ -124,6 +129,7 @@ function TableEditor({
           key={`${region.id}:${sel.r}:${sel.c}`}
           source={rawAt(sel.r, sel.c)}
           disabled={nRows === 0 || nCols === 0}
+          spilledFrom={selSpilledFrom}
           onCommit={commitCell}
           onCommitNext={(source) => {
             commitCell(source);
@@ -229,6 +235,9 @@ function TableEditor({
                   const isSel = sel.r === r && sel.c === c;
                   const cell = cellOf(result, r, c);
                   const style = cell?.style;
+                  // Cells an array formula filled read as derived: faint accent tint +
+                  // muted text, so the spilled block is legible but clearly not typed in.
+                  const isSpill = cell?.kind === "spill";
                   return (
                     <td
                       key={col.key}
@@ -239,8 +248,10 @@ function TableEditor({
                         padding: "5px 10px",
                         textAlign: colAlign(col),
                         font: `${numericColumn(col) ? "" : "600 "}12px/1.3 ${colFontFamily(col)}`,
-                        color: cell?.error ? "var(--status-error)" : style?.color ?? "var(--text-primary)",
-                        background: isSel ? "transparent" : style?.fill ?? "transparent",
+                        color: cell?.error
+                          ? "var(--status-error)"
+                          : style?.color ?? (isSpill ? "var(--text-muted)" : "var(--text-primary)"),
+                        background: isSel ? "transparent" : style?.fill ?? (isSpill ? "var(--accent-tint)" : "transparent"),
                         borderRight: c < nCols - 1 ? "1px solid var(--border-hairline)" : "none",
                         borderTop: r ? "1px solid var(--border-hairline)" : "none",
                         cursor: "cell",
@@ -332,6 +343,11 @@ function EditCellContent({
       </span>
     );
   }
+  if (cell?.kind === "spill") {
+    return (
+      <span title={cell.spilledFrom ? `Spilled from ${cell.spilledFrom}` : undefined}>{cell.formatted}</span>
+    );
+  }
   if (cell && cell.kind !== "empty") return <>{cell.formatted}</>;
   const raw = region.rows[r]?.[c] ?? "";
   return <>{raw.startsWith("=") ? "" : raw}</>;
@@ -344,16 +360,45 @@ function EditCellContent({
 function FormulaBar({
   source,
   disabled,
+  spilledFrom,
   onCommit,
   onCommitNext,
 }: {
   source: string;
   disabled: boolean;
+  /** When set, the selected cell was filled by an array formula and is read-only. */
+  spilledFrom?: string;
   onCommit: (source: string) => void;
   onCommitNext: (source: string) => void;
 }) {
   const [draft, setDraft] = useState(source);
   const ref = useRef<HTMLInputElement>(null);
+
+  // A spilled cell isn't editable — show where its value came from instead of an input.
+  if (spilledFrom) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          height: 26,
+          padding: "0 9px",
+          borderRadius: "var(--radius-sm)",
+          border: "1px solid var(--border-hairline)",
+          background: "var(--accent-tint)",
+          font: "12px/1 var(--font-sans)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <span style={{ display: "inline-flex", color: "var(--accent)", flex: "0 0 auto" }}>
+          <Icon name="label" size={14} />
+        </span>
+        Spilled from <span style={{ font: "12px/1 var(--font-mono)", color: "var(--accent)" }}>{spilledFrom}</span>
+      </div>
+    );
+  }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {

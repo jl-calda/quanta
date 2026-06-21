@@ -54,6 +54,25 @@ export function cycle(names: string[]): CalcError {
   );
 }
 
+/**
+ * An array formula can't spill its result into the cells it needs — a target is
+ * already occupied, or the result runs past the edge of the grid. Names the first
+ * blocking cell so the fix is obvious (Excel's `#SPILL!`, in the app's voice).
+ */
+export function spillError(reason: "blocked" | "out-of-grid", addr: string): CalcError {
+  return reason === "out-of-grid"
+    ? makeError(
+        "spill",
+        `This array can't spill — it runs past ${addr}, the edge of the table.`,
+        "Add rows or columns, or shorten the result.",
+      )
+    : makeError(
+        "spill",
+        `This array can't spill into ${addr} — that cell already has a value.`,
+        `Clear ${addr} so the result has room, or move the formula.`,
+      );
+}
+
 /** A region whose dependency failed cannot be computed, but it is not itself wrong. */
 export function blockedBy(name: string): CalcError {
   return makeError(

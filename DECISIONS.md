@@ -2,6 +2,48 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Table array formulas & multi-cell spill (Phase 2, Func §6.3)
+
+- **Array-valued formula cells spill automatically.** A cell whose `=formula`
+  evaluates to an array/matrix fills neighbouring cells (Excel dynamic-array model): a
+  1-D vector spills DOWN as a column; a 2-D matrix spills rows×cols. The anchor keeps
+  the top-left element; each other element lands in an empty neighbour. Consequence
+  (logged because it's a behaviour change): a formula cell can **no longer hold a raw
+  array in one cell** — to consume the whole result downstream, reference the spilled
+  *range* (`=sum(A2:A4)`), a named range over it, or the grid name. The spill predicate
+  is **`isUnit`-first** (`!isUnit(v) && (isMatrix(v) || isArray(v))`) so a unit value —
+  which is an object, and a unit matrix passes `isMatrix` — never spills; empty and 1×1
+  arrays stay scalar. No existing formula returns a bare array into a cell, so nothing
+  regressed.
+- **Spilled values reuse every existing read path — no graph/flatten change.** Each
+  spilled element is written into the table's internal `values` map at its target
+  index, so cell refs (`=A3`), ranges, named ranges, `gridValue()`, and therefore the
+  `exports` → `settleTables` fold-back all read the spill for free. `graph.ts`/
+  `recalc.ts` and `flatten.ts` are untouched; the worksheet bridge resolves a spilled
+  range exactly like a literal one (`vec := [10, 20, 30]`).
+- **Spill ordering = a bounded geometry-fixpoint inside `evaluateTable`.** A spilled-into
+  cell isn't a formula cell, so a downstream formula that reads a *non-anchor* spill
+  cell has its edge dropped from the topo order and could run before the anchor. Pass 0
+  runs the static order to learn each spill's shape; later passes redirect every edge
+  pointing at a spill cell to its anchor (`augmentEdges`) and re-topo, so readers order
+  after anchors. The loop settles when the spill *geometry* signature (anchor footprints
+  + #SPILL! cells — cheap, not the whole value grid) stops changing, bounded by
+  `MAX_SPILL_PASSES = 16` + a `seen`-set oscillation guard (mirroring `settleTables`).
+  As there, a pathological oscillating shape halts deterministically at the cap rather
+  than spinning; it never throws.
+- **Collision = `#SPILL!`, no partial write.** If any target cell is non-empty,
+  out-of-grid, or already claimed by an earlier anchor (anchors processed in topo order,
+  so the winner is deterministic), the *whole* spill is blocked: the anchor gets a new
+  `spill`-kind `CalcError` (`errors.spillError`, app-voice, names the blocking cell) and
+  no cells are filled. `spill` is a new `CalcErrorKind` (pure, local to `/lib/calc`; not
+  a content-schema change).
+- **No persistence change.** Spill is computed, never stored — `rows` stay raw source
+  strings, so `content.ts`/Zod/Server Actions are untouched. `TableCellResult` gains
+  optional `spill` (anchor footprint) and `spilledFrom` (origin A1 addr) + a `"spill"`
+  cell kind; the edit grid tints spilled cells (`--accent-tint` + muted text), shows
+  "Spilled from A2" in the formula bar, and blocks editing them. Read/print mode needs
+  no change — it already renders any non-empty cell's `formatted`.
+
 ## Function-library expansion — math / statistical / logical / text / date (Phase 2)
 
 - **Registered engine-wide on the shared mathjs instance, NOT in `table.ts`.** The
@@ -451,11 +493,11 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   the pure engine; snapshots have no live worksheet scope, so cross-region refs there show an
   inline error — acceptable for a static snapshot). The formula bar is a plain mono `<input>`,
   **not** MathLive — the math-entry seams are left untouched.
-- **Sort/filter and true array/spill are deferred but typed-but-inert.** `TableSort`/
-  `TableFilter` types + `sort?`/`filter?` fields compile and round-trip, and A1 **range**
-  references (`B2:B5`, named ranges) already resolve to matrices for lookups, so the follow-up
-  adds only sort/filter UI + spill *output* with no refactor. No dead UI ships (the header
-  sort/filter glyphs are omitted this pass — they return with the feature).
+- **Sort/filter and true array/spill were deferred but typed-but-inert; both have since
+  shipped.** `TableSort`/`TableFilter` types + `sort?`/`filter?` fields compiled and
+  round-tripped, and A1 **range** references (`B2:B5`, named ranges) already resolved to
+  matrices for lookups, so the follow-up added only sort/filter UI + spill *output* with
+  no refactor (array-formula spill — see the top of this log).
 - **Table cell edits persist through the existing autosave path** (`SET_REGION_PROP`-style
   dedicated `EDIT_TABLE_CELL`/`ADD_*`/`DELETE_*`/`SET_TABLE_COLUMN` reducer actions → `touched()`
   → the Zod-validated, RLS-gated `saveWorksheet`). No new entity, table, action, or migration —
