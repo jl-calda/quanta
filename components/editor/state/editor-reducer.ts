@@ -290,6 +290,7 @@ export type EditorAction =
   | { type: "INDENT_SELECTED"; delta: 1 | -1 }
   | { type: "SET_COLUMNS"; rowId: string; columns: 1 | 2 | 3 }
   | { type: "SET_SPLIT"; rowId: string; split: number[] }
+  | { type: "TOGGLE_ROW_BREAK"; rowId: string }
   | { type: "TOGGLE_SPAN"; id: string }
   | { type: "TOGGLE_AREA"; id: string }
   | { type: "SET_RESULTS"; sheet: SheetResult }
@@ -1236,6 +1237,19 @@ export function editorReducer(
       const content = mutate(state.content, (next) => {
         const row = next.rows.find((r) => r.id === action.rowId)!;
         row.split = clampSplit(action.split);
+      });
+      return touched(state, content);
+    }
+    case "TOGGLE_ROW_BREAK": {
+      // A hard page break falls *before* a row. The first row can't carry one
+      // (nothing precedes page 1), so toggling it there is a no-op. Clearing
+      // deletes the flag to keep the JSONB free of `false`.
+      const idx = state.content.rows.findIndex((r) => r.id === action.rowId);
+      if (idx <= 0) return state;
+      const content = mutate(state.content, (next) => {
+        const row = next.rows[idx];
+        if (row.breakBefore) delete row.breakBefore;
+        else row.breakBefore = true;
       });
       return touched(state, content);
     }

@@ -56,6 +56,39 @@ describe("INSERT_REGION", () => {
   });
 });
 
+describe("TOGGLE_ROW_BREAK", () => {
+  const twoRowDoc: WorksheetContent = {
+    version: 1,
+    rows: [
+      { id: "r1", columns: 1, cells: [{ regions: [{ id: "A", type: "math", indent: 0, source: "a := 1" }] }] },
+      { id: "r2", columns: 1, cells: [{ regions: [{ id: "B", type: "math", indent: 0, source: "b := 2" }] }] },
+    ],
+  };
+
+  it("sets then clears a hard page break before a non-first row", () => {
+    const set = editorReducer(freshState(twoRowDoc), { type: "TOGGLE_ROW_BREAK", rowId: "r2" });
+    expect(set.content.rows[1].breakBefore).toBe(true);
+    expect(set.saveState).toBe("unsaved");
+
+    const cleared = editorReducer(set, { type: "TOGGLE_ROW_BREAK", rowId: "r2" });
+    // Cleared, not left as `false`, so the JSONB stays free of dead flags.
+    expect("breakBefore" in cleared.content.rows[1]).toBe(false);
+  });
+
+  it("is a no-op on the first row (nothing precedes page 1)", () => {
+    const s = freshState(twoRowDoc);
+    const next = editorReducer(s, { type: "TOGGLE_ROW_BREAK", rowId: "r1" });
+    expect(next).toBe(s);
+    expect(next.content.rows[0].breakBefore).toBeUndefined();
+  });
+
+  it("is a no-op for an unknown row id", () => {
+    const s = freshState(twoRowDoc);
+    const next = editorReducer(s, { type: "TOGGLE_ROW_BREAK", rowId: "nope" });
+    expect(next).toBe(s);
+  });
+});
+
 describe("INSERT_REGION_WITH_SOURCE", () => {
   it("creates a math region prefilled with the source in an empty doc", () => {
     const s = editorReducer(freshState(), {

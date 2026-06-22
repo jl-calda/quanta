@@ -82,9 +82,15 @@ body{padding:0;}
 .ex-doc h1{font-family:var(--font-sans);}
 .ed-katex{font-family:var(--font-math);}
 @page{size:${box.w}px ${box.h}px;margin:${m.top} ${m.right} ${m.bottom} ${m.left};}
+/* Hard page break before a flagged row (the inline style on the marker carries
+   this too; the rule makes the intent explicit and survives style stripping). */
+[data-ex-break]{break-before:page;}
 @media print{
   html,body{width:${box.w}px;}
   .ex-region,.ex-doc table,.ex-doc h1{break-inside:avoid;}
+  /* TODO(follow-up): for pixel-exact soft-boundary parity with the on-screen
+     preview, the body needs explicit per-page containers (shared paginator) —
+     deferred this session (see DECISIONS.md). */
 }
 /* Screen wrapper used for the standalone HTML artifact only. */
 @media screen{
