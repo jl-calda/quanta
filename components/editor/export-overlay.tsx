@@ -11,6 +11,7 @@ import {
   type ExportOptions,
 } from "@/lib/export/options";
 import { ExportDocument } from "@/lib/export/document";
+import { paginateBlocks } from "@/lib/worksheet/paginate";
 import { exportWorksheet } from "@/server/actions/export";
 import { useEditor } from "./state/editor-provider";
 
@@ -93,7 +94,14 @@ const exInput: React.CSSProperties = {
 };
 
 /* ------------------------------------------------------------------ *
- * Paginated preview — scroll-window clipping of one flowed document
+ * Paginated preview — region-atomic pagination that matches the PDF
+ *
+ * One flowed body is rendered once (hidden) and measured per top-level block;
+ * the shared `paginateBlocks` then decides page boundaries exactly the way the
+ * print engine flows the document — no region is split, and a hard page break
+ * (the `[data-ex-break]` marker emitted by ExportDocument) forces a new page.
+ * Each page frame clips the same body translated to that page's first block, so
+ * the on-screen pages match the exported PDF for normal content.
  * ------------------------------------------------------------------ */
 function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: React.ReactNode; zoom: number }) {
   const dims = pageBox(options.size, options.orientation);
@@ -104,20 +112,54 @@ function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: R
   const contentW = dims.w - pad.x * 2;
 
   const measureRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(contentH);
+  // The y-offset (within the flowed body) where each page begins.
+  const [pageTops, setPageTops] = useState<number[]>([0]);
 
   useLayoutEffect(() => {
-    const el = measureRef.current;
-    if (!el) return;
-    const update = () => setHeight(el.scrollHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
+    const wrap = measureRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const doc = wrap.querySelector(".ex-doc");
+      if (!(doc instanceof HTMLElement)) {
+        setPageTops([0]);
+        return;
+      }
+      const docTop = doc.getBoundingClientRect().top;
+      const tops: number[] = [];
+      const ownHeights: number[] = [];
+      const breaks: boolean[] = [];
+      let pendingBreak = false;
+      for (const node of Array.from(doc.children)) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.hasAttribute("data-ex-break")) {
+          pendingBreak = true; // a zero-height marker: break before the next block
+          continue;
+        }
+        const rect = node.getBoundingClientRect();
+        tops.push(rect.top - docTop);
+        ownHeights.push(rect.height);
+        breaks.push(pendingBreak);
+        pendingBreak = false;
+      }
+      // Heights from the gap to the next block (captures inter-block margins);
+      // the last block uses its own measured height.
+      const blocks = tops.map((top, i) => ({
+        height: i < tops.length - 1 ? tops[i + 1] - top : ownHeights[i],
+        breakBefore: breaks[i],
+      }));
+      const { pageOfBlock, pageCount } = paginateBlocks(blocks, contentH);
+      const nextTops: number[] = [];
+      for (let p = 0; p < pageCount; p += 1) {
+        const first = pageOfBlock.indexOf(p);
+        nextTops.push(first === -1 ? 0 : tops[first]);
+      }
+      setPageTops(nextTops);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
     return () => ro.disconnect();
-  }, [body, contentW]);
-
-  const pageCount = Math.max(1, Math.ceil(height / contentH));
-  const pages = Array.from({ length: pageCount }, (_, i) => i);
+  }, [body, contentW, contentH]);
 
   return (
     <>
@@ -126,7 +168,7 @@ function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: R
         <div ref={measureRef}>{body}</div>
       </div>
 
-      {pages.map((i) => (
+      {pageTops.map((top, i) => (
         <div key={i} style={{ width: dims.w * zoom, height: dims.h * zoom, flex: "0 0 auto" }}>
           <div style={{ width: dims.w, height: dims.h, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <div className="ex-page" style={{ width: dims.w, height: dims.h, display: "flex", flexDirection: "column", overflow: "hidden", background: "#fff", boxShadow: "0 1px 3px rgba(20,24,29,0.12), 0 6px 18px rgba(20,24,29,0.10)" }}>
@@ -140,21 +182,21 @@ function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: R
                     <span style={{ transform: "rotate(-32deg)", font: "700 64px/1 var(--font-sans)", letterSpacing: "0.06em", color: "rgba(31,95,191,0.07)", whiteSpace: "nowrap", textTransform: "uppercase" }}>{options.watermark}</span>
                   </div>
                 )}
-                {/* Clip window: the same body translated up by page index. */}
+                {/* Clip window: the same body translated to this page's first block. */}
                 <div style={{ position: "relative", zIndex: 1, height: contentH, overflow: "hidden" }}>
-                  <div style={{ width: contentW, transform: `translateY(${-i * contentH}px)` }}>{body}</div>
+                  <div style={{ width: contentW, transform: `translateY(${-top}px)` }}>{body}</div>
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: `0 ${pad.x}px`, height: FOOTER_H, borderTop: "1px solid #E2E5EA", font: "8px/1 var(--font-sans)", color: "#6B7480", flex: "0 0 auto" }}>
                 <span>{options.footer}</span>
-                <span>Page {i + 1} of {pageCount}</span>
+                <span>Page {i + 1} of {pageTops.length}</span>
               </div>
             </div>
           </div>
         </div>
       ))}
       <div style={{ font: "11px/1.4 var(--font-sans)", color: "var(--text-muted)", paddingTop: 4, textAlign: "center", maxWidth: 360 }}>
-        Page breaks are approximate here; the exported PDF paginates precisely.
+        Hard page breaks are exact. Soft boundaries are close — the exported PDF paginates precisely.
       </div>
     </>
   );

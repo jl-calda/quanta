@@ -35,6 +35,10 @@ export interface RibbonSelection {
   columns: 1 | 2 | 3;
   /** Selection is a top-level cell region, so "span all columns" applies. */
   canSpan: boolean;
+  /** The selected region's row carries a hard page break. */
+  hasPageBreak: boolean;
+  /** A page break can be toggled on the selection's row (editable, not the first row). */
+  canPageBreak: boolean;
   calcMode: CalcMode;
   unitsSystem: UnitsSystem;
   /** The comments drawer is the active right panel. */
@@ -67,6 +71,8 @@ export interface RibbonCommands {
   indent: (delta: 1 | -1) => void;
   setColumns: (columns: 1 | 2 | 3) => void;
   toggleSpan: () => void;
+  /** Toggle a hard page break before the selection's row (Document tab). */
+  togglePageBreak: () => void;
   setMode: (mode: CalcMode) => void;
   recalculate: () => void;
   recalculateToHere: () => void;
@@ -102,6 +108,8 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
   const row = state.selectedId ? findRowOf(state.content, state.selectedId) : null;
   const isTopLevel =
     !!row && row.cells.some((c) => c.regions.some((r) => r.id === state.selectedId));
+  // A break sits before a row; the first row can't carry one (nothing precedes page 1).
+  const rowIndex = row ? state.content.rows.indexOf(row) : -1;
 
   const sel: RibbonSelection = {
     hasSelection: !!selected,
@@ -115,6 +123,8 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
     border: selected?.border ?? false,
     columns: row?.columns ?? 1,
     canSpan: canEdit && isTopLevel,
+    hasPageBreak: row?.breakBefore === true,
+    canPageBreak: canEdit && rowIndex > 0,
     calcMode: state.calcMode,
     unitsSystem: state.unitsSystem,
     commentsOpen: state.ui.rightPanel === "comments",
@@ -204,6 +214,11 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
     dispatch({ type: "TOGGLE_SPAN", id: state.selectedId });
   };
 
+  const togglePageBreak = () => {
+    if (!canEdit || !row) return;
+    dispatch({ type: "TOGGLE_ROW_BREAK", rowId: row.id });
+  };
+
   const recalcToHere = () => {
     if (state.selectedId) recalculateToHere(state.selectedId);
     else recalculate();
@@ -234,6 +249,7 @@ export function useRibbonCommands(): { cmd: RibbonCommands; sel: RibbonSelection
     indent,
     setColumns,
     toggleSpan,
+    togglePageBreak,
     setMode,
     recalculate,
     recalculateToHere: recalcToHere,

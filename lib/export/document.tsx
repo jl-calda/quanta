@@ -13,7 +13,7 @@
  * on regions); page chrome (running header/footer, page numbers) is added by the
  * print engine, not here.
  */
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import katex from "katex";
 import {
   constraintToLatex,
@@ -900,13 +900,19 @@ export function ExportDocument({ title, content, results, options, meta }: Expor
 
       {options.inputsSummary && <InputsSummary rows={inputs} />}
 
-      {content.rows.map((row) =>
-        row.cells.map((cell, ci) =>
-          cell.regions.map((region) => (
-            <RegionBlock key={`${row.id}-${ci}-${region.id}`} region={region} results={results} options={options} />
-          )),
-        ),
-      )}
+      {content.rows.map((row, ri) => (
+        <Fragment key={row.id}>
+          {/* Hard page break before this row (never the first). The zero-height
+              marker forces the print engine to a new page; the preview reads the
+              same `[data-ex-break]` marker so both paginate identically. */}
+          {row.breakBefore && ri > 0 && <div data-ex-break style={{ breakBefore: "page" }} aria-hidden />}
+          {row.cells.map((cell, ci) =>
+            cell.regions.map((region) => (
+              <RegionBlock key={`${ci}-${region.id}`} region={region} results={results} options={options} />
+            )),
+          )}
+        </Fragment>
+      ))}
     </div>
   );
 }

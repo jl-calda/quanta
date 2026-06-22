@@ -2023,3 +2023,40 @@ ungroup one). This row fills exactly those, plus light area polish.
   Group) added to the shared `regionBindings` so the shortcuts modal lists them.
   `/lib/calc` and `graph.ts`/`recalc.ts` untouched; the provider's settle loop
   re-derives results from the reshaped tree as before.
+
+## Editor — insertable page breaks + export-preview that matches the PDF (Phase 2)
+
+- **Hard page break = `Row.breakBefore?: boolean` (no new entity/type).** A break
+  falls between rows in document flow, so it lives on the existing `Row` model in
+  `lib/worksheet/content.ts` as an OPTIONAL boolean — existing `worksheets.content`
+  loads unchanged, and autosave persists it through the unchanged Zod `saveWorksheet`
+  action (no new table, no new region `type`, no new server action). `normalizeRow`
+  already spreads `...row`, so the flag survives load/normalize. The first row can't
+  carry one (nothing precedes page 1): `TOGGLE_ROW_BREAK` and the ribbon/canvas
+  affordances all no-op there, and the paginator ignores `breakBefore` on index 0.
+- **One pure paginator powers "preview matches PDF".** `lib/worksheet/paginate.ts`
+  (`paginateBlocks`) is dependency-free (no React/DOM/Node, no page geometry of its
+  own) and assigns atomic blocks to pages exactly as the print engine flows them: a
+  block never splits, a hard break forces a new page, and a block taller than a page
+  starts fresh then overflows (documented). Page geometry stays in
+  `lib/export/options.ts` (`pageBox`/`MARGIN_PX`) at the call site. Exhaustively
+  unit-tested. `/lib/calc`, `graph.ts`, `recalc.ts` untouched.
+- **Export preview repaginated over measured region heights.**
+  `export-overlay.tsx → PreviewPages` no longer clips at fixed `i*contentH`
+  (which split regions and ignored breaks). It measures the SAME `ExportDocument`'s
+  top-level `.ex-doc` blocks, reads the `[data-ex-break]` markers, runs
+  `paginateBlocks`, and clips each page to its first block's offset — so on-screen
+  pages match the PDF for normal content. Disclaimer updated: hard breaks exact,
+  soft boundaries close.
+- **PDF/print honors the break via a zero-height marker.** `lib/export/document.tsx`
+  emits `<div data-ex-break style={{breakBefore:"page"}}>` before each flagged
+  non-first row (regions stay flat single-column siblings; multi-region rows still
+  split between regions as before). `html.ts` adds `[data-ex-break]{break-before:page;}`
+  alongside the inline style. Puppeteer's `@page` flow is unchanged.
+- **Deferred (follow-up):** the print HTML is NOT restructured into explicit
+  per-page containers this session, so soft (non-hard-break) boundaries are not yet
+  pixel-identical between the preview and the PDF. Pixel-exact soft-boundary parity
+  needs a shared per-page container pass over the print body (noted in code in
+  `html.ts`). Always-on soft page-boundary guides / a "Page N of M" scroll tooltip
+  in the editing canvas are intentionally out of scope. find/replace and the outline
+  navigator were already complete and were left untouched.

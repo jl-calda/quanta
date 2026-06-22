@@ -393,7 +393,17 @@ function DocumentTab({ cmd, sel }: TabProps) {
         </SmStack>
       </Group>
       <Group caption="Navigate">
-        <SmStack w={120}>
+        <SmStack w={140}>
+          {/* No dedicated page-break glyph in the set yet — reuse `pagesetup` (flagged). */}
+          <SmBtn
+            icon="pagesetup"
+            label="Page break"
+            tip="Page break before the selected row"
+            toggle
+            on={sel.hasPageBreak}
+            onClick={cmd.togglePageBreak}
+            disabled={!sel.canPageBreak}
+          />
           <SmBtn icon="toc" label="Table of contents" disabled />
           <SmBtn icon="gotopage" label="Go to page…" onClick={() => cmd.openDialog("goToPage")} />
         </SmStack>
