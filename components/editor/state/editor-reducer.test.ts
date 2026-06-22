@@ -811,3 +811,223 @@ describe("input controls", () => {
     expect(c.value).toBe("S275");
   });
 });
+
+function selectMany(content: WorksheetContent, ids: string[]): EditorState {
+  let s = editorReducer(freshState(content), { type: "SELECT", id: ids[0] });
+  for (const id of ids.slice(1)) s = editorReducer(s, { type: "TOGGLE_SELECT", id });
+  return s;
+}
+
+describe("COPY_SELECTED", () => {
+  it("snapshots the selection in reading order without marking the doc unsaved", () => {
+    let s = selectMany(listDoc(), ["B", "A"]);
+    expect(s.saveState).toBe("saved");
+    s = editorReducer(s, { type: "COPY_SELECTED" });
+    expect(s.clipboard?.map((r) => r.id)).toEqual(["A", "B"]);
+    expect(s.saveState).toBe("saved"); // copy is not a content change
+    // The original content is untouched.
+    expect(readingOrderIds(s.content)).toEqual(["A", "B", "C"]);
+  });
+
+  it("is a no-op with no selection", () => {
+    const s = editorReducer(freshState(listDoc()), { type: "COPY_SELECTED" });
+    expect(s.clipboard).toBeNull();
+  });
+
+  it("copies an area as a subtree and de-nests a co-selected child", () => {
+    let s = selectMany(areaDoc, ["AR", "X"]);
+    s = editorReducer(s, { type: "COPY_SELECTED" });
+    // Only the area is at the top level; its child rides inside it (no duplicate X).
+    expect(s.clipboard).toHaveLength(1);
+    const area = s.clipboard![0];
+    expect(area.type).toBe("area");
+    if (area.type === "area") expect(area.regions.map((r) => r.id)).toEqual(["X"]);
+  });
+});
+
+describe("CUT_SELECTED", () => {
+  it("snapshots then removes the selection, prunes, and marks unsaved", () => {
+    let s = selectMany(listDoc(), ["A", "B"]);
+    s = editorReducer(s, { type: "CUT_SELECTED" });
+    expect(s.clipboard?.map((r) => r.id)).toEqual(["A", "B"]);
+    expect(readingOrderIds(s.content)).toEqual(["C"]);
+    expect(s.selectedIds).toEqual([]);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("is a no-op with no selection", () => {
+    const s = editorReducer(freshState(listDoc()), { type: "CUT_SELECTED" });
+    expect(s.clipboard).toBeNull();
+    expect(readingOrderIds(s.content)).toEqual(["A", "B", "C"]);
+  });
+});
+
+describe("PASTE", () => {
+  it("inserts a re-id'd copy after the primary, in its container, selected not editing", () => {
+    let s = selectMany(listDoc(), ["A"]);
+    s = editorReducer(s, { type: "COPY_SELECTED" });
+    s = editorReducer(s, { type: "SELECT", id: "B" });
+    s = editorReducer(s, { type: "PASTE" });
+    const ids = s.content.rows[0].cells[0].regions.map((r) => r.id);
+    // Pasted region lands right after B.
+    expect(ids.slice(0, 2)).toEqual(["A", "B"]);
+    expect(ids).toHaveLength(4);
+    const pastedId = ids[2];
+    expect(pastedId).not.toBe("A");
+    expect(s.selectedIds).toEqual([pastedId]);
+    expect(s.editingId).toBeNull();
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("pastes inside an area when an area child is the primary selection", () => {
+    let s = selectMany(areaDoc, ["Y"]);
+    s = editorReducer(s, { type: "COPY_SELECTED" });
+    s = editorReducer(s, { type: "SELECT", id: "X" });
+    s = editorReducer(s, { type: "PASTE" });
+    const area = findRegion(s.content, "AR");
+    expect(area?.type).toBe("area");
+    if (area?.type === "area") {
+      // X plus the pasted clone of Y, both inside the area.
+      expect(area.regions).toHaveLength(2);
+      expect(area.regions[0].id).toBe("X");
+      expect(area.regions[1].id).not.toBe("Y");
+    }
+  });
+
+  it("appends a new single-column row when nothing is selected", () => {
+    let s = selectMany(listDoc(), ["A"]);
+    s = editorReducer(s, { type: "COPY_SELECTED" });
+    s = editorReducer(s, { type: "SELECT", id: null });
+    s = editorReducer(s, { type: "PASTE" });
+    expect(s.content.rows).toHaveLength(2);
+    expect(s.content.rows[1].columns).toBe(1);
+    expect(s.content.rows[1].cells[0].regions).toHaveLength(1);
+  });
+
+  it("is a no-op with an empty clipboard", () => {
+    const before = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    const s = editorReducer(before, { type: "PASTE" });
+    expect(s).toBe(before);
+  });
+});
+
+describe("PASTE_REGIONS", () => {
+  it("inserts re-id'd copies of explicitly-provided regions (system clipboard path)", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    s = editorReducer(s, {
+      type: "PASTE_REGIONS",
+      regions: [{ id: "EXT", type: "math", indent: 0, source: "z := 9" }],
+    });
+    const ids = s.content.rows[0].cells[0].regions.map((r) => r.id);
+    expect(ids[0]).toBe("A");
+    const pastedId = ids[1];
+    expect(pastedId).not.toBe("EXT"); // re-id happened
+    expect(s.selectedIds).toEqual([pastedId]);
+  });
+});
+
+describe("GROUP_SELECTED", () => {
+  it("wraps a contiguous selection into one area at the primary's slot", () => {
+    let s = selectMany(listDoc(), ["A", "B", "C"]);
+    s = editorReducer(s, { type: "GROUP_SELECTED" });
+    const top = s.content.rows[0].cells[0].regions;
+    expect(top).toHaveLength(1);
+    const area = top[0];
+    expect(area.type).toBe("area");
+    if (area.type === "area") expect(area.regions.map((r) => r.id)).toEqual(["A", "B", "C"]);
+    expect(s.selectedId).toBe(area.id);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("flattens a cross-cell selection into one area without losing content", () => {
+    // twoColDoc: A in cell 0, B in cell 1.
+    let s = selectMany(twoColDoc, ["A", "B"]);
+    s = editorReducer(s, { type: "GROUP_SELECTED" });
+    const order = readingOrderIds(s.content);
+    // One area holding both, plus its two children = 3 ids; nothing dropped.
+    const areas = order.filter((id) => findRegion(s.content, id)?.type === "area");
+    expect(areas).toHaveLength(1);
+    const area = findRegion(s.content, areas[0]);
+    if (area?.type === "area") expect(area.regions.map((r) => r.id)).toEqual(["A", "B"]);
+  });
+
+  it("lands the area at the primary's slot when survivors precede it", () => {
+    // P A B Q ; group A+B with B (a non-first member) as the primary.
+    const doc: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                { id: "P", type: "math", indent: 0, source: "p := 0" },
+                { id: "A", type: "math", indent: 0, source: "a := 1" },
+                { id: "B", type: "math", indent: 0, source: "b := 2" },
+                { id: "Q", type: "math", indent: 0, source: "q := 3" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    let s = editorReducer(freshState(doc), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "TOGGLE_SELECT", id: "B" }); // primary becomes B
+    expect(s.selectedId).toBe("B");
+    s = editorReducer(s, { type: "GROUP_SELECTED" });
+    const top = s.content.rows[0].cells[0].regions;
+    expect(top[0].id).toBe("P");
+    expect(top[1].type).toBe("area"); // area sits where the A/B block was, after P
+    expect(top[2].id).toBe("Q");
+    if (top[1].type === "area") expect(top[1].regions.map((r) => r.id)).toEqual(["A", "B"]);
+  });
+
+  it("groups a single region", () => {
+    let s = selectMany(listDoc(), ["B"]);
+    s = editorReducer(s, { type: "GROUP_SELECTED" });
+    const top = s.content.rows[0].cells[0].regions.map((r) => r.id);
+    // A, [area(B)], C
+    expect(top).toHaveLength(3);
+    const area = s.content.rows[0].cells[0].regions[1];
+    expect(area.type).toBe("area");
+    if (area.type === "area") expect(area.regions.map((r) => r.id)).toEqual(["B"]);
+  });
+
+  it("preserves nesting when a selected area is in the set", () => {
+    let s = selectMany(areaDoc, ["AR", "Y"]);
+    s = editorReducer(s, { type: "GROUP_SELECTED" });
+    const top = s.content.rows[0].cells[0].regions;
+    expect(top).toHaveLength(1);
+    const outer = top[0];
+    expect(outer.type).toBe("area");
+    if (outer.type === "area") {
+      expect(outer.regions.map((r) => r.id)).toEqual(["AR", "Y"]);
+      const inner = outer.regions[0];
+      expect(inner.type).toBe("area");
+      if (inner.type === "area") expect(inner.regions.map((r) => r.id)).toEqual(["X"]);
+    }
+  });
+
+  it("is a no-op with no selection", () => {
+    const s = editorReducer(freshState(listDoc()), { type: "GROUP_SELECTED" });
+    expect(readingOrderIds(s.content)).toEqual(["A", "B", "C"]);
+  });
+});
+
+describe("UNGROUP_AREA", () => {
+  it("splices an area's children into its slot and selects them", () => {
+    const s = editorReducer(freshState(areaDoc), { type: "UNGROUP_AREA", id: "AR" });
+    const top = s.content.rows[0].cells[0].regions.map((r) => r.id);
+    expect(top).toEqual(["X", "Y"]);
+    expect(s.selectedIds).toEqual(["X"]);
+    expect(s.selectedId).toBe("X");
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("is a no-op on a non-area id", () => {
+    const before = freshState(listDoc());
+    const s = editorReducer(before, { type: "UNGROUP_AREA", id: "A" });
+    expect(s).toBe(before);
+  });
+});

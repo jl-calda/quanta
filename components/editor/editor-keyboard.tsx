@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import { useEditor } from "./state/editor-provider";
+import { selectedRegionsInReadingOrder } from "./state/editor-reducer";
+import { parseRegions, serializeRegions } from "@/lib/worksheet/clipboard";
 
 /**
  * Worksheet-level keyboard shortcuts (renders nothing). These are the `app`-scoped
@@ -90,6 +92,45 @@ export function EditorKeyboard() {
         dispatch({ type: "DELETE_SELECTED" });
         return;
       }
+      // ---- Region clipboard (canvas-only; inside a field copy/paste is the
+      // browser's / MathLive's job). The reducer keeps an in-session clipboard;
+      // we additionally mirror to the system clipboard so paste works across
+      // worksheet tabs, and prefer a valid Quanta payload from it on paste. ----
+      if (mod && lower === "c" && canEdit && !state.editingId && hasSelection) {
+        e.preventDefault();
+        const regions = selectedRegionsInReadingOrder(state);
+        dispatch({ type: "COPY_SELECTED" });
+        if (regions.length) void navigator.clipboard?.writeText(serializeRegions(regions)).catch(() => {});
+        return;
+      }
+      if (mod && lower === "x" && canEdit && !state.editingId && hasSelection) {
+        e.preventDefault();
+        const regions = selectedRegionsInReadingOrder(state);
+        dispatch({ type: "CUT_SELECTED" });
+        if (regions.length) void navigator.clipboard?.writeText(serializeRegions(regions)).catch(() => {});
+        return;
+      }
+      if (mod && lower === "v" && canEdit && !state.editingId) {
+        e.preventDefault();
+        const read = navigator.clipboard?.readText?.();
+        if (read) {
+          read
+            .then((text) => {
+              const regions = parseRegions(text);
+              if (regions && regions.length) dispatch({ type: "PASTE_REGIONS", regions });
+              else dispatch({ type: "PASTE" });
+            })
+            .catch(() => dispatch({ type: "PASTE" }));
+        } else {
+          dispatch({ type: "PASTE" });
+        }
+        return;
+      }
+      if (mod && lower === "g" && canEdit && !state.editingId && state.selectedIds.length > 1) {
+        e.preventDefault();
+        dispatch({ type: "GROUP_SELECTED" });
+        return;
+      }
       if (mod && lower === "a" && canEdit && !state.editingId) {
         e.preventDefault();
         dispatch({ type: "SELECT_ALL" });
@@ -102,7 +143,7 @@ export function EditorKeyboard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.selectedId, state.selectedIds.length, state.editingId, state.calcMode, canEdit, recalculate, recalculateToHere, setMode, dispatch]);
+  }, [state, canEdit, recalculate, recalculateToHere, setMode, dispatch]);
 
   return null;
 }

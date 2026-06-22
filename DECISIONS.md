@@ -1902,3 +1902,64 @@ inside `/lib/calc` (no worker), composing with the worker-backed `odesolve` path
   (`evaluateSolve` per step)" — true sensitivity of a SOLVED quantity. Its precondition
   (a solid ODE/solver path) is now met by PR #59; when built it should reuse #59's
   worker-producer-cache pattern (`use-solve-eval` → `region.solution`).
+
+## Editor: region copy/paste, reorder & areas (Phase 2)
+
+Most of this row's "build" already existed and was left untouched: drag-reorder
+(`MOVE_TO` + the grip/drop-line in `region-item.tsx`, empty-cell drops via
+`MOVE_TO_CELL`), span/indent (the per-region `SelectionToolbar` + multi-select
+`GroupBar`), collapsible `AreaRegion` (`TOGGLE_AREA` + `AreaFrame`), and
+layout persistence (every `touched()` change autosaves the whole `content`
+JSONB). The genuine gaps were **copy/paste** (no clipboard anywhere) and the
+**"groups"** half of "areas/groups" (no way to wrap a selection into an area or
+ungroup one). This row fills exactly those, plus light area polish.
+
+- **Clipboard = pure helper + pure reducer + side-effecting handler.** New pure
+  module `lib/worksheet/clipboard.ts` serializes regions to a versioned envelope
+  (`{kind:"quanta/regions", version:1, regions}`) and `parseRegions` validates
+  text back to `Region[] | null` through the exported `regionSchema` (a
+  discriminated union, so a table's TSV/CSV, stray text, or an unknown region
+  `type` all parse to `null`). `EditorState` gains a session-only
+  `clipboard: Region[] | null` (NOT part of `WorksheetContent`, so it never
+  persists and the autosave Zod gate never sees it). `editor-keyboard.tsx` is the
+  ONLY place that touches `navigator.clipboard` (async `readText`/`writeText`
+  belong in the handler, not the sync reducer): Cmd/Ctrl+C/X mirror the snapshot
+  to the system clipboard so paste works across worksheet tabs; Cmd/Ctrl+V
+  prefers a valid Quanta payload from the system clipboard
+  (`PASTE_REGIONS{regions}`) and falls back to the in-session `clipboard`
+  (`PASTE`) when the read is foreign, denied, or in an insecure context.
+- **Copy never dirties the doc.** `COPY_SELECTED` returns state with only
+  `clipboard` set — no `touched()`, so `saveState` is unchanged (no spurious
+  autosave). `CUT_SELECTED` = snapshot + `DELETE_SELECTED` semantics in one step.
+- **`reidRegion`/`reidRegions` consolidated into `content.ts`** (it owns
+  `newId`/`newRegion`) and re-exported, replacing the reducer's private copy so the
+  reducer (duplicate) and the clipboard helper (paste) share one recursive
+  re-id — the dependency arrow stays `editor-reducer`/`clipboard` → `lib/worksheet`.
+- **Paste placement mirrors duplicate.** `pasteInto` re-ids the block and splices
+  it after the primary in its `locate()` container — so paste lands INSIDE an area
+  when an area child is selected; with no selectable anchor it appends a fresh
+  single-column row (matching `INSERT_REGION` with a null anchor). Pasted regions
+  are selected, not opened for edit.
+- **Group flattens by reading order; lands at the primary's slot.**
+  `GROUP_SELECTED` collects the selection in reading order (de-nesting: an
+  already-collected area carries its own children, so a co-selected descendant is
+  skipped — no duplication), removes each BY REFERENCE, and inserts a new
+  `AreaRegion{title:"Area"}` where the primary was. Cross-cell selections flatten
+  into one area in the primary's container (non-lossy, matching `SET_COLUMNS`'s
+  "merge, never lose content"). The insert index is counted over the ORIGINAL
+  order (`survivors before the primary that aren't being collected`) so the
+  reference-based removals can't shift it — an earlier index-arithmetic attempt
+  that counted on the progressively-spliced tree was wrong whenever the primary
+  wasn't the first member and survivors preceded it (pinned by a regression test).
+  `UNGROUP_AREA` splices an area's children back into its slot (ids preserved, no
+  re-id) and re-selects them; a non-area id is a no-op.
+- **De-nest snapshot reused.** `selectedRegionsInReadingOrder(state)` (exported)
+  is the single reading-order, deep-cloned, de-nested snapshot used by copy/cut and
+  mirrored to the system clipboard.
+- **UI seams only (RLS unchanged).** `GroupBar` gets "Group into area"; the
+  per-region kebab menu gets Copy/Paste; `AreaFrame` gets an Ungroup button and
+  double-click inline title rename (via the existing `SET_REGION_PROP {title}` —
+  `RegionPatch.title` already existed). Keymap reference entries (Copy/Cut/Paste/
+  Group) added to the shared `regionBindings` so the shortcuts modal lists them.
+  `/lib/calc` and `graph.ts`/`recalc.ts` untouched; the provider's settle loop
+  re-derives results from the reshaped tree as before.

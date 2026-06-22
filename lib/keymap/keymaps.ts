@@ -30,6 +30,10 @@ const regionBindings: KeyBinding[] = [
   { action: "emptyRegionToText", label: "Convert an empty region to text", keys: ["Space"], group: "Regions", scope: "app" },
   { action: "newRegion", label: "New region below", keys: ["Mod", "+", "Enter"], group: "Regions", scope: "app" },
   { action: "deleteRegion", label: "Delete the selected region", keys: ["Mod", "+", "Del"], group: "Regions", scope: "app" },
+  { action: "copyRegion", label: "Copy the selected region(s)", keys: ["Mod", "+", "C"], group: "Regions", scope: "app" },
+  { action: "cutRegion", label: "Cut the selected region(s)", keys: ["Mod", "+", "X"], group: "Regions", scope: "app" },
+  { action: "pasteRegion", label: "Paste region(s)", keys: ["Mod", "+", "V"], group: "Regions", scope: "app" },
+  { action: "groupRegions", label: "Group selection into an area", keys: ["Mod", "+", "G"], group: "Regions", scope: "app" },
 ];
 
 const calculationBindings: KeyBinding[] = [

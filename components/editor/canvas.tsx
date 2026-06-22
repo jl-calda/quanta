@@ -460,6 +460,7 @@ function GroupBar({ count, dispatch }: { count: number; dispatch: Dispatch<Edito
         {btn("Outdent", "indentL", { type: "INDENT_SELECTED", delta: -1 })}
         {btn("Indent", "indentR", { type: "INDENT_SELECTED", delta: 1 })}
         {btn("Duplicate", "copy", { type: "DUPLICATE_SELECTED" })}
+        {btn("Group into area", "area", { type: "GROUP_SELECTED" })}
         {sep}
         <button
           onClick={(e) => {

@@ -161,6 +161,16 @@ function RegionBody(props: RegionRenderProps) {
 
 function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>) {
   const count = region.regions.length;
+  const [renaming, setRenaming] = useState(false);
+
+  const commitTitle = (value: string) => {
+    setRenaming(false);
+    const title = value.trim();
+    if (title && title !== region.title) {
+      dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title } });
+    }
+  };
+
   return (
     <div
       style={{
@@ -173,6 +183,7 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
       <div
         onClick={(e) => {
           e.stopPropagation();
+          if (renaming) return;
           dispatch({ type: "TOGGLE_AREA", id: region.id });
         }}
         style={{
@@ -188,9 +199,41 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         <span style={{ color: "var(--text-muted)", display: "inline-flex" }}>
           <Icon name={region.collapsed ? "chevR" : "chevD"} size={16} />
         </span>
-        <span style={{ font: "600 12px/1 var(--font-sans)", letterSpacing: "0.02em", color: "var(--text-primary)" }}>
-          {region.title}
-        </span>
+        {renaming ? (
+          <input
+            autoFocus
+            defaultValue={region.title}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => commitTitle(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commitTitle(e.currentTarget.value);
+              else if (e.key === "Escape") setRenaming(false);
+            }}
+            style={{
+              font: "600 12px/1 var(--font-sans)",
+              letterSpacing: "0.02em",
+              color: "var(--text-primary)",
+              background: "var(--surface-raised)",
+              border: "1px solid var(--accent)",
+              borderRadius: "var(--radius-sm)",
+              padding: "2px 6px",
+              outline: "none",
+            }}
+          />
+        ) : (
+          <span
+            onDoubleClick={(e) => {
+              if (!canEdit) return;
+              e.stopPropagation();
+              setRenaming(true);
+            }}
+            title={canEdit ? "Double-click to rename" : undefined}
+            style={{ font: "600 12px/1 var(--font-sans)", letterSpacing: "0.02em", color: "var(--text-primary)" }}
+          >
+            {region.title}
+          </span>
+        )}
         <span
           style={{
             font: "11px/1 var(--font-sans)",
@@ -203,6 +246,33 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         >
           {count} {count === 1 ? "region" : "regions"}
         </span>
+        {canEdit && (
+          <button
+            title="Ungroup area"
+            aria-label="Ungroup area"
+            onClick={(e) => {
+              e.stopPropagation();
+              dispatch({ type: "UNGROUP_AREA", id: region.id });
+            }}
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              border: "none",
+              background: "transparent",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <Icon name="area" size={14} />
+          </button>
+        )}
       </div>
       {!region.collapsed && (
         <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -360,6 +430,9 @@ function SelectionToolbar({ region, dispatch }: { region: Region; dispatch: Disp
             {item("Move up", { type: "MOVE_REGION", id: region.id, dir: "up" })}
             {item("Move down", { type: "MOVE_REGION", id: region.id, dir: "down" })}
             {item("Duplicate", { type: "DUPLICATE_REGION", id: region.id })}
+            <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
+            {item("Copy", { type: "COPY_SELECTED" })}
+            {item("Paste", { type: "PASTE" })}
             <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
             {item("Delete", { type: "DELETE_REGION", id: region.id }, true)}
           </div>
