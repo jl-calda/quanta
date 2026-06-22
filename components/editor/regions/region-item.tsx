@@ -161,6 +161,7 @@ function RegionBody(props: RegionRenderProps) {
 
 function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>) {
   const count = region.regions.length;
+
   return (
     <div
       style={{
@@ -201,6 +202,33 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         >
           {count} {count === 1 ? "region" : "regions"}
         </span>
+        {canEdit && (
+          <button
+            title="Ungroup area"
+            aria-label="Ungroup area"
+            onClick={(e) => {
+              e.stopPropagation();
+              dispatch({ type: "UNGROUP_AREA", id: region.id });
+            }}
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22,
+              height: 22,
+              border: "none",
+              background: "transparent",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <Icon name="area" size={14} />
+          </button>
+        )}
       </div>
       {!region.collapsed && (
         <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -422,6 +450,9 @@ function SelectionToolbar({ region, dispatch }: { region: Region; dispatch: Disp
             {item("Move up", { type: "MOVE_REGION", id: region.id, dir: "up" })}
             {item("Move down", { type: "MOVE_REGION", id: region.id, dir: "down" })}
             {item("Duplicate", { type: "DUPLICATE_REGION", id: region.id })}
+            <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
+            {item("Copy", { type: "COPY_SELECTED" })}
+            {item("Paste", { type: "PASTE" })}
             <div style={{ height: 1, background: "var(--border-hairline)", margin: "4px 0" }} />
             {item("Delete", { type: "DELETE_REGION", id: region.id }, true)}
           </div>

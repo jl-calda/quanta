@@ -1061,6 +1061,22 @@ export function newRegion(type: RegionType): Region {
 }
 
 /**
+ * Assign a fresh id to a region (and, recursively, to an area's children),
+ * mutating in place and returning the same object. Callers that must not touch
+ * the source (duplicate, paste) clone first — see `reidRegions`.
+ */
+export function reidRegion(region: Region): Region {
+  region.id = newId();
+  if (region.type === "area") region.regions = region.regions.map(reidRegion);
+  return region;
+}
+
+/** Deep-clone a region list and give every region (and nested child) a fresh id. */
+export function reidRegions(regions: Region[]): Region[] {
+  return regions.map((region) => reidRegion(structuredClone(region)));
+}
+
+/**
  * Repair a row so `cells.length === columns` without ever dropping a region:
  * widen `columns` to fit overflow cells, then pad short rows with empty cells.
  */

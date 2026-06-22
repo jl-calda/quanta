@@ -11,7 +11,10 @@ import {
   emptyCell,
   newId,
   newRegion,
+  reidRegion,
+  reidRegions,
   singleColumnRow,
+  type AreaRegion,
   type Cell,
   type CellAlign,
   type CondRule,
@@ -114,6 +117,14 @@ export interface EditorState {
    */
   selectedIds: string[];
   editingId: string | null;
+  /**
+   * Session clipboard for region copy/cut/paste — a reading-order snapshot of
+   * copied regions (deep-cloned). UI/session state only: it is NOT part of
+   * `WorksheetContent`, so it never persists and the autosave Zod gate never
+   * sees it. The keyboard handler additionally mirrors it to the system
+   * clipboard so paste works across worksheet tabs.
+   */
+  clipboard: Region[] | null;
   calcMode: CalcMode;
   calcStatus: CalcStatus;
   errorCount: number;
@@ -267,6 +278,12 @@ export type EditorAction =
   | { type: "DELETE_SELECTED" }
   | { type: "DUPLICATE_REGION"; id: string }
   | { type: "DUPLICATE_SELECTED" }
+  | { type: "COPY_SELECTED" }
+  | { type: "CUT_SELECTED" }
+  | { type: "PASTE" }
+  | { type: "PASTE_REGIONS"; regions: Region[] }
+  | { type: "GROUP_SELECTED" }
+  | { type: "UNGROUP_AREA"; id: string }
   | { type: "MOVE_REGION"; id: string; dir: "up" | "down" }
   | { type: "MOVE_TO"; id: string; targetId: string; position: "before" | "after" }
   | { type: "INDENT"; id: string; delta: 1 | -1 }
@@ -337,13 +354,6 @@ function locateIn(
   return null;
 }
 
-/** Assign fresh ids to a region (and its area children) — used when duplicating. */
-function reidRegion(region: Region): Region {
-  region.id = newId();
-  if (region.type === "area") region.regions = region.regions.map(reidRegion);
-  return region;
-}
-
 /** Drop rows whose every cell is empty (after a delete), so no blank gaps linger. */
 function pruneEmptyRows(content: WorksheetContent): void {
   content.rows = content.rows.filter((row) =>
@@ -391,6 +401,42 @@ function reconcileSelection(
   return { selectedId: primary, selectedIds: ids };
 }
 
+/** Every id nested inside a region (an area's children, recursively). */
+function descendantIds(region: Region): string[] {
+  if (region.type !== "area") return [];
+  const ids: string[] = [];
+  for (const child of region.regions) {
+    ids.push(child.id);
+    ids.push(...descendantIds(child));
+  }
+  return ids;
+}
+
+/**
+ * The current multi-selection as a reading-order, deep-cloned snapshot — the
+ * source for copy/cut (and, with the live regions, group). When a selected area
+ * also has a selected descendant, the descendant is dropped from the top level
+ * (the area clone already carries it), so a paste never duplicates it. Exported
+ * so the keyboard handler can mirror the same snapshot to the system clipboard.
+ */
+export function selectedRegionsInReadingOrder(state: EditorState): Region[] {
+  if (state.selectedIds.length === 0) return [];
+  const order = readingOrderIds(state.content);
+  const ids = [...state.selectedIds].sort(
+    (a, b) => order.indexOf(a) - order.indexOf(b),
+  );
+  const nested = new Set<string>();
+  const out: Region[] = [];
+  for (const id of ids) {
+    if (nested.has(id)) continue;
+    const region = findRegion(state.content, id);
+    if (!region) continue;
+    out.push(structuredClone(region));
+    for (const d of descendantIds(region)) nested.add(d);
+  }
+  return out;
+}
+
 /** Clone the tree, run a mutator over it, return the new tree. */
 function mutate(
   content: WorksheetContent,
@@ -399,6 +445,27 @@ function mutate(
   const next: WorksheetContent = structuredClone(content);
   fn(next);
   return next;
+}
+
+/**
+ * Insert `regions` after the primary selection (in its container, so a paste
+ * lands inside an area when an area child is selected); when nothing is
+ * selectable, append a fresh single-column row. Re-ids the block and selects it.
+ */
+function pasteInto(state: EditorState, source: Region[]): EditorState {
+  if (source.length === 0) return state;
+  const fresh = reidRegions(source);
+  const newIds = fresh.map((r) => r.id);
+  const content = mutate(state.content, (next) => {
+    const loc = state.selectedId ? locate(next, state.selectedId) : null;
+    if (loc) loc.container.splice(loc.index + 1, 0, ...fresh);
+    else next.rows.push(singleColumnRow(fresh));
+  });
+  return touched(state, content, {
+    selectedId: newIds[newIds.length - 1],
+    selectedIds: newIds,
+    editingId: null,
+  });
 }
 
 /** Trim/pad a row to exactly `width` cells (imported rows align to the grid). */
@@ -994,6 +1061,106 @@ export function editorReducer(
       if (newIds.length === 0) return state;
       return touched(state, content, { selectedId: newIds[newIds.length - 1], selectedIds: newIds });
     }
+    case "COPY_SELECTED": {
+      // Copy is not a content change — it must never mark the doc unsaved, so we
+      // return the state directly with only the clipboard set.
+      const regions = selectedRegionsInReadingOrder(state);
+      if (regions.length === 0) return state;
+      return { ...state, clipboard: regions };
+    }
+    case "CUT_SELECTED": {
+      // Snapshot before deleting, then DELETE_SELECTED semantics in one step.
+      const regions = selectedRegionsInReadingOrder(state);
+      if (regions.length === 0) return state;
+      const ids = state.selectedIds;
+      const content = mutate(state.content, (next) => {
+        for (const id of ids) {
+          const loc = locate(next, id);
+          if (loc) loc.container.splice(loc.index, 1);
+        }
+        pruneEmptyRows(next);
+      });
+      return touched(state, content, {
+        clipboard: regions,
+        selectedId: null,
+        selectedIds: [],
+        editingId: state.editingId && ids.includes(state.editingId) ? null : state.editingId,
+      });
+    }
+    case "PASTE":
+      return state.clipboard ? pasteInto(state, state.clipboard) : state;
+    case "PASTE_REGIONS":
+      return pasteInto(state, action.regions);
+    case "GROUP_SELECTED": {
+      if (state.selectedIds.length === 0) return state;
+      const order = readingOrderIds(state.content);
+      const ids = [...state.selectedIds].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const primary = state.selectedId ?? ids[0];
+      const areaId = newId();
+      let grouped = false;
+      const content = mutate(state.content, (next) => {
+        const anchor = locate(next, primary);
+        if (!anchor) return;
+        // Locate every selected region in the (clone, not-yet-mutated) tree so
+        // container references and indices are stable. De-nest: skip ids inside
+        // an already-collected area (the area clone carries them).
+        const picks: { container: Region[]; region: Region }[] = [];
+        const taken = new Set<string>();
+        for (const id of ids) {
+          if (taken.has(id)) continue;
+          const loc = locate(next, id);
+          if (!loc) continue;
+          const region = loc.container[loc.index];
+          picks.push({ container: loc.container, region });
+          for (const d of descendantIds(region)) taken.add(d);
+        }
+        if (picks.length === 0) return;
+        const collectedIds = new Set(picks.map((p) => p.region.id));
+        // The area lands after the survivors that preceded the primary in its
+        // container — a count over the original order, so the later removals
+        // (which we do by reference) can't disturb it.
+        const insertIndex = anchor.container
+          .slice(0, anchor.index)
+          .filter((r) => !collectedIds.has(r.id)).length;
+        const collected = picks.map((p) => p.region); // reading order preserved
+        for (const { container, region } of picks) {
+          const i = container.indexOf(region);
+          if (i >= 0) container.splice(i, 1);
+        }
+        const area: AreaRegion = {
+          id: areaId,
+          type: "area",
+          indent: 0,
+          title: "Area",
+          collapsed: false,
+          regions: collected,
+        };
+        anchor.container.splice(insertIndex, 0, area);
+        pruneEmptyRows(next);
+        grouped = true;
+      });
+      if (!grouped) return state;
+      return touched(state, content, { ...selectOne(areaId), editingId: null });
+    }
+    case "UNGROUP_AREA": {
+      const target = findRegion(state.content, action.id);
+      if (!target || target.type !== "area") return state;
+      const childIds = target.regions.map((r) => r.id);
+      const content = mutate(state.content, (next) => {
+        const loc = locate(next, action.id);
+        if (!loc) return;
+        const region = loc.container[loc.index];
+        if (region.type !== "area") return;
+        // Replace the area with its children at the same slot — children keep
+        // their ids (already unique in the tree); no re-id needed.
+        loc.container.splice(loc.index, 1, ...region.regions);
+      });
+      return touched(state, content, {
+        selectedId: childIds[childIds.length - 1] ?? null,
+        selectedIds: childIds,
+        editingId: null,
+      });
+    }
     case "MOVE_REGION": {
       const content = mutate(state.content, (next) => {
         const loc = locate(next, action.id);
@@ -1173,6 +1340,7 @@ export function initEditorState(args: {
     selectedId: null,
     selectedIds: [],
     editingId: null,
+    clipboard: null,
     calcMode: args.calcMode,
     calcStatus: "current",
     errorCount: 0,
