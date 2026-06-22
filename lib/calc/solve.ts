@@ -25,6 +25,7 @@ import type { MathNode, Unit } from "./math";
 import { collectDeps } from "./parse";
 import { formatValue } from "./format";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
+import { serializeForScope } from "./table";
 import { classifyThrow, makeError } from "./errors";
 import type { CalcError, UnitSystem } from "./types";
 
@@ -58,7 +59,7 @@ export function guessSource(g: SolveGuessSpec): string {
   return unit ? `${value} ${unit}` : value;
 }
 
-/** Typed-but-inert ODE/PDE config (round-trips; the integrator ships next). */
+/** ODE/PDE config (round-trips through the content tree; edited in the inspector). */
 export interface SolveOdeConfig {
   system?: string[];
   indepVar?: string;
@@ -66,6 +67,31 @@ export interface SolveOdeConfig {
   conditions?: string[];
   step?: number;
   mesh?: number;
+}
+
+/**
+ * Worker-computed ODE solution, cached on the region (worksheets.content JSONB) by
+ * the async producer and read back here SYNCHRONOUSLY — exactly mirroring the
+ * symbolic cache, so the pure engine and the Node export path return the solution
+ * with no Pyodide. `inputs` snapshots the referenced scope constants so an upstream
+ * change invalidates the cache (the `hash` covers only the config text + guesses).
+ */
+export interface SolveSolutionCache {
+  v: 1;
+  /** FNV-1a of the ODE config + guesses ({@link odeConfigHash}). */
+  hash: string;
+  /** Independent-variable name (e.g. "t"). */
+  indepVar: string;
+  /** Independent-variable sample points. */
+  indep: number[];
+  /** One sampled trajectory per state variable, keyed by name. */
+  vars: Record<string, number[]>;
+  /** Optional unit label per output name (dimensionless ODEs omit it this slice). */
+  units?: Record<string, string>;
+  /** Serialized snapshot of the referenced scope constants at compute time. */
+  inputs?: Record<string, string>;
+  /** ISO timestamp the solution was computed (provenance). */
+  computedAt: string;
 }
 
 export interface SolveSpec {
@@ -84,6 +110,8 @@ export interface SolveSpec {
   /** On non-convergence: surface `no-solution` (default) or bind the last iterate. */
   onNonConverge?: "error" | "last";
   ode?: SolveOdeConfig;
+  /** Worker-computed ODE solution, read synchronously here (set by the producer). */
+  solution?: SolveSolutionCache;
 }
 
 export interface SolveOutput {
@@ -159,9 +187,15 @@ export function evaluateSolve(
 ): SolveResult {
   const algorithm = spec.algorithm ?? "find";
 
-  // ODE/PDE algorithms are typed-but-deferred — the config round-trips, the view
-  // shows a 'ships next' placeholder, and nothing is solved this pass.
+  // ODE/PDE algorithms integrate behind the async SciPy worker, whose result is
+  // cached on the region and read SYNCHRONOUSLY here. `odesolve` returns the solved
+  // trajectory when a fresh cache is present (else defers, awaiting the producer);
+  // `pdesolve` / `numol` are typed stubs that always defer this slice.
   if (algorithm === "odesolve" || algorithm === "pdesolve" || algorithm === "numol") {
+    if (algorithm === "odesolve") {
+      const solved = readOdeSolution(spec, externalScope);
+      if (solved) return solved;
+    }
     return { status: "deferred", algorithm, outputs: [], unknowns: odeUnknowns(spec) };
   }
 
@@ -901,4 +935,96 @@ function positiveInt(v: number | undefined): number | undefined {
 /** The independent variable(s) a deferred ODE/PDE block nominally binds. */
 function odeUnknowns(spec: SolveSpec): string[] {
   return (spec.guesses ?? []).map((g) => g.var?.trim()).filter((n): n is string => !!n);
+}
+
+/* ------------------------------------------------------------------ *
+ * ODE solution cache (produced by the async worker, read here pure/sync)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Stable hash of the ODE config + guesses (FNV-1a, 32-bit) — deterministic and
+ * dependency-free so the producer and this consumer agree. It deliberately covers
+ * only the config TEXT (not scope values); referenced constants are tracked
+ * separately via {@link SolveSolutionCache.inputs}. Mirrors `symbolicCacheHash`.
+ */
+export function odeConfigHash(spec: SolveSpec): string {
+  const ode = spec.ode ?? {};
+  const canonical = JSON.stringify({
+    algorithm: spec.algorithm ?? "find",
+    system: (ode.system ?? []).map((s) => s.trim()).filter(Boolean),
+    indepVar: (ode.indepVar ?? "x").trim(),
+    range: { min: ode.range?.min ?? null, max: ode.range?.max ?? null },
+    conditions: (ode.conditions ?? []).map((s) => s.trim()).filter(Boolean),
+    step: ode.step ?? null,
+    mesh: ode.mesh ?? null,
+    guesses: (spec.guesses ?? []).map((g) => ({
+      var: g.var?.trim() ?? "",
+      value: g.value?.trim() ?? "",
+      unit: g.unit?.trim() ?? null,
+    })),
+  });
+  let h = 0x811c9dc5;
+  for (let i = 0; i < canonical.length; i += 1) {
+    h ^= canonical.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Return the solved result from a fresh cached ODE solution, or null when the
+ * cache is absent / stale. Freshness = the config hash matches AND (no live scope
+ * — the export path trusts the cache, like tables/plots) OR every referenced
+ * constant re-serializes to the same value in the current scope.
+ */
+function readOdeSolution(
+  spec: SolveSpec,
+  externalScope: Record<string, unknown>,
+): SolveResult | null {
+  const cache = spec.solution;
+  if (!cache || cache.v !== 1) return null;
+  if (cache.hash !== odeConfigHash(spec)) return null;
+  if (Object.keys(externalScope).length > 0 && cache.inputs) {
+    for (const [name, snapshot] of Object.entries(cache.inputs)) {
+      const live = name in externalScope ? serializeForScope(externalScope[name]) : null;
+      if (live !== snapshot) return null; // referenced constant changed or vanished
+    }
+  }
+  return {
+    status: "solved",
+    algorithm: "odesolve",
+    outputs: buildOdeOutputs(cache),
+    unknowns: odeUnknowns(spec),
+  };
+}
+
+/**
+ * Map a cached solution to solve outputs: the independent-variable samples plus
+ * one sampled series per state variable, each as a plain `number[]` so the
+ * scope-bridge (`serializeForScope`) folds it into downstream regions and plots.
+ */
+function buildOdeOutputs(cache: SolveSolutionCache): SolveOutput[] {
+  const outputs: SolveOutput[] = [];
+  const n = cache.indep.length;
+  const t1 = n > 0 ? cache.indep[n - 1] : 0;
+  outputs.push({
+    name: cache.indepVar,
+    value: cache.indep,
+    formatted: n > 0
+      ? `${n} pts · ${cache.indepVar} ∈ [${formatValue(cache.indep[0])}, ${formatValue(t1)}]`
+      : "no samples",
+    unit: cache.units?.[cache.indepVar] ?? null,
+  });
+  for (const name of Object.keys(cache.vars)) {
+    const series = cache.vars[name];
+    if (!series) continue;
+    const last = series.length > 0 ? series[series.length - 1] : 0;
+    outputs.push({
+      name,
+      value: series,
+      formatted: `${series.length} pts · ${name}(${formatValue(t1)}) = ${formatValue(last)}`,
+      unit: cache.units?.[name] ?? null,
+    });
+  }
+  return outputs;
 }

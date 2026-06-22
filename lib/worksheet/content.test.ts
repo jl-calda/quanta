@@ -59,6 +59,52 @@ describe("parseContent", () => {
     expect(parseContent({ rows: "bad" })).toEqual(EMPTY_CONTENT);
   });
 
+  it("round-trips a solve block's ODE config and cached solution", () => {
+    const solution = {
+      v: 1,
+      hash: "deadbeef",
+      indepVar: "t",
+      indep: [0, 0.5, 1],
+      vars: { y: [1, 0.61, 0.37] },
+      inputs: { k: "2" },
+      computedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "s1",
+                  type: "solve",
+                  indent: 0,
+                  algorithm: "odesolve",
+                  guesses: [{ var: "y", value: "1" }],
+                  constraints: [],
+                  ode: { system: ["y' = -k*y"], indepVar: "t", range: { min: 0, max: 1 }, conditions: ["y(0) = 1"] },
+                  solution,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const region = parseContent(input).rows[0].cells[0].regions[0];
+    expect(region.type).toBe("solve");
+    expect(region.type === "solve" && region.ode).toEqual({
+      system: ["y' = -k*y"],
+      indepVar: "t",
+      range: { min: 0, max: 1 },
+      conditions: ["y(0) = 1"],
+    });
+    expect(region.type === "solve" && region.solution).toEqual(solution);
+  });
+
   it("repairs the cells.length === columns invariant without dropping regions", () => {
     // A 2-column row that only ships one cell → padded to two, content kept.
     const input = {

@@ -81,4 +81,38 @@ describe.skipIf(!CDN_OK)("Pyodide Node round-trip (SymPy + SciPy)", () => {
     expect(x[0]).toBeCloseTo(0.8, 9);
     expect(x[1]).toBeCloseTo(1.4, 9);
   });
+
+  it("integrates an ODE (y' = -k·y) via scipy.integrate.solve_ivp", async () => {
+    const backend = await getBackend();
+    const sol = await backend.odesolve({
+      system: ["y' = -k*y"],
+      indepVar: "t",
+      range: { min: 0, max: 1 },
+      conditions: ["y(0) = 1"],
+      mesh: 11,
+      scope: { k: 1 },
+    });
+    expect(sol.indepVar).toBe("t");
+    expect(sol.indep).toHaveLength(11);
+    expect(sol.indep[0]).toBeCloseTo(0, 9);
+    expect(sol.indep[10]).toBeCloseTo(1, 9);
+    // Closed form: y(t) = e^{-t}. Check the endpoints of the sampled trajectory.
+    expect(sol.vars.y[0]).toBeCloseTo(1, 6);
+    expect(sol.vars.y[10]).toBeCloseTo(Math.exp(-1), 4);
+  });
+
+  it("integrates a 2nd-order ODE (harmonic oscillator y'' = -y)", async () => {
+    const backend = await getBackend();
+    const sol = await backend.odesolve({
+      system: ["y'' = -y"],
+      indepVar: "t",
+      range: { min: 0, max: Math.PI },
+      conditions: ["y(0) = 0", "y'(0) = 1"],
+      mesh: 21,
+      scope: {},
+    });
+    // y(t) = sin(t) ⇒ y(π) ≈ 0.
+    expect(sol.vars.y[0]).toBeCloseTo(0, 6);
+    expect(sol.vars.y[20]).toBeCloseTo(0, 3);
+  });
 });
