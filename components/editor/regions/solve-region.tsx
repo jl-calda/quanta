@@ -13,6 +13,7 @@ import {
 import type { SolveRegion } from "@/lib/worksheet/content";
 import { useEditor } from "../state/editor-provider";
 import type { EditorAction } from "../state/editor-reducer";
+import type { SolveEvalStatus } from "../state/use-solve-eval";
 import { Icon } from "../icons";
 import { KatexMath } from "../katex-math";
 import type { RegionRenderProps } from "./types";
@@ -27,9 +28,17 @@ import type { RegionRenderProps } from "./types";
  * `evaluateSolve`; this view just reads the published `SolveResult`.
  */
 export function SolveRegionView({ region, canEdit, dispatch }: RegionRenderProps<SolveRegion>) {
-  const { solveResults } = useEditor();
+  const { solveResults, solveStatus } = useEditor();
   const result = solveResults.get(region.id);
-  return <SolveBlock region={region} result={result} canEdit={canEdit} dispatch={dispatch} />;
+  return (
+    <SolveBlock
+      region={region}
+      result={result}
+      evalStatus={solveStatus.get(region.id)}
+      canEdit={canEdit}
+      dispatch={dispatch}
+    />
+  );
 }
 
 /**
@@ -39,7 +48,7 @@ export function SolveRegionView({ region, canEdit, dispatch }: RegionRenderProps
  */
 export function StaticSolveRegionView({ region }: RegionRenderProps<SolveRegion>) {
   const result = evaluateSolve(region, {});
-  return <SolveBlock region={region} result={result} canEdit={false} dispatch={undefined} />;
+  return <SolveBlock region={region} result={result} evalStatus={undefined} canEdit={false} dispatch={undefined} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -69,15 +78,22 @@ const ALGO_OPTS: { id: SolveAlgorithm; desc: string }[] = [
 function SolveBlock({
   region,
   result,
+  evalStatus,
   canEdit,
   dispatch,
 }: {
   region: SolveRegion;
   result: SolveResult | undefined;
+  evalStatus: SolveEvalStatus | undefined;
   canEdit: boolean;
   dispatch: Dispatch<EditorAction> | undefined;
 }) {
-  const status = result?.status ?? "empty";
+  // An in-flight / failed ODE integration overrides the (pure) result status badge.
+  const status = evalStatus?.state === "computing"
+    ? "computing"
+    : evalStatus?.state === "error"
+      ? "error"
+      : result?.status ?? "empty";
   const unknowns = result?.unknowns ?? region.guesses.map((g) => g.var).filter(Boolean);
   const vars = unknowns.join(", ");
 
@@ -169,7 +185,7 @@ function SolveBlock({
 
         {/* result / error */}
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-hairline)" }}>
-          <ResultArea region={region} result={result} />
+          <ResultArea region={region} result={result} evalStatus={evalStatus} />
         </div>
       </div>
     </div>
@@ -195,13 +211,14 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function StatusBadge({ status }: { status: SolveResult["status"] }) {
+function StatusBadge({ status }: { status: SolveResult["status"] | "computing" }) {
   const map = {
     solved: { color: "var(--status-pass)", icon: "check" as const, text: "converged" },
     "no-solution": { color: "var(--status-error)", icon: "alertCirc" as const, text: "no solution" },
     error: { color: "var(--status-error)", icon: "alertCirc" as const, text: "error" },
     deferred: { color: "var(--text-muted)", icon: "dot" as const, text: "ships next" },
     empty: { color: "var(--text-muted)", icon: "dot" as const, text: "set up" },
+    computing: { color: "var(--accent)", icon: "dot" as const, text: "integrating" },
   }[status];
   return (
     <span
@@ -222,7 +239,44 @@ function StatusBadge({ status }: { status: SolveResult["status"] }) {
   );
 }
 
-function ResultArea({ region, result }: { region: SolveRegion; result: SolveResult | undefined }) {
+function ResultArea({
+  region,
+  result,
+  evalStatus,
+}: {
+  region: SolveRegion;
+  result: SolveResult | undefined;
+  evalStatus: SolveEvalStatus | undefined;
+}) {
+  // An ODE integration in flight / failed takes precedence over the cached result.
+  if (evalStatus?.state === "computing") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, font: "12px/1.5 var(--font-sans)", color: "var(--accent)" }}>
+        <Icon name="solve" size={15} /> Integrating the ODE…
+      </div>
+    );
+  }
+  if (evalStatus?.state === "error") {
+    return (
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "flex-start",
+          padding: "10px 12px",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--status-error-bg)",
+          border: "1px solid color-mix(in srgb, var(--status-error) 28%, transparent)",
+        }}
+      >
+        <span style={{ display: "inline-flex", color: "var(--status-error)", flex: "0 0 auto", marginTop: 1 }}>
+          <Icon name="alertCirc" size={16} />
+        </span>
+        <div style={{ font: "600 12.5px/1.4 var(--font-sans)", color: "var(--status-error)" }}>{evalStatus.message}</div>
+      </div>
+    );
+  }
+
   if (!result || result.status === "empty") {
     return (
       <div style={{ font: "12px/1.5 var(--font-sans)", color: "var(--text-muted)" }}>
@@ -267,6 +321,7 @@ function ResultArea({ region, result }: { region: SolveRegion; result: SolveResu
   }
 
   // solved
+  const extra = result.solutionSets && result.solutionSets.length > 1 ? result.solutionSets : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {result.outputs.map((out) => (
@@ -290,6 +345,37 @@ function ResultArea({ region, result }: { region: SolveRegion; result: SolveResu
           </span>
         </span>
       ))}
+      {extra && <SolutionSets sets={extra} />}
+    </div>
+  );
+}
+
+/** Additional solution sets from a multi-start / discrete solve (display-only; the first exports to scope). */
+function SolutionSets({ sets }: { sets: NonNullable<SolveResult["solutionSets"]> }) {
+  return (
+    <div style={{ marginTop: 6, paddingTop: 8, borderTop: "1px solid var(--border-hairline)" }}>
+      <div
+        style={{
+          font: "600 9.5px/1 var(--font-sans)",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          marginBottom: 7,
+        }}
+      >
+        Solutions ({sets.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {sets.map((s, i) => (
+          <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "0 14px", font: "12px/1.5 var(--font-mono)", color: i === 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
+            {s.outputs.map((o) => (
+              <span key={o.name}>
+                {o.name} = {o.formatted}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

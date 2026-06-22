@@ -25,6 +25,8 @@ import type {
   SolveAlgorithm,
   SolveGuess,
   SolveRegion,
+  SweepOutput,
+  SweepRegion,
   TableAgg,
   TableColumn,
   TableGroup,
@@ -84,6 +86,7 @@ export function Inspector() {
           {region.type === "control" && <ControlInspector region={region} set={set} />}
           {region.type === "solve" && <SolveInspector region={region} set={set} />}
           {region.type === "program" && <ProgramInspector region={region} set={set} />}
+          {region.type === "sweep" && <SweepInspector region={region} set={set} />}
           <Group eyebrow="Region">
             <Row label="Show border">
               <Switch checked={!!region.border} onChange={(e) => set({ border: e.target.checked })} />
@@ -1662,6 +1665,11 @@ const intOrUndef = (raw: string): number | undefined => {
   return n === undefined ? undefined : Math.round(n);
 };
 const lines = (text: string): string[] => text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+/** Parse a comma/space list of numbers (e.g. "6, 8, 10") to an array, or undefined when empty. */
+const parseNums = (raw: string): number[] | undefined => {
+  const nums = raw.split(/[,\s]+/).filter(Boolean).map(Number).filter((n) => Number.isFinite(n));
+  return nums.length > 0 ? nums : undefined;
+};
 
 function SolveInspector({ region, set }: { region: SolveRegion; set: (p: RegionPatch) => void }) {
   const isOde = ODE_ALGOS.has(region.algorithm);
@@ -1692,18 +1700,39 @@ function SolveInspector({ region, set }: { region: SolveRegion; set: (p: RegionP
         <>
           <Group eyebrow="Guesses">
             {region.guesses.map((g, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 56 }}>
-                  <Input mono defaultValue={g.var} placeholder="x" onBlur={(e) => updateGuess(i, { var: e.target.value.trim() })} />
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 5,
+                  paddingBottom: 7,
+                  borderBottom: i < region.guesses.length - 1 ? "1px solid var(--border-hairline)" : "none",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 56 }}>
+                    <Input mono defaultValue={g.var} placeholder="x" onBlur={(e) => updateGuess(i, { var: e.target.value.trim() })} />
+                  </div>
+                  <span style={{ font: "12px/1 var(--font-mono)", color: "var(--text-muted)" }}>:=</span>
+                  <Input mono defaultValue={g.value} placeholder="0" onBlur={(e) => updateGuess(i, { value: e.target.value })} containerStyle={{ flex: 1 }} />
+                  <div style={{ width: 52 }}>
+                    <Input mono defaultValue={g.unit ?? ""} placeholder="unit" onBlur={(e) => updateGuess(i, { unit: e.target.value.trim() || undefined })} />
+                  </div>
+                  <IconButton label="Remove guess" size="sm" onClick={() => set({ guesses: region.guesses.filter((_, j) => j !== i) })}>
+                    <Icon name="x" size={14} />
+                  </IconButton>
                 </div>
-                <span style={{ font: "12px/1 var(--font-mono)", color: "var(--text-muted)" }}>:=</span>
-                <Input mono defaultValue={g.value} placeholder="0" onBlur={(e) => updateGuess(i, { value: e.target.value })} containerStyle={{ flex: 1 }} />
-                <div style={{ width: 52 }}>
-                  <Input mono defaultValue={g.unit ?? ""} placeholder="unit" onBlur={(e) => updateGuess(i, { unit: e.target.value.trim() || undefined })} />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Input mono size="sm" defaultValue={g.lower ?? ""} placeholder="≥ lower" onBlur={(e) => updateGuess(i, { lower: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
+                  <Input mono size="sm" defaultValue={g.upper ?? ""} placeholder="≤ upper" onBlur={(e) => updateGuess(i, { upper: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
                 </div>
-                <IconButton label="Remove guess" size="sm" onClick={() => set({ guesses: region.guesses.filter((_, j) => j !== i) })}>
-                  <Icon name="x" size={14} />
-                </IconButton>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "11.5px/1 var(--font-sans)", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                    <Switch checked={!!g.integer} onChange={(e) => updateGuess(i, { integer: e.target.checked || undefined })} /> integer
+                  </label>
+                  <Input mono size="sm" defaultValue={(g.discrete ?? []).join(", ")} placeholder="discrete: 6, 8, 10" onBlur={(e) => updateGuess(i, { discrete: parseNums(e.target.value) })} containerStyle={{ flex: 1 }} />
+                </div>
               </div>
             ))}
             <button onClick={() => set({ guesses: [...region.guesses, { var: "", value: "0" }] })} style={addBtnStyle}>
@@ -1757,6 +1786,11 @@ function SolveInspector({ region, set }: { region: SolveRegion; set: (p: RegionP
             </Row>
             <Row label="On non-convergence">
               <Segmented options={["error", "last"]} value={region.onNonConverge ?? "error"} set={(v) => set({ onNonConverge: v as "error" | "last" })} />
+            </Row>
+            <Row label="Max solutions">
+              <div style={{ width: 96 }}>
+                <Input mono defaultValue={region.maxSolutions != null ? String(region.maxSolutions) : ""} placeholder="1" onBlur={(e) => set({ maxSolutions: intOrUndef(e.target.value) })} />
+              </div>
             </Row>
           </Group>
         </>
@@ -1894,6 +1928,86 @@ function ProgramInspector({ region, set }: { region: ProgramRegion; set: (p: Reg
   );
 }
 
+function SweepInspector({ region, set }: { region: SweepRegion; set: (p: RegionPatch) => void }) {
+  const byStep = !!region.stepSize?.trim();
+  const updateOutput = (i: number, patch: Partial<SweepOutput>) =>
+    set({ outputs: region.outputs.map((o, j) => (j === i ? { ...o, ...patch } : o)) });
+
+  return (
+    <>
+      <Group eyebrow="Parameter">
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 70 }}>
+            <Input mono defaultValue={region.param} placeholder="x" onBlur={(e) => set({ param: e.target.value.trim() || "x" })} />
+          </div>
+          <span style={{ font: "12px/1 var(--font-mono)", color: "var(--text-muted)" }}>:</span>
+          <Input mono defaultValue={region.from} placeholder="0" onBlur={(e) => set({ from: e.target.value })} containerStyle={{ flex: 1 }} />
+          <span style={{ color: "var(--text-muted)" }}>…</span>
+          <Input mono defaultValue={region.to} placeholder="10" onBlur={(e) => set({ to: e.target.value })} containerStyle={{ flex: 1 }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={fieldLabel}>Name</span>
+          <Input defaultValue={region.name ?? ""} placeholder="deflection study" onBlur={(e) => set({ name: e.target.value || undefined })} />
+        </div>
+      </Group>
+
+      <Group eyebrow="Steps">
+        <Row label="Space by">
+          <Segmented options={["count", "step"]} value={byStep ? "step" : "count"} set={(v) => set(v === "step" ? { stepSize: region.stepSize || "1" } : { stepSize: undefined })} />
+        </Row>
+        {byStep ? (
+          <Row label="Step size">
+            <div style={{ width: 96 }}>
+              <Input mono defaultValue={region.stepSize ?? ""} placeholder="1" onBlur={(e) => set({ stepSize: e.target.value.trim() || undefined })} />
+            </div>
+          </Row>
+        ) : (
+          <Row label="Points">
+            <div style={{ width: 96 }}>
+              <Input mono defaultValue={region.steps != null ? String(region.steps) : ""} placeholder="21" onBlur={(e) => set({ steps: intOrUndef(e.target.value) })} />
+            </div>
+          </Row>
+        )}
+        <Row label="Spacing">
+          <Segmented options={["linear", "log"]} value={region.scale ?? "linear"} set={(v) => set({ scale: v as "linear" | "log" })} />
+        </Row>
+      </Group>
+
+      <Group eyebrow="Outputs">
+        {region.outputs.map((o, i) => (
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: 5, paddingBottom: 7, borderBottom: i < region.outputs.length - 1 ? "1px solid var(--border-hairline)" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Input mono defaultValue={o.expr} placeholder="M(L)" onBlur={(e) => updateOutput(i, { expr: e.target.value })} containerStyle={{ flex: 1 }} />
+              <IconButton label="Remove output" size="sm" onClick={() => set({ outputs: region.outputs.filter((_, j) => j !== i) })}>
+                <Icon name="x" size={14} />
+              </IconButton>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Input mono size="sm" defaultValue={o.name ?? ""} placeholder="name (exports)" onBlur={(e) => updateOutput(i, { name: e.target.value.trim() || undefined })} containerStyle={{ flex: 1 }} />
+              <div style={{ width: 60 }}>
+                <Input mono size="sm" defaultValue={o.unit ?? ""} placeholder="unit" onBlur={(e) => updateOutput(i, { unit: e.target.value.trim() || undefined })} />
+              </div>
+            </div>
+          </div>
+        ))}
+        <button onClick={() => set({ outputs: [...region.outputs, { expr: "" }] })} style={addBtnStyle}>
+          <Icon name="plusSm" size={13} /> Add output
+        </button>
+        <span style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          A named output binds a vector series in scope — reference it from a plot or table.
+        </span>
+      </Group>
+
+      <Group eyebrow="Sensitivity">
+        <div style={{ font: "11.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+          Re-solving a solve block per step (sensitivity of a solved quantity) ships next; this
+          sweep holds solved variables at their settled value.
+        </div>
+      </Group>
+    </>
+  );
+}
+
 function Group({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return (
     <div style={{ padding: "13px 14px", borderBottom: "1px solid var(--border-hairline)" }}>
@@ -1945,7 +2059,7 @@ function regionLabel(type: Region["type"]): string {
   const map: Record<Region["type"], string> = {
     math: "Math region", text: "Text region", table: "Table", plot: "Plot",
     image: "Image", control: "Control", area: "Area", include: "Include", solve: "Solve block",
-    program: "Program",
+    program: "Program", sweep: "Parametric sweep",
   };
   return map[type] ?? "Region";
 }

@@ -20,9 +20,10 @@ import {
   type RegionResult,
   type SheetResult,
   type SolveResult,
+  type SweepResult,
   type TableResult,
 } from "@/lib/calc";
-import { buildEngineInputs, settleTables } from "@/lib/worksheet/flatten";
+import { buildEngineInputs, settleTables, worksheetScopeFromResults } from "@/lib/worksheet/flatten";
 import { applySymbolicCache } from "@/lib/worksheet/symbolic-cache";
 import type { WorksheetContent } from "@/lib/worksheet/content";
 import type { LayoutSettings, PageSettings } from "@/lib/schema/page";
@@ -42,6 +43,7 @@ import {
 } from "./editor-reducer";
 import { useAutosave } from "./use-autosave";
 import { useSymbolicEval, type SymbolicStatus } from "./use-symbolic-eval";
+import { useSolveEval, type SolveEvalStatus } from "./use-solve-eval";
 
 export interface EditorContextValue {
   state: EditorState;
@@ -72,10 +74,14 @@ export interface EditorContextValue {
   plotResults: Map<string, PlotResult>;
   /** Per-solve-block results (unknowns + convergence), keyed by region id. */
   solveResults: Map<string, SolveResult>;
+  /** Per-sweep results (parameter + output series), keyed by region id. */
+  sweepResults: Map<string, SweepResult>;
   /** Per-program-block results (value / function / error), keyed by region id. */
   programResults: Map<string, ProgramResult>;
   /** Transient symbolic-compute status (computing / error), keyed by region id. */
   symbolicStatus: Map<string, SymbolicStatus>;
+  /** Transient ODE-integrate status (computing / error), keyed by region id. */
+  solveStatus: Map<string, SolveEvalStatus>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -146,6 +152,7 @@ export function EditorProvider({
   const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
   const [plotResults, setPlotResults] = useState<Map<string, PlotResult>>(() => new Map());
   const [solveResults, setSolveResults] = useState<Map<string, SolveResult>>(() => new Map());
+  const [sweepResults, setSweepResults] = useState<Map<string, SweepResult>>(() => new Map());
   const [programResults, setProgramResults] = useState<Map<string, ProgramResult>>(() => new Map());
 
   // Document-level settings (page setup / headers / text styles). Held here so a
@@ -174,10 +181,11 @@ export function EditorProvider({
   };
 
   const publishReconcile = (content: WorksheetContent) => {
-    const { sheet, tables, plots, solves, programs } = reconcile(content);
+    const { sheet, tables, plots, solves, programs, sweeps } = reconcile(content);
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
+    setSweepResults(sweeps);
     setProgramResults(programs);
     dispatch({ type: "SET_RESULTS", sheet: withSymbolic(content, sheet) });
   };
@@ -224,11 +232,12 @@ export function EditorProvider({
   const recalculate = () => publishReconcile(state.content);
 
   const recalculateToHere = (id: string) => {
-    const { sheet, tables, plots, solves, programs } = reconcile(state.content);
+    const { sheet, tables, plots, solves, programs, sweeps } = reconcile(state.content);
     const fresh = withSymbolic(state.content, sheet);
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
+    setSweepResults(sweeps);
     setProgramResults(programs);
     const cut = fresh.regions.findIndex((r) => r.id === id);
     if (cut === -1) {
@@ -282,6 +291,16 @@ export function EditorProvider({
   // untouched — symbolic regions read their cache, not the numeric result.
   const symbolicStatus = useSymbolicEval({ content: state.content, canEdit, dispatch });
 
+  // ODE producer: integrate `odesolve` blocks via the SciPy worker and write each
+  // trajectory into `region.solution` (autosave persists it). The pure engine reads
+  // that cache synchronously in `evaluateSolve`; `solveScope` supplies the constants
+  // (`k`, `y0`, …) the ODE references, resolved from the settled sheet results.
+  const solveScope = useMemo(
+    () => worksheetScopeFromResults([...state.results.values()]),
+    [state.results],
+  );
+  const solveStatus = useSolveEval({ content: state.content, canEdit, scope: solveScope, dispatch });
+
   const value = useMemo<EditorContextValue>(
     () => ({
       state,
@@ -301,14 +320,16 @@ export function EditorProvider({
       tableResults,
       plotResults,
       solveResults,
+      sweepResults,
       programResults,
       symbolicStatus,
+      solveStatus,
     }),
-    // `state`, `tableResults`, `plotResults`, `solveResults`, `programResults`, and
-    // `symbolicStatus` are the changing dependencies consumers read; the callbacks
-    // close over them and are recreated each render.
+    // `state`, `tableResults`, `plotResults`, `solveResults`, `sweepResults`,
+    // `programResults`, `symbolicStatus`, and `solveStatus` are the changing
+    // dependencies consumers read; the callbacks close over them and are recreated each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults, programResults, symbolicStatus],
+    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults, sweepResults, programResults, symbolicStatus, solveStatus],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;

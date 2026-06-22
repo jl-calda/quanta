@@ -458,8 +458,16 @@ const solveGuessSchema = z.object({
   value: z.string().default(""),
   /** Optional unit appended to the guess (e.g. "mm", "deg"). */
   unit: z.string().optional(),
+  /** First-class lower bound (unit-bearing expression, e.g. "0", "2 mm"). */
+  lower: z.string().optional(),
+  /** First-class upper bound (unit-bearing expression, e.g. "L", "50 mm"). */
+  upper: z.string().optional(),
+  /** Restrict to integer values (mixed-integer solve). */
+  integer: z.boolean().optional(),
+  /** Restrict to a discrete set (magnitudes in the guess's unit), e.g. rebar sizes. */
+  discrete: z.array(z.number()).optional(),
 });
-/** Typed-but-inert ODE/PDE config (round-trips now; the integrator ships next). */
+/** ODE/PDE config — round-trips through the content tree; edited in the inspector. */
 const odeConfigSchema = z.object({
   system: z.array(z.string()).default([]),
   indepVar: z.string().default("x"),
@@ -467,6 +475,20 @@ const odeConfigSchema = z.object({
   conditions: z.array(z.string()).default([]),
   step: z.number().optional(),
   mesh: z.number().int().optional(),
+});
+/** Worker-computed ODE solution cached on the region (read sync by the engine + export). */
+const solveSolutionCacheSchema = z.object({
+  v: z.literal(1),
+  /** FNV-1a of the ODE config + guesses; a config edit makes it stale. */
+  hash: z.string(),
+  indepVar: z.string(),
+  indep: z.array(z.number()),
+  vars: z.record(z.array(z.number())),
+  /** Optional unit label per output name. */
+  units: z.record(z.string()).optional(),
+  /** Serialized referenced scope constants at compute time (upstream-change staleness). */
+  inputs: z.record(z.string()).optional(),
+  computedAt: z.string(),
 });
 const solveRegionSchema = z
   .object({
@@ -488,7 +510,53 @@ const solveRegionSchema = z
     maxIter: z.number().int().optional(),
     /** On non-convergence: surface `no-solution` (default) or bind the last iterate. */
     onNonConverge: z.enum(["error", "last"]).optional(),
+    /** Find up to N distinct solution sets (default 1) via deterministic multi-start. */
+    maxSolutions: z.number().int().optional(),
     ode: odeConfigSchema.optional(),
+    /** Worker-computed ODE solution (versioned, keyed by region id + config hash). */
+    solution: solveSolutionCacheSchema.optional(),
+  })
+  .passthrough();
+
+/*
+ * Parametric-sweep region — fully typed (Functional Brief §2 "sensitivity /
+ * parametric study"). Varies one parameter across a bounded range and evaluates
+ * output expressions per step → a unit-aware series, reusing the plot-by-formula
+ * sampler (`lib/calc/sweep`). Named outputs fold into worksheet scope as vector
+ * series through the same scope-bridge tables/solves use, so a downstream plot or
+ * table consumes them by name. `targetSolve` / `reSolvePerStep` are a typed-but-
+ * inert seam for re-solving a solve block per step (deferred). `.passthrough()`
+ * keeps any unknown payload non-lossy.
+ */
+const sweepOutputSchema = z.object({
+  /** Expression sampled across the parameter, e.g. "M(L)". */
+  expr: z.string().default(""),
+  /** Scope name this series binds (so a plot/table consumes it); display-only when empty. */
+  name: z.string().optional(),
+  label: z.string().optional(),
+  /** Optional display unit; inferred from the result when omitted. */
+  unit: z.string().optional(),
+});
+const sweepRegionSchema = z
+  .object({
+    ...regionBase,
+    type: z.literal("sweep"),
+    /** Chip label beside "Parametric sweep". */
+    name: z.string().optional(),
+    /** The swept parameter's name. */
+    param: z.string().default("x"),
+    /** Range start / end (unit-bearing expressions). */
+    from: z.string().default("0"),
+    to: z.string().default("10"),
+    /** Sample count (>= 2); ignored when `stepSize` is set. */
+    steps: z.number().int().optional(),
+    /** Explicit step (unit-bearing expression); derives the count when set. */
+    stepSize: z.string().optional(),
+    scale: z.enum(["linear", "log"]).optional(),
+    outputs: z.array(sweepOutputSchema).default([]),
+    /** Typed-but-inert seam — re-solve a solve block per step (deferred). */
+    targetSolve: z.string().optional(),
+    reSolvePerStep: z.boolean().optional(),
   })
   .passthrough();
 
@@ -559,6 +627,7 @@ export const regionSchema: z.ZodType<Region> = z.discriminatedUnion("type", [
   includeRegionSchema,
   solveRegionSchema,
   programRegionSchema,
+  sweepRegionSchema,
 ]) as unknown as z.ZodType<Region>;
 
 const cellSchema = z.object({
@@ -637,6 +706,8 @@ export type ControlOption = z.infer<typeof controlOptionSchema>;
 export type SolveAlgorithm = z.infer<typeof solveAlgoSchema>;
 export type SolveGuess = z.infer<typeof solveGuessSchema>;
 export type OdeConfig = z.infer<typeof odeConfigSchema>;
+export type SolveSolutionCache = z.infer<typeof solveSolutionCacheSchema>;
+export type SweepOutput = z.infer<typeof sweepOutputSchema>;
 export type SymbolicCache = z.infer<typeof symbolicCacheSchema>;
 export type UserUnitDef = z.infer<typeof userUnitDefSchema>;
 export type WorksheetUnits = z.infer<typeof worksheetUnitsSchema>;
@@ -774,8 +845,35 @@ export interface SolveRegion extends RegionBase {
   scaling?: number;
   maxIter?: number;
   onNonConverge?: "error" | "last";
-  /** Round-tripped config for the deferred odesolve / pdesolve / numol. */
+  /** Find up to N distinct solution sets (default 1) via deterministic multi-start. */
+  maxSolutions?: number;
+  /** Round-tripped config for odesolve / pdesolve / numol. */
   ode?: OdeConfig;
+  /** Worker-computed ODE solution, read synchronously by the engine + export. */
+  solution?: SolveSolutionCache;
+  [key: string]: unknown;
+}
+
+/** Parametric sweep: a parameter range × output expressions → a unit-aware series (§2). */
+export interface SweepRegion extends RegionBase {
+  type: "sweep";
+  /** Chip label beside "Parametric sweep". */
+  name?: string;
+  /** The swept parameter's name. */
+  param: string;
+  /** Range start / end (unit-bearing expressions). */
+  from: string;
+  to: string;
+  /** Sample count (>= 2); ignored when `stepSize` is set. */
+  steps?: number;
+  /** Explicit step (unit-bearing expression); derives the count when set. */
+  stepSize?: string;
+  scale?: "linear" | "log";
+  /** Output expressions; a named output binds a vector series in worksheet scope. */
+  outputs: SweepOutput[];
+  /** Typed-but-inert seam — re-solve a solve block per step (deferred). */
+  targetSolve?: string;
+  reSolvePerStep?: boolean;
   [key: string]: unknown;
 }
 
@@ -811,6 +909,7 @@ export type Region =
   | ControlRegion
   | SolveRegion
   | ProgramRegion
+  | SweepRegion
   | RenderOnlyRegion;
 export type RegionType = Region["type"];
 
@@ -943,6 +1042,18 @@ export function newRegion(type: RegionType): Region {
           },
           { kind: "return", expr: "result" },
         ],
+      };
+    case "sweep":
+      // A sweep seeded with one parameter and one named output, so it opens on a
+      // usable example (y = x² over [0, 10]) the inspector refines.
+      return {
+        ...base,
+        type: "sweep",
+        param: "x",
+        from: "0",
+        to: "10",
+        steps: 21,
+        outputs: [{ expr: "x^2", name: "y" }],
       };
     default:
       return { ...base, type } as RenderOnlyRegion;

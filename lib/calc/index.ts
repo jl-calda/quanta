@@ -158,6 +158,7 @@ export {
   evaluateSolve,
   jsSolverBackend,
   guessSource,
+  odeConfigHash,
   type SolveSpec,
   type SolveResult,
   type SolveStatus,
@@ -165,10 +166,22 @@ export {
   type SolveOutput,
   type SolveGuessSpec,
   type SolveOdeConfig,
+  type SolveSolutionCache,
+  type SolveSolutionSet,
   type SolverBackend,
   type NumericProblem,
   type SolveRun,
 } from "./solve";
+
+// Parametric sweep (pure, engine-native — reuses the plot sampler; see ./sweep).
+export {
+  evaluateSweep,
+  type SweepSpec,
+  type SweepOutputSpec,
+  type SweepSeries,
+  type SweepResult,
+  type SweepStatus,
+} from "./sweep";
 
 // Program block (pure, engine-native — see ./program).
 export {

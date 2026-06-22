@@ -59,6 +59,52 @@ describe("parseContent", () => {
     expect(parseContent({ rows: "bad" })).toEqual(EMPTY_CONTENT);
   });
 
+  it("round-trips a solve block's ODE config and cached solution", () => {
+    const solution = {
+      v: 1,
+      hash: "deadbeef",
+      indepVar: "t",
+      indep: [0, 0.5, 1],
+      vars: { y: [1, 0.61, 0.37] },
+      inputs: { k: "2" },
+      computedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "s1",
+                  type: "solve",
+                  indent: 0,
+                  algorithm: "odesolve",
+                  guesses: [{ var: "y", value: "1" }],
+                  constraints: [],
+                  ode: { system: ["y' = -k*y"], indepVar: "t", range: { min: 0, max: 1 }, conditions: ["y(0) = 1"] },
+                  solution,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const region = parseContent(input).rows[0].cells[0].regions[0];
+    expect(region.type).toBe("solve");
+    expect(region.type === "solve" && region.ode).toEqual({
+      system: ["y' = -k*y"],
+      indepVar: "t",
+      range: { min: 0, max: 1 },
+      conditions: ["y(0) = 1"],
+    });
+    expect(region.type === "solve" && region.solution).toEqual(solution);
+  });
+
   it("repairs the cells.length === columns invariant without dropping regions", () => {
     // A 2-column row that only ships one cell → padded to two, content kept.
     const input = {
@@ -260,6 +306,86 @@ describe("typed solve region", () => {
       expect(r.algorithm).toBe("find");
       expect(r.guesses.length).toBeGreaterThan(0);
       expect(r.constraints.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("round-trips a solve block's bounds, integer/discrete options, and maxSolutions", () => {
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "s1",
+                  type: "solve",
+                  indent: 0,
+                  algorithm: "find",
+                  guesses: [{ var: "x", value: "1", lower: "0", upper: "5", integer: true, discrete: [6, 8, 10] }],
+                  constraints: ["x^2 = 9"],
+                  maxSolutions: 2,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const out = parseContent(input);
+    const region = out.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("solve");
+    if (region.type === "solve") {
+      expect(region.maxSolutions).toBe(2);
+      expect(region.guesses[0]).toMatchObject({ lower: "0", upper: "5", integer: true, discrete: [6, 8, 10] });
+    }
+  });
+
+  it("round-trips a parametric sweep region", () => {
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "sw1",
+                  type: "sweep",
+                  indent: 0,
+                  param: "L",
+                  from: "0 m",
+                  to: "4 m",
+                  steps: 9,
+                  scale: "linear",
+                  outputs: [{ expr: "L^2", name: "A", unit: "m^2" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const out = parseContent(input);
+    const region = out.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("sweep");
+    if (region.type === "sweep") {
+      expect(region).toMatchObject({ param: "L", from: "0 m", to: "4 m", steps: 9 });
+      expect(region.outputs[0]).toMatchObject({ expr: "L^2", name: "A", unit: "m^2" });
+    }
+  });
+
+  it("seeds newRegion('sweep') with a usable example", () => {
+    const r = newRegion("sweep");
+    expect(r.type).toBe("sweep");
+    if (r.type === "sweep") {
+      expect(r.param).toBe("x");
+      expect(r.outputs.length).toBeGreaterThan(0);
+      expect(r.outputs[0].name).toBe("y");
     }
   });
 });

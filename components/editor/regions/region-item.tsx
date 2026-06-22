@@ -14,6 +14,7 @@ import { PlotRegionView } from "./plot-region";
 import { ControlRegionView } from "./control-region";
 import { SolveRegionView } from "./solve-region";
 import { ProgramRegionView } from "./program-region";
+import { SweepRegionView } from "./sweep-region";
 import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
@@ -151,6 +152,8 @@ function RegionBody(props: RegionRenderProps) {
       return <SolveRegionView {...props} region={region} />;
     case "program":
       return <ProgramRegionView {...props} region={region} />;
+    case "sweep":
+      return <SweepRegionView {...props} region={region} />;
     default:
       return <GenericRegionView {...props} region={region} />;
   }
