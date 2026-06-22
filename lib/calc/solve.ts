@@ -26,7 +26,7 @@ import { collectDeps } from "./parse";
 import { formatValue } from "./format";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 import { serializeForScope } from "./table";
-import { CalcEngineError, classifyThrow, makeError } from "./errors";
+import { CalcEngineError, classifyThrow, makeError, inconsistentSystem, infiniteSolutions } from "./errors";
 import type { CalcError, UnitSystem } from "./types";
 
 /* ------------------------------------------------------------------ *
@@ -234,6 +234,17 @@ export function evaluateSolve(
   const names = built.unknowns.map((u) => u.name);
   const tol = positive(spec.ctol) ?? DEFAULT_CTOL;
   const maxIter = positiveInt(spec.maxIter);
+
+  // Linear-system fast path: an all-equality `find` block that is provably linear
+  // in the unknowns is solved EXACTLY (rank classification + lusolve) with precise
+  // unique / infinitely-many / inconsistent diagnostics, rather than iterated. It
+  // falls back to the iterative solver for anything nonlinear (or for a non-unique
+  // system under `onNonConverge: "last"`, which wants a best-effort iterate).
+  // Detection is purely numeric — no isSymbolic dispatch; numeric find stays numeric.
+  if (algorithm === "find") {
+    const linear = tryLinearFind(built, spec, system, tol);
+    if (linear) return linear;
+  }
 
   // Choose the numeric problem per algorithm.
   let problem: NumericProblem;
@@ -649,6 +660,170 @@ function noSolution(names: string[], feasible: boolean): CalcError {
     ? "Try different guess values, or loosen a constraint — the solver couldn't reach the target."
     : "The constraints can't be met together. Loosen a constraint or revise the guess values.";
   return makeError("no-solution", "No solution found.", hint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Linear-system fast path (exact, rank-classified)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Solve an all-equality `find` block that is provably linear in the unknowns
+ * EXACTLY, with precise diagnostics. Returns a {@link SolveResult} when it
+ * definitively handles the system (a unique solution, or a typed
+ * infinitely-many / inconsistent diagnostic); returns null to fall back to the
+ * iterative Newton / least-squares solver (nonlinear systems, or a non-unique
+ * system under `onNonConverge: "last"`, which wants a best-effort iterate).
+ *
+ * The affine model F(x) = A·x + c is read from the existing (unit- and
+ * scaling-aware) residual closure by exact evaluation, then VERIFIED at several
+ * deterministic probe points — so a nonlinear block is never misrouted here, and
+ * the numeric `find` path stays numeric (no isSymbolic involvement). The exact
+ * solve prefers `lusolve` (square) or the normal equations (overdetermined, full
+ * rank); dimensional consistency is already enforced upstream by buildProblem's
+ * unit-aware residual probe.
+ */
+function tryLinearFind(
+  built: Problem,
+  spec: SolveSpec,
+  system: UnitSystem,
+  tol: number,
+): SolveResult | null {
+  const n = built.unknowns.length;
+  const m = built.equalities.length;
+  if (n === 0 || m === 0 || built.inequalities.length > 0) return null;
+  // The exact linear solve handles only an unbounded, continuous, single-solution
+  // find. Defer active box bounds, integer / discrete unknowns, and multi-solution
+  // requests to the iterative + enumeration path (solveProblem) — it owns those.
+  if ((positiveInt(spec.maxSolutions) ?? 1) > 1) return null;
+  if (built.unknowns.some((u) => u.integer || (u.discrete?.length ?? 0) > 0)) return null;
+  if (built.lower.some(Number.isFinite) || built.upper.some(Number.isFinite)) return null;
+
+  const F = built.residualVector;
+  let c: number[];
+  try {
+    c = F(new Array(n).fill(0));
+  } catch {
+    return null;
+  }
+  if (c.length !== m || !c.every(Number.isFinite)) return null;
+
+  // Coefficient matrix A (m×n): column j is F(eⱼ) − F(0) — exact for an affine F.
+  const A: number[][] = Array.from({ length: m }, () => new Array<number>(n).fill(0));
+  for (let j = 0; j < n; j += 1) {
+    const e = new Array(n).fill(0);
+    e[j] = 1;
+    let Fj: number[];
+    try {
+      Fj = F(e);
+    } catch {
+      return null;
+    }
+    if (!Fj.every(Number.isFinite)) return null;
+    for (let i = 0; i < m; i += 1) A[i][j] = Fj[i] - c[i];
+  }
+
+  // Verify affinity at deterministic probes; bail (→ iterative) if any disagrees.
+  const scaleRef = Math.max(1, maxAbs(c), maxAbs(A.flat()));
+  const affTol = 1e-6 * scaleRef;
+  for (const p of [new Array(n).fill(1), new Array(n).fill(2), new Array(n).fill(-1)]) {
+    let Fp: number[];
+    try {
+      Fp = F(p);
+    } catch {
+      return null;
+    }
+    if (!Fp.every(Number.isFinite)) return null;
+    for (let i = 0; i < m; i += 1) {
+      const model = c[i] + A[i].reduce((s, a, j) => s + a * p[j], 0);
+      if (Math.abs(model - Fp[i]) > affTol) return null; // nonlinear ⇒ keep Newton
+    }
+  }
+
+  // A·x = b, with b = −c (so F(x) = A·x + c = 0).
+  const b = c.map((v) => -v);
+  const names = built.unknowns.map((u) => u.name);
+
+  // Classify by rank vs augmented-rank (relative tolerance inside matrixRank).
+  const rankA = matrixRank(A);
+  const rankAug = matrixRank(A.map((row, i) => [...row, b[i]]));
+  const lastIterate = (spec.onNonConverge ?? "error") === "last";
+
+  if (rankAug > rankA) {
+    // Inconsistent — no assignment satisfies every equation. Under "last", defer
+    // to the iterative least-squares best-effort iterate instead of erroring.
+    return lastIterate
+      ? null
+      : { status: "no-solution", algorithm: "find", outputs: [], unknowns: names, error: inconsistentSystem() };
+  }
+  if (rankA < n) {
+    // Rank deficient but consistent — infinitely many solutions; report rather
+    // than silently picking one (under "last", defer to the iterative iterate).
+    return lastIterate
+      ? null
+      : { status: "no-solution", algorithm: "find", outputs: [], unknowns: names, error: infiniteSolutions() };
+  }
+
+  // Full column rank ⇒ a unique solution. Prefer lusolve (square), else the
+  // normal equations (overdetermined, full rank ⇒ square, non-singular).
+  let x: number[];
+  try {
+    x = m === n ? solveLinear(A, b) : solveLinear(matMul(transpose(A), A), matVec(transpose(A), b));
+  } catch {
+    return null; // numerically singular subsystem ⇒ fall back to the iterative path
+  }
+  if (!x.every(Number.isFinite)) return null;
+
+  // Defensive: confirm the residual is genuinely ~0 before trusting the result.
+  let resid: number[];
+  try {
+    resid = F(x);
+  } catch {
+    return null;
+  }
+  if (!resid.every(Number.isFinite) || maxAbs(resid) > Math.max(tol, 1e-6) * (1 + maxAbs(b))) {
+    return null;
+  }
+
+  // Reuse the shared interpreter for unit reattachment + formatting.
+  return interpretRun(
+    { converged: true, x, iterations: 1, residualNorm: l2(resid) },
+    built,
+    "find",
+    spec,
+    system,
+  );
+}
+
+/** Rank of a numeric matrix via row echelon with partial pivoting (relative tol). */
+function matrixRank(M: number[][]): number {
+  const rows = M.length;
+  if (rows === 0) return 0;
+  const cols = M[0].length;
+  const a = M.map((row) => [...row]); // work on a copy
+  const eps = 1e-9 * Math.max(1, maxAbs(a.flat()));
+  let rank = 0;
+  for (let col = 0; col < cols && rank < rows; col += 1) {
+    // Partial pivot: largest magnitude at or below the current rank row.
+    let sel = rank;
+    let best = Math.abs(a[rank][col]);
+    for (let r = rank + 1; r < rows; r += 1) {
+      const v = Math.abs(a[r][col]);
+      if (v > best) {
+        best = v;
+        sel = r;
+      }
+    }
+    if (best <= eps) continue; // no pivot in this column
+    [a[rank], a[sel]] = [a[sel], a[rank]];
+    const pv = a[rank][col];
+    for (let r = rank + 1; r < rows; r += 1) {
+      const f = a[r][col] / pv;
+      if (f === 0) continue;
+      for (let c2 = col; c2 < cols; c2 += 1) a[r][c2] -= f * a[rank][c2];
+    }
+    rank += 1;
+  }
+  return rank;
 }
 
 /* ------------------------------------------------------------------ *

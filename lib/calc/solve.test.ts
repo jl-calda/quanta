@@ -106,6 +106,129 @@ describe("evaluateSolve — units", () => {
   });
 });
 
+describe("evaluateSolve — exact linear systems", () => {
+  it("solves a square linear system exactly in one step", () => {
+    // x + y = 10, x − y = 2  ⇒  x = 6, y = 4 (exact, direct lusolve).
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10", "x - y = 2"],
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(6, 12);
+    expect(mag(r.outputs[1].value)).toBeCloseTo(4, 12);
+    expect(r.iterations).toBe(1);
+  });
+
+  it("reattaches units on a unit-bearing linear system", () => {
+    // x + y = 10 mm, x − y = 2 mm  ⇒  x = 6 mm, y = 4 mm.
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0", unit: "mm" },
+          { var: "y", value: "0", unit: "mm" },
+        ],
+        constraints: ["x + y = 10 mm", "x - y = 2 mm"],
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(r.outputs[0].unit).toBe("mm");
+    expect(mag(r.outputs[0].value, "mm")).toBeCloseTo(6, 9);
+    expect(mag(r.outputs[1].value, "mm")).toBeCloseTo(4, 9);
+  });
+
+  it("reads worksheet scope names in a linear system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = a", "x - y = b"],
+      }),
+      { a: 10, b: 2 },
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(6, 9);
+    expect(mag(r.outputs[1].value)).toBeCloseTo(4, 9);
+  });
+
+  it("solves an overdetermined but consistent linear system exactly", () => {
+    // x = 3 and 2x = 6 are consistent ⇒ unique x = 3 (normal equations + lusolve).
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "0" }], constraints: ["x = 3", "2 * x = 6"] }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 12);
+  });
+
+  it("reports infinitely many solutions for an underdetermined system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10"],
+      }),
+    );
+    expect(r.status).toBe("no-solution");
+    expect(r.error?.kind).toBe("singular");
+    expect(r.error?.message).toMatch(/infinitely many/i);
+  });
+
+  it("reports a contradiction for an inconsistent linear system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10", "x + y = 12"],
+      }),
+    );
+    expect(r.status).toBe("no-solution");
+    expect(r.error?.kind).toBe("no-solution");
+    expect(r.error?.message).toMatch(/contradict/i);
+  });
+
+  it("defers a non-unique linear system to the iterate under onNonConverge 'last'", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [{ var: "x", value: "0" }],
+        constraints: ["x = 1", "x = 2"],
+        onNonConverge: "last",
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(1.5, 1); // least-squares compromise
+  });
+
+  it("keeps a nonlinear find on the iterative path (not misrouted)", () => {
+    const r = evaluateSolve(spec({ guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"] }));
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+
+  it("is deterministic across runs for a linear system", () => {
+    const s = spec({
+      guesses: [
+        { var: "x", value: "0" },
+        { var: "y", value: "0" },
+      ],
+      constraints: ["x + y = 10", "x - y = 2"],
+    });
+    const a = evaluateSolve(s);
+    const b = evaluateSolve(s);
+    expect(mag(a.outputs[0].value)).toBe(mag(b.outputs[0].value));
+    expect(mag(a.outputs[1].value)).toBe(mag(b.outputs[1].value));
+  });
+});
+
 describe("evaluateSolve — failure + edge cases", () => {
   it("reports no-solution for inconsistent constraints", () => {
     const r = evaluateSolve(spec({ guesses: [{ var: "x", value: "0" }], constraints: ["x = 1", "x = 2"] }));
