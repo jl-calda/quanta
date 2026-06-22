@@ -6,16 +6,19 @@ import {
   evaluateSolve,
   exprToLatex,
   guessSource,
+  parseGuessLine,
   sourceToLatex,
   type SolveAlgorithm,
   type SolveResult,
 } from "@/lib/calc";
 import type { SolveRegion } from "@/lib/worksheet/content";
+import { useKeymap } from "@/lib/preferences/provider";
 import { useEditor } from "../state/editor-provider";
 import type { EditorAction } from "../state/editor-reducer";
 import type { SolveEvalStatus } from "../state/use-solve-eval";
 import { Icon } from "../icons";
 import { KatexMath } from "../katex-math";
+import { MathField } from "../math-field";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -97,6 +100,32 @@ function SolveBlock({
   const unknowns = result?.unknowns ?? region.guesses.map((g) => g.var).filter(Boolean);
   const vars = unknowns.join(", ");
 
+  // Inline editing is offered only in the live editor (the static history view has
+  // no dispatch and no preferences provider, so it must stay hook-free).
+  const editable = canEdit && !!dispatch;
+
+  // Commit a single guess: parse the `var := value` line back, MERGING onto the
+  // existing guess so first-class bounds (lower/upper/integer/discrete) survive.
+  // The unit folds into `value` (engine-equivalent — see parseGuessLine).
+  const commitGuess = (i: number, src: string) => {
+    const parsed = parseGuessLine(src, region.guesses[i]?.var ?? "");
+    if (!parsed.value.trim()) return; // empty RHS is a no-op — remove guesses in the inspector
+    const next = region.guesses.map((g, j) =>
+      j === i ? { ...g, var: parsed.var, value: parsed.value, unit: undefined } : g,
+    );
+    dispatch?.({ type: "SET_REGION_PROP", id: region.id, patch: { guesses: next } });
+  };
+
+  // Commit a single constraint: replace it, or drop it when cleared (mirrors the
+  // inspector's blank-line filtering). Constraints stay a plain `string[]`.
+  const commitConstraint = (i: number, src: string) => {
+    const trimmed = src.trim();
+    const next = trimmed
+      ? region.constraints.map((c, j) => (j === i ? trimmed : c))
+      : region.constraints.filter((_, j) => j !== i);
+    dispatch?.({ type: "SET_REGION_PROP", id: region.id, patch: { constraints: next } });
+  };
+
   return (
     <div style={{ position: "relative", maxWidth: 520 }}>
       {/* the bordered block — the accent left rule is the Mathcad solve-block frame */}
@@ -130,25 +159,47 @@ function SolveBlock({
           <StatusBadge status={status} />
         </div>
 
-        {/* Given — guess values */}
+        {/* Given — guess values (click to edit inline; map originals to keep indices) */}
         {region.guesses.some((g) => g.var.trim()) && (
           <Section label="Given — guess values">
-            {region.guesses
-              .filter((g) => g.var.trim())
-              .map((g, i) => (
-                <KatexMath key={i} tex={sourceToLatex(`${g.var} := ${guessSource(g)}`)} size={17} />
-              ))}
+            {region.guesses.map((g, i) => {
+              if (!g.var.trim()) return null;
+              const source = `${g.var} := ${guessSource(g)}`;
+              const tex = sourceToLatex(source);
+              return editable ? (
+                <InlineEditableLine
+                  key={i}
+                  idleTex={tex}
+                  seedValue={source}
+                  ariaLabel={`Edit guess for ${g.var}`}
+                  onCommit={(src) => commitGuess(i, src)}
+                />
+              ) : (
+                <KatexMath key={i} tex={tex} size={17} />
+              );
+            })}
           </Section>
         )}
 
-        {/* Constraints */}
+        {/* Constraints (click to edit inline; seed via constraintToLatex so relations render) */}
         {region.constraints.some((c) => c.trim()) && (
           <Section label="Constraints">
-            {region.constraints
-              .filter((c) => c.trim())
-              .map((c, i) => (
-                <KatexMath key={i} tex={constraintToLatex(c)} size={17} />
-              ))}
+            {region.constraints.map((c, i) => {
+              if (!c.trim()) return null;
+              const tex = constraintToLatex(c);
+              return editable ? (
+                <InlineEditableLine
+                  key={i}
+                  idleTex={tex}
+                  seedValue={c}
+                  seedLatex={tex}
+                  ariaLabel={`Edit constraint ${c}`}
+                  onCommit={(src) => commitConstraint(i, src)}
+                />
+              ) : (
+                <KatexMath key={i} tex={tex} size={17} />
+              );
+            })}
           </Section>
         )}
 
@@ -208,6 +259,83 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 4 }}>{children}</div>
     </div>
+  );
+}
+
+/**
+ * Inline click-to-edit for one guess or constraint — the in-block alternative to
+ * inspector-only editing, mirroring the `AlgoMenu` quick-switch. Idle, it shows the
+ * committed KaTeX inside a reset `<button>` (so it inherits the global 2px blueprint
+ * focus ring and is keyboard-activatable); a click swaps in a MathLive field seeded
+ * from the same source. Commit (Enter / blur) and cancel (Esc) come from `MathField`;
+ * the parent maps the committed plain-text source back into the region. Rendered only
+ * on the editable path, so `useKeymap` never runs in the provider-free static view.
+ */
+function InlineEditableLine({
+  idleTex,
+  seedValue,
+  seedLatex,
+  ariaLabel,
+  onCommit,
+}: {
+  idleTex: string;
+  seedValue: string;
+  seedLatex?: string;
+  ariaLabel: string;
+  onCommit: (source: string) => void;
+}) {
+  const { keymap } = useKeymap();
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <MathField
+        value={seedValue}
+        seedLatex={seedLatex}
+        keymap={keymap}
+        onCommit={(src) => {
+          setEditing(false);
+          onCommit(src);
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      title="Click to edit"
+      aria-label={ariaLabel}
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--surface-hover)";
+        e.currentTarget.style.borderColor = "var(--border-hairline)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.borderColor = "transparent";
+      }}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        alignSelf: "flex-start",
+        border: "1px solid transparent",
+        borderRadius: 4,
+        background: "transparent",
+        padding: "1px 4px",
+        margin: "-1px -4px",
+        cursor: "text",
+        font: "inherit",
+        color: "inherit",
+        textAlign: "left",
+      }}
+    >
+      <KatexMath tex={idleTex} size={17} />
+    </button>
   );
 }
 

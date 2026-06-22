@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSolve, jsSolverBackend, odeConfigHash, type SolveSpec, type SolveSolutionCache } from "./solve";
+import { evaluateSolve, jsSolverBackend, odeConfigHash, parseGuessLine, type SolveSpec, type SolveSolutionCache } from "./solve";
 import type { Unit } from "./math";
 
 /** A find spec with sensible defaults; override per test. */
@@ -439,6 +439,43 @@ describe("evaluateSolve — multiple solution sets", () => {
     );
     expect(r.status).toBe("solved");
     expect(r.solutionSets).toBeUndefined();
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+});
+
+describe("parseGuessLine — inline guess commits (inverse of guessSource)", () => {
+  it("splits a `var := value unit` line, folding the unit into value", () => {
+    expect(parseGuessLine("x := 10 mm", "x")).toEqual({ var: "x", value: "10 mm" });
+  });
+
+  it("keeps the existing var when the commit is a bare expression", () => {
+    expect(parseGuessLine("L/2", "t")).toEqual({ var: "t", value: "L/2" });
+  });
+
+  it("reads the Mathcad colon form and trims both sides", () => {
+    expect(parseGuessLine("theta : 30 deg", "x")).toEqual({ var: "theta", value: "30 deg" });
+  });
+
+  it("yields an empty value for a half-typed `x :=` (the caller no-ops)", () => {
+    expect(parseGuessLine("x :=", "x")).toEqual({ var: "x", value: "" });
+  });
+
+  it("solves with the unit folded into value (no separate unit field)", () => {
+    // The inline-edit form: guessSource is identical, so evaluateSolve derives the
+    // unit by parsing it — equivalent to { value: "100", unit: "mm^2" }.
+    const folded = parseGuessLine("A := 100 mm^2", "A");
+    const r = evaluateSolve(spec({ guesses: [{ ...folded }], constraints: ["100 kN / A = 200 MPa"] }));
+    expect(r.status).toBe("solved");
+    expect(r.outputs[0].unit).toBe("mm^2");
+    expect(mag(r.outputs[0].value, "mm^2")).toBeCloseTo(500, 1);
+  });
+
+  it("preserves merged bounds alongside a folded value", () => {
+    // The view merges parseGuessLine onto the existing guess, so first-class bounds
+    // (lower/upper/integer/discrete) survive an inline edit.
+    const folded = parseGuessLine("x := 1", "x");
+    const r = evaluateSolve(spec({ guesses: [{ ...folded, lower: "0" }], constraints: ["x^2 = 9"] }));
+    expect(r.status).toBe("solved");
     expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
   });
 });

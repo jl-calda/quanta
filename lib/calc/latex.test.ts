@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latexToSource, looksLikeLatex, sourceToLatex } from "./latex";
+import { constraintToLatex, latexToSource, looksLikeLatex, sourceToLatex } from "./latex";
 import { normalizeSource, splitDefinition } from "./parse";
 import { math } from "./math";
 
@@ -168,5 +168,33 @@ describe("iterator operators ⇄ source", () => {
   it("keeps the `..` range form in source (round-trips through the editor seed)", () => {
     expect(latexToSource("1..n")).toBe("1..n");
     expect(sourceToLatex("i := 1..n")).toContain("..");
+  });
+});
+
+describe("constraint round-trip (solve-block inline editing)", () => {
+  // The inline constraint field seeds via constraintToLatex and commits via
+  // latexToSource; the relational operators must survive the loop.
+  const roundTrip = (src: string) => latexToSource(constraintToLatex(src)).replace(/\s+/g, "");
+
+  it("round-trips equations", () => {
+    expect(roundTrip("a = b")).toBe("a=b");
+    // A power survives; its base may pick up harmless parens from the bridge
+    // (mathjs emits `{ x}^{2}`), so tolerate them — the relation is preserved.
+    expect(roundTrip("x^2 = 9")).toMatch(/^\(?x\)?\^2=9$/);
+  });
+
+  it("round-trips inequalities (the bridge gap this fills)", () => {
+    expect(roundTrip("x >= 2")).toBe("x>=2");
+    expect(roundTrip("t <= 50 mm")).toBe("t<=50mm");
+  });
+
+  it("round-trips a chained bound", () => {
+    expect(roundTrip("0 <= x <= 1")).toBe("0<=x<=1");
+  });
+
+  it("maps the relational LaTeX commands MathLive emits", () => {
+    expect(latexToSource("x \\ge 2")).toBe("x >= 2");
+    expect(latexToSource("x \\le 2")).toBe("x <= 2");
+    expect(latexToSource("a \\ne b")).toBe("a != b");
   });
 });

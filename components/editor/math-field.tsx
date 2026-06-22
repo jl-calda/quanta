@@ -40,13 +40,20 @@ export interface MathFieldProps {
   onCancel: () => void;
   /** Live LaTeX on each keystroke (lets the parent read it when toggling mode). */
   onLatexChange?: (latex: string) => void;
+  /**
+   * Explicit seed LaTeX, overriding `sourceToLatex(value)`. For sources whose
+   * own `toTex` would misrepresent them — e.g. a solve-block constraint `x = y`,
+   * which mathjs parses as an assignment; the caller seeds via `constraintToLatex`
+   * instead. The commit path is unchanged (`latexToSource(mf.value)`).
+   */
+  seedLatex?: string;
 }
 
-export function MathField({ value, keymap, onCommit, onCancel, onLatexChange }: MathFieldProps) {
+export function MathField({ value, keymap, onCommit, onCancel, onLatexChange, seedLatex }: MathFieldProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
   // Keep callbacks/value in a ref so the mount effect runs exactly once.
-  const cb = useRef({ onCommit, onCancel, onLatexChange, value, keymap });
-  cb.current = { onCommit, onCancel, onLatexChange, value, keymap };
+  const cb = useRef({ onCommit, onCancel, onLatexChange, value, keymap, seedLatex });
+  cb.current = { onCommit, onCancel, onLatexChange, value, keymap, seedLatex };
 
   useEffect(() => {
     let disposed = false;
@@ -67,7 +74,7 @@ export function MathField({ value, keymap, onCommit, onCancel, onLatexChange }: 
       mf.className = "ed-mathfield";
 
       // Seed before wiring listeners so the initial value emits no events.
-      mf.setValue(sourceToLatex(cb.current.value));
+      mf.setValue(cb.current.seedLatex ?? sourceToLatex(cb.current.value));
 
       mf.addEventListener("input", () => {
         if (mf) cb.current.onLatexChange?.(mf.value);
