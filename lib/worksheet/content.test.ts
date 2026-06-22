@@ -308,6 +308,86 @@ describe("typed solve region", () => {
       expect(r.constraints.length).toBeGreaterThan(0);
     }
   });
+
+  it("round-trips a solve block's bounds, integer/discrete options, and maxSolutions", () => {
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "s1",
+                  type: "solve",
+                  indent: 0,
+                  algorithm: "find",
+                  guesses: [{ var: "x", value: "1", lower: "0", upper: "5", integer: true, discrete: [6, 8, 10] }],
+                  constraints: ["x^2 = 9"],
+                  maxSolutions: 2,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const out = parseContent(input);
+    const region = out.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("solve");
+    if (region.type === "solve") {
+      expect(region.maxSolutions).toBe(2);
+      expect(region.guesses[0]).toMatchObject({ lower: "0", upper: "5", integer: true, discrete: [6, 8, 10] });
+    }
+  });
+
+  it("round-trips a parametric sweep region", () => {
+    const input = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "sw1",
+                  type: "sweep",
+                  indent: 0,
+                  param: "L",
+                  from: "0 m",
+                  to: "4 m",
+                  steps: 9,
+                  scale: "linear",
+                  outputs: [{ expr: "L^2", name: "A", unit: "m^2" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const out = parseContent(input);
+    const region = out.rows[0].cells[0].regions[0];
+    expect(region.type).toBe("sweep");
+    if (region.type === "sweep") {
+      expect(region).toMatchObject({ param: "L", from: "0 m", to: "4 m", steps: 9 });
+      expect(region.outputs[0]).toMatchObject({ expr: "L^2", name: "A", unit: "m^2" });
+    }
+  });
+
+  it("seeds newRegion('sweep') with a usable example", () => {
+    const r = newRegion("sweep");
+    expect(r.type).toBe("sweep");
+    if (r.type === "sweep") {
+      expect(r.param).toBe("x");
+      expect(r.outputs.length).toBeGreaterThan(0);
+      expect(r.outputs[0].name).toBe("y");
+    }
+  });
 });
 
 describe("newRegion", () => {

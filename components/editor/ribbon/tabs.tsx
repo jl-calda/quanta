@@ -140,6 +140,7 @@ function InsertTab({ cmd, sel }: TabProps) {
         <BigBtn icon="plot" label="Plot" dropdown onClick={() => cmd.insertRegion("plot")} disabled={d} />
         <SmStack w={104}>
           <SmBtn icon="image" label="Image" onClick={() => cmd.insertRegion("image")} disabled={d} />
+          <SmBtn icon="chart" label="Sweep" onClick={() => cmd.insertRegion("sweep")} disabled={d} />
           <SmBtn icon="sketch" label="Sketch" disabled />
         </SmStack>
       </Group>

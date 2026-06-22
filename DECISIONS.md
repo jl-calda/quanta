@@ -1855,3 +1855,50 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   CSS variables (`--accent`, `--status-pass`, …) so it tracks the light/dark theme;
   the curated `blueprint`/`earth`/`contrast` themes are intentional fixed hues from
   the locked base palette. An explicit per-trace `color` always overrides the theme.
+
+## Solve refinement: constraint types, bounds, integer/discrete & multiple solutions; parametric sweeps (Phase 2)
+
+The solve block already supported `find / minimize / maximize / minerr` with `=`,
+`<=`, `>=` constraints and box bounds inferred from `var ⋛ const`. This refinement
+makes bounds first-class, adds mixed-integer / discrete unknowns and multiple
+solution sets, and introduces a parametric-sweep region — all PURE and SYNCHRONOUS
+inside `/lib/calc` (no worker), composing with the worker-backed `odesolve` path
+(PR #59) without touching it. `graph.ts` / `recalc.ts` are untouched.
+
+- **First-class bounds.** `SolveGuessSpec` gains `lower` / `upper` (unit-bearing
+  expressions). `buildProblem` parses them into the `lower`/`upper` box and merges
+  TIGHTEST with the existing constraint-derived `applyBoxBound` (so explicit bounds
+  and `x >= 0` constraints compose). A new `boundMagnitude` helper THROWS on a parse
+  slip or true dimensional mismatch (surfaced as the existing `parse` / `unit-mismatch`
+  typed error) rather than silently dropping the bound like the constraint path.
+- **Integer / discrete unknowns.** `SolveGuessSpec` gains `integer` and `discrete`
+  (magnitudes in the guess's unit); the internal `Unknown` carries them. When any
+  discrete unknown is present, `solveDiscrete` ENUMERATES the bounded combinations
+  (cap `COMBO_CAP = 4096`), fixing those dimensions (`lower=upper=candidate`) and
+  solving the continuous remainder per combo, then keeps the best FEASIBLE combo by
+  score (residual L2 for find/minerr, objective for optimise). Unbounded integers or
+  an over-cap space fall back to `roundAndFix` (solve the relaxation, snap to the
+  nearest allowed value, re-solve). Fixed enumeration order + first-wins ties keep it
+  deterministic across client / worker / Node.
+- **Multiple solution sets.** `SolveSpec.maxSolutions` (default 1) drives a
+  deterministic multi-start (`multiStarts`: the base guess, per-axis sign flips, an
+  all-negated point, ±decade scales; cap `START_CAP = 16`); converged + feasible runs
+  are deduped by a tolerance-rounded key, ranked, and surfaced as
+  `SolveResult.solutionSets` (named to avoid colliding with #59's `SolveSolutionCache`
+  / `SolveRegion.solution`). Only the PRIMARY (best) solution exports to scope — a name
+  can't bind two values — so `flatten.ts` / `serializeForScope` are unchanged; the rest
+  are display-only in the read view.
+- **Parametric sweep = a new region type, expression sampling.** `SweepRegion` varies
+  one parameter across a bounded range and evaluates output expressions per step. It
+  REUSES the plot-by-formula sampler (`plot.ts` `resolveSampling` + `sweep`, now
+  exported) rather than adding a second sampler, and is an EXPORTER: named outputs fold
+  into worksheet scope as vector series through the same scope-bridge tables/solves use
+  (new `SWEEP_PREFIX` in `flatten.ts`), so a downstream plot/table consumes them by
+  name. Solved-block variables are HELD at their settled value (NOT re-solved per step).
+  Steps are bounded by an explicit count OR step size; a zero/negative step or a count
+  outside 2–400 is a typed `CalcError`. `targetSolve` / `reSolvePerStep` round-trip as a
+  TYPED-BUT-INERT seam for the deferred re-solve sensitivity.
+- **Deferred (its own future row).** "Solve: parametric sweep re-solving a solve block
+  (`evaluateSolve` per step)" — true sensitivity of a SOLVED quantity. Its precondition
+  (a solid ODE/solver path) is now met by PR #59; when built it should reuse #59's
+  worker-producer-cache pattern (`use-solve-eval` → `region.solution`).

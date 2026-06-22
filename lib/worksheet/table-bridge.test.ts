@@ -322,3 +322,20 @@ describe("settleTables — solve blocks (scope-bridge)", () => {
     expect(passes()).toBeLessThanOrEqual(9);
   });
 });
+
+describe("settleTables — parametric sweeps (scope-bridge)", () => {
+  it("folds a sweep's named series back so a downstream region consumes it", () => {
+    const content = doc([
+      { id: "sw1", type: "sweep", indent: 0, param: "x", from: "0", to: "4", steps: 5, outputs: [{ expr: "x^2", name: "y" }] },
+      { id: "peak", type: "math", indent: 0, source: "peak := max(y)" },
+    ]);
+    const { engine } = countingEngine();
+    const { sheet, sweeps } = settleTables(content, engine);
+
+    expect(sweeps.get("sw1")?.status).toBe("ok");
+    const peak = sheet.regions.find((r) => r.name === "peak");
+    expect(peak?.error).toBeUndefined();
+    expect(peak?.formatted).toMatch(/^16\b/); // max([0,1,4,9,16]) = 16
+    expect(sheet.regions.some((r) => r.id.startsWith("swp:"))).toBe(false); // synthetic stripped
+  });
+});

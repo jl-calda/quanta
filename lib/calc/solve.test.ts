@@ -236,3 +236,86 @@ describe("evaluateSolve — determinism", () => {
     expect(r.status).toBe("solved");
   });
 });
+
+describe("evaluateSolve — first-class bounds", () => {
+  it("respects an explicit upper bound on an optimisation", () => {
+    const r = evaluateSolve(
+      spec({ algorithm: "minimize", guesses: [{ var: "x", value: "0", upper: "3" }], objective: "(x - 5)^2" }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 4);
+  });
+
+  it("uses a lower bound to pick the positive root of x^2 = 9", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "1", lower: "0" }], constraints: ["x^2 = 9"] }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+
+  it("flags a dimensionally-mismatched bound as a typed error", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "1 mm", lower: "2 kN" }], constraints: ["x = 5 mm"] }),
+    );
+    expect(r.status).toBe("error");
+    expect(r.error?.kind).toBe("unit-mismatch");
+  });
+
+  it("carries a bound's unit (positive root of a unit-bearing solve)", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "1 mm", lower: "0 mm" }], constraints: ["x^2 = 9 mm^2"] }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value, "mm")).toBeCloseTo(3, 5);
+  });
+});
+
+describe("evaluateSolve — integer & discrete unknowns", () => {
+  it("solves a bounded integer find (enumeration picks x = 3)", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "1", integer: true, lower: "0", upper: "5" }], constraints: ["x^2 = 9"] }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBe(3);
+  });
+
+  it("snaps an optimisation to the nearest allowed discrete size", () => {
+    const r = evaluateSolve(
+      spec({
+        algorithm: "minimize",
+        guesses: [{ var: "d", value: "6", discrete: [6, 8, 10, 12] }],
+        objective: "(d - 7.4)^2",
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBe(8);
+  });
+
+  it("is deterministic across repeated discrete solves", () => {
+    const s = spec({ guesses: [{ var: "x", value: "0", discrete: [6, 8, 10, 12] }], constraints: ["x = 10"] });
+    expect(mag(evaluateSolve(s).outputs[0].value)).toBe(mag(evaluateSolve(s).outputs[0].value));
+  });
+});
+
+describe("evaluateSolve — multiple solution sets", () => {
+  it("finds both roots of x^2 = 9 via multi-start", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"], maxSolutions: 2 }),
+    );
+    expect(r.status).toBe("solved");
+    expect(r.solutionSets).toBeDefined();
+    expect(r.solutionSets).toHaveLength(2);
+    const roots = r.solutionSets!.map((s) => Math.round(mag(s.outputs[0].value))).sort((a, b) => a - b);
+    expect(roots).toEqual([-3, 3]);
+  });
+
+  it("omits solutionSets when only one solution exists", () => {
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "1", lower: "0" }], constraints: ["x^2 = 9"], maxSolutions: 3 }),
+    );
+    expect(r.status).toBe("solved");
+    expect(r.solutionSets).toBeUndefined();
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+});
