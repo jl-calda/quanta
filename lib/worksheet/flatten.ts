@@ -520,6 +520,28 @@ export function readingOrderIds(content: WorksheetContent): string[] {
   return ids;
 }
 
+/**
+ * Region ids in reading order, but NOT descending into a *collapsed* area — the
+ * area id itself is included, its hidden children are not. This is the order
+ * keyboard navigation steps through, so Arrow keys only ever land on a region
+ * that has a DOM node (a collapsed area's children render none). The plain
+ * {@link readingOrderIds} (used by shift-range select / select-all / selection
+ * reconcile) still includes those hidden children and must stay that way.
+ */
+export function visibleReadingOrderIds(content: WorksheetContent): string[] {
+  const ids: string[] = [];
+  const walk = (regions: Region[]): void => {
+    for (const region of regions) {
+      ids.push(region.id);
+      if (region.type === "area" && !region.collapsed) walk(region.regions);
+    }
+  };
+  for (const row of content.rows) {
+    for (const cell of row.cells) walk(cell.regions);
+  }
+  return ids;
+}
+
 /** The defining math regions in reading order — drives the Variables panel. */
 export function mathRegions(content: WorksheetContent): Region[] {
   const out: Region[] = [];

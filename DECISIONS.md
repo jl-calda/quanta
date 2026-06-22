@@ -1783,10 +1783,39 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   Shift+F9 (recalc / recalc-to-here), Mod+Enter (new region), Mod+K/F/P (palette /
   find / export), Mod+Shift+A (auto/manual), and `/` (open reference, canvas-only
   since `/` is a fraction in a field). Mod+S preventDefaults the browser dialog
-  (the sheet autosaves). Undo/Redo are advertised in the reference (the Mathcad
-  keymap) but not bound — there is no undo stack yet, and binding a no-op would be
-  worse than leaving native behavior. Nothing traps focus; every shortcut is also
-  reachable via ribbon/menus.
+  (the sheet autosaves). Nothing traps focus; every shortcut is also reachable via
+  ribbon/menus.
+- **Undo/redo via a higher-order history reducer (`editor-history.ts`).** It wraps the
+  pure `editorReducer` without touching it or `EditorState`: `HistoryState` holds
+  `{ present, past, future, lastKey }` with document-only `Snapshot`s (`content` +
+  selection; `content` is already immutable per `mutate()`, so snapshots reference it
+  with no extra clone). The context `dispatch` widens to `Dispatch<HistoryAction>`
+  (`EditorAction | UNDO | REDO`), assignable to every existing `Dispatch<EditorAction>`
+  prop by parameter contravariance, so no consumer changes. Decisions baked in:
+  content-neutral actions (select/results/save-state/UI — same `content` reference)
+  update `present` without recording; **worker-written `cache`/`solution` patches**
+  (the only `SET_REGION_PROP`s keyed solely on those, from the SymPy/SciPy producer
+  hooks) change content but are derived — no undo step and, crucially, they don't clear
+  the redo stack (a mixed patch with a user key stays undoable); rapid same-target edits
+  **coalesce** into one step via an identity-based key (no clock → reducer stays pure),
+  preserved across the background recompute/autosave trio but ended by any user boundary
+  (a fresh selection / begin·end edit); `restore()` swaps in content+selection, nulls
+  `editingId`, and marks `unsaved` so autosave persists the restored tree. `Mod+Z` /
+  `Mod+Shift+Z` / `Mod+Y` are bound **canvas-only** (after the field guard) so a math /
+  text field keeps its own native character-level undo while editing; history is capped
+  at 100 steps.
+- **Keyboard navigation across regions (`SELECT_STEP` / `SELECT_EDGE`).** Two pure,
+  content-neutral reducer actions step the primary selection through
+  `visibleReadingOrderIds` (a new flatten helper that excludes a *collapsed* area's
+  hidden children but keeps the area itself, so a move never lands on a node with no DOM
+  element; plain `readingOrderIds` still includes them for shift-range/select-all). Arrow
+  up/down step, Home/End jump to first/last, Shift extends a contiguous range from a
+  stable anchor (the far end of the current selection), Enter opens the inline-editable
+  types. Region wrappers carry a **roving `tabIndex`** (`0` for the primary, `-1`
+  otherwise) so the DS focus ring (already applied to `[tabindex]:focus-visible`) follows
+  the selection; a guarded focus effect in `RegionItem` keeps DOM focus on the primary
+  only when focus is already in the canvas (never stealing it from the inspector, a
+  dialog, the outline search, or a math field).
 - **Reference modal rebuilt to mockup 7.25.** Extracted `ShortcutsReference` (the
   searchable, masonry, keycap-chip panel) so `ShortcutsDialog` (scrim overlay,
   Esc/scrim close, no focus trap) and the new `/keyboard-shortcuts` design board
