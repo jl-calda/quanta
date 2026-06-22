@@ -515,6 +515,35 @@ Running log of non-obvious choices, per CLAUDE.md. Newest first.
   blue result pill; non-convergence shows the app-voice red box. `solveResults` rides the provider
   next to `tableResults`/`plotResults`; one provider-free `StaticSolveRegionView` serves history.
 
+### Solve block — exact linear-system fast path for `find` (Phase 2 refinement)
+
+- **All-equality, provably-linear `find` blocks are solved EXACTLY**, not iterated. `evaluateSolve`'s
+  `find` branch first tries `tryLinearFind`: it reads the affine model `F(x) = A·x + c` from the
+  existing unit-/scaling-aware residual closure (exact evaluation at `0` and the unit basis),
+  **verifies affinity at deterministic probes**, then classifies by **rank vs augmented-rank**
+  (`matrixRank`, relative tolerance). Unique → solve preferring **`lusolve`** (square via
+  `solveLinear`; overdetermined full-rank via the normal equations) + a defensive residual
+  re-check, then the shared `interpretRun` reattaches units/format. This keeps `/lib/calc` pure,
+  synchronous, and deterministic (client = worker = Node).
+- **Precise diagnostics, never a silent arbitrary solution.** A rank-deficient-but-consistent
+  system reports `infiniteSolutions()` ("infinitely many solutions") and a contradictory system
+  reports `inconsistentSystem()` ("these equations contradict each other") — new typed helpers in
+  `errors.ts` alongside the other app-voice errors. Previously an underdetermined linear system
+  silently returned one arbitrary least-squares iterate labelled "converged".
+- **No misrouting, no symbolic collision.** Detection is purely numeric (probes the residual
+  closure); it never consults `isSymbolic()`, so numeric `find` stays numeric. Anything not
+  provably affine (failed probe or non-tiny residual) returns `null` and falls back to the
+  unchanged Newton / Levenberg–Marquardt path. Inequalities (box bounds/penalties) also fall back.
+  `onNonConverge: "last"` still defers a non-unique system to the best-effort iterate.
+- **Boundaries.** The exact solve is in-engine — NOT the iterative `SolverBackend` seam (kept for
+  nonlinear/optimization) and NOT the async worker `linearSolve` (kept as the future heavy seam).
+  No change to `graph.ts`/`recalc.ts`, the content schema, the Inspector (config stays structured),
+  or any region view — the new `error.message`/`fixHint` already render in the solve block's red box.
+- **Deferred as separate Refinement rows (NOT this slice):** (2) **vector `Find()` return** —
+  assignable, indexable `(x, y) := Find(...)` so downstream regions/plots can reference the
+  solution vector (today: per-name binding only); (3) **goal seek** — single-variable
+  solve-to-target from a result's context menu (Coverage Matrix gap G5).
+
 ## Plot region (Func §6.4 + Claude Design `plot-region.html`)
 
 - **Plot is now fully typed (was render-only), with no migration needed.** The schema adds
