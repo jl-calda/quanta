@@ -17,7 +17,16 @@
 import type { PythonRunner } from "./python-runner";
 import { parseEnvelope } from "./python/envelope";
 import { buildSimplify, buildSympy, buildSymbolicEval } from "./python/symbolic";
-import { buildLinearSolve, buildScipy } from "./python/numeric";
+import {
+  buildLinearSolve,
+  buildScipy,
+  buildOdesolve,
+  buildPdesolve,
+  buildNumol,
+  type IntegratorRequest,
+} from "./python/numeric";
+
+export type { IntegratorRequest } from "./python/numeric";
 
 export type { PyEnvelope, PyEnvelopeOk, PyEnvelopeErr } from "./python/envelope";
 export { PyBackendError } from "./python/envelope";
@@ -49,10 +58,41 @@ export interface SymbolicBackend {
   sympy<T = unknown>(body: string): Promise<T>;
 }
 
+/**
+ * A solved ODE trajectory: the independent-variable samples plus one sampled
+ * series per state variable. Plain `number[]` so it serializes into worksheet
+ * scope (via the engine's `serializeForScope`) and survives the JSONB cache.
+ */
+export interface IntegratorSolution {
+  /** The independent variable name (e.g. "t"). */
+  indepVar: string;
+  /** Independent-variable sample points. */
+  indep: number[];
+  /** One trajectory per state variable, keyed by name. */
+  vars: Record<string, number[]>;
+  /** State-variable names, in solve order. */
+  names: string[];
+}
+
+/** A typed-but-deferred integrator signal (pdesolve / numol stubs this slice). */
+export interface IntegratorDeferred {
+  deferred: true;
+  algorithm: string;
+}
+
 /** Heavy / scientific numeric (NumPy / SciPy) facet. NOT the sync SolverBackend. */
 export interface NumericBackend {
   /** Solve the linear system A·x = b, returning the solution vector x. */
   linearSolve(a: number[][], b: number[]): Promise<number[]>;
+  /**
+   * Integrate an ODE system (`solve_ivp`) from a solve-block config, returning
+   * sampled trajectories the pure engine folds into worksheet scope.
+   */
+  odesolve(req: IntegratorRequest): Promise<IntegratorSolution>;
+  /** PDE solve (method-of-lines) — typed stub this slice; returns a deferred signal. */
+  pdesolve(req: IntegratorRequest): Promise<IntegratorDeferred>;
+  /** Numeric method-of-lines — typed stub this slice; returns a deferred signal. */
+  numol(req: IntegratorRequest): Promise<IntegratorDeferred>;
   /**
    * Run arbitrary NumPy / SciPy. `body` must end in `return <json-serializable>`
    * (cast NumPy values with `.tolist()` / `float()`). `numpy` + `scipy` load first.
@@ -91,6 +131,23 @@ export function makeEngineBackend(runner: PythonRunner): EngineBackend {
     async linearSolve(a, b) {
       return parseEnvelope<number[]>(
         await runner.run(buildLinearSolve(a, b), { packages: SCIPY_PACKAGES }),
+      );
+    },
+    async odesolve(req) {
+      return parseEnvelope<IntegratorSolution>(
+        await runner.run(buildOdesolve(req), { packages: SCIPY_PACKAGES }),
+      );
+    },
+    // pdesolve / numol are typed stubs this slice: they ignore the request and
+    // return a `deferred` signal (the interface still types `req` for callers).
+    async pdesolve() {
+      return parseEnvelope<IntegratorDeferred>(
+        await runner.run(buildPdesolve(), { packages: SCIPY_PACKAGES }),
+      );
+    },
+    async numol() {
+      return parseEnvelope<IntegratorDeferred>(
+        await runner.run(buildNumol(), { packages: SCIPY_PACKAGES }),
       );
     },
     async scipy<T = unknown>(body: string) {

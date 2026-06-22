@@ -38,6 +38,7 @@ import {
   type Row,
   type SolveAlgorithm,
   type SolveGuess,
+  type SolveSolutionCache,
   type SurfaceOptions,
   type SymbolicCache,
   type ColumnValidation,
@@ -174,6 +175,8 @@ export interface RegionPatch {
   maxIter?: number;
   onNonConverge?: "error" | "last";
   ode?: OdeConfig;
+  /** Worker-computed ODE solution, written by the solve producer (use-solve-eval). */
+  solution?: SolveSolutionCache;
   /** Program-block fields (Functional Brief §2) — `name`/`unit` shared above. */
   params?: string[];
   body?: ProgramStatement[];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSolve, jsSolverBackend, type SolveSpec } from "./solve";
+import { evaluateSolve, jsSolverBackend, odeConfigHash, type SolveSpec, type SolveSolutionCache } from "./solve";
 import type { Unit } from "./math";
 
 /** A find spec with sensible defaults; override per test. */
@@ -141,22 +141,63 @@ describe("evaluateSolve — failure + edge cases", () => {
   });
 });
 
-describe("evaluateSolve — deferred ODE/PDE", () => {
-  it("returns a deferred status for odesolve and preserves config", () => {
-    const r = evaluateSolve(
-      spec({
-        algorithm: "odesolve",
-        guesses: [{ var: "y", value: "0" }],
-        ode: { system: ["y' = y"], indepVar: "t", range: { min: 0, max: 1 }, conditions: ["y(0) = 1"] },
-      }),
-    );
+describe("evaluateSolve — odesolve (worker cache, read sync)", () => {
+  const odeSpec = (over: Partial<SolveSpec> = {}): SolveSpec =>
+    spec({
+      algorithm: "odesolve",
+      guesses: [{ var: "y", value: "1" }],
+      ode: { system: ["y' = -k*y"], indepVar: "t", range: { min: 0, max: 1 }, conditions: ["y(0) = 1"] },
+      ...over,
+    });
+
+  const freshSolution = (s: SolveSpec): SolveSolutionCache => ({
+    v: 1,
+    hash: odeConfigHash(s),
+    indepVar: "t",
+    indep: [0, 0.5, 1],
+    vars: { y: [1, 0.78, 0.61] },
+    inputs: { k: "2" },
+    computedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  it("defers until a solution is cached (the producer runs async)", () => {
+    const r = evaluateSolve(odeSpec());
     expect(r.status).toBe("deferred");
     expect(r.algorithm).toBe("odesolve");
     expect(r.outputs).toHaveLength(0);
     expect(r.unknowns).toEqual(["y"]);
   });
 
-  it("defers pdesolve and numol too", () => {
+  it("returns the solved trajectory from a fresh cache as plain-vector outputs", () => {
+    const base = odeSpec();
+    const r = evaluateSolve({ ...base, solution: freshSolution(base) }, { k: 2 });
+    expect(r.status).toBe("solved");
+    expect(r.outputs.map((o) => o.name)).toEqual(["t", "y"]);
+    // Plain number[] so the scope-bridge folds it into downstream regions.
+    expect(r.outputs[0].value).toEqual([0, 0.5, 1]);
+    expect(r.outputs[1].value).toEqual([1, 0.78, 0.61]);
+  });
+
+  it("trusts the cache on the export path (empty scope, no Pyodide)", () => {
+    const base = odeSpec();
+    expect(evaluateSolve({ ...base, solution: freshSolution(base) }, {}).status).toBe("solved");
+  });
+
+  it("goes stale when a referenced constant changes upstream", () => {
+    const base = odeSpec();
+    expect(evaluateSolve({ ...base, solution: freshSolution(base) }, { k: 99 }).status).toBe("deferred");
+  });
+
+  it("goes stale when the config changes (hash mismatch)", () => {
+    const base = odeSpec();
+    const solution = freshSolution(base); // hash of the original range 0..1
+    const changed = { ...base, ode: { ...base.ode!, range: { min: 0, max: 2 } }, solution };
+    expect(evaluateSolve(changed, { k: 2 }).status).toBe("deferred");
+  });
+});
+
+describe("evaluateSolve — deferred PDE/numol (typed stubs)", () => {
+  it("defers pdesolve and numol (method-of-lines ships next)", () => {
     expect(evaluateSolve(spec({ algorithm: "pdesolve", guesses: [{ var: "u", value: "0" }] })).status).toBe("deferred");
     expect(evaluateSolve(spec({ algorithm: "numol", guesses: [{ var: "u", value: "0" }] })).status).toBe("deferred");
   });

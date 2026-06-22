@@ -2,6 +2,57 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## ODE/PDE integrators — odesolve full, PDE seam-only (Phase 2)
+
+- **Mirrors the locked symbolic cache-in-content strategy, not an async solver.** The
+  task says "fill the SolverBackend seam", but the codebase deliberately has TWO seams:
+  the **sync, pure** `SolverBackend` in `lib/calc/solve.ts` (Newton/LM/NM, runs in-graph
+  during recalc + Node export) and the **async** `NumericBackend` in
+  `lib/calc/worker/backend.ts` (Pyodide/SciPy, NOT re-exported from `lib/calc/index.ts`).
+  ODE integration is async, so it goes behind `NumericBackend.odesolve`, and its result is
+  **cached on the region in `worksheets.content`** (versioned, keyed by region id +
+  `odeConfigHash`) — exactly like the symbolic cache — so the pure `evaluateSolve` reads it
+  **synchronously** and the engine stays pure/sync. We did NOT reintroduce an async
+  SolverBackend (the explicit rule in `backend.ts`).
+- **The cache-read lives inside `evaluateSolve`, not a separate overlay.** The export
+  `SolveBlock` (`lib/export/document.tsx`) already calls `evaluateSolve(region, {})`, so a
+  solution attached to the region rides along to the PDF with **zero export-path changes**
+  and no Pyodide on Node — strictly simpler than an `applySolveCache` overlay (which would
+  need to touch both export consumers). Symbolic needed an overlay only because it overlays
+  math-region *display*; ODE feeds *scope*, which `settleTables` already does for solves.
+- **Hash is scope-free; referenced constants tracked separately via `inputs`.** An ODE
+  (`y' = -k·y`) depends on upstream names (`k`), unlike a self-contained symbolic expr. So
+  `odeConfigHash` (pure FNV-1a, mirrors `symbolicCacheHash`) covers only the config TEXT +
+  guesses, and the cache stores `inputs` = the serialized snapshot of every referenced
+  constant. Freshness = hash matches **AND** (empty scope → trust the cache [export path] OR
+  every `inputs[name]` re-serializes equal in the live scope). This kills the
+  producer/consumer/export hash chicken-and-egg and makes upstream-change staleness correct.
+- **Downstream representation = plain `number[]` vectors.** `evaluateSolve` returns the
+  independent variable (name = `indepVar`) and each state variable (name = unknown) as plain
+  number arrays. `serializeForScope` already turns arrays into `[…]` literals → mathjs
+  matrices, and `settleTables` already folds solve outputs into scope, so a downstream
+  `max(y)` / plot of `t` vs `y` works through the **unmodified** engine. Rejected a solution
+  *function* (closures don't serialize / survive export) and endpoint *scalars* (loses the
+  trajectory + plotting, the headline ODE use-case).
+- **"computing" stays transient (React state), not in the pure `SolveStatus` enum.**
+  `evaluateSolve` returns only `solved` (fresh cache) or `deferred`. The in-flight / error
+  state is carried by the producer hook `use-solve-eval.ts` (the exact counterpart to
+  `useSymbolicEval`) and overlaid by `solve-region.tsx` — keeping the engine enum pure.
+- **Worker-available gate is structural.** The producer is a client hook, `canEdit`-only,
+  with the live SciPy call in try/catch (degrades to a transient `error`, never throws). It
+  never runs in `node --check` or the Pyodide-free `vitest run`; builders/backend are tested
+  with a fake `PythonRunner`, and the engine cache-read is tested with cached solutions. Real
+  SciPy is proven only under `npm run test:pyodide`.
+- **Scope: odesolve full, pdesolve/numol typed STUBS.** Per the confirmed Option 1,
+  `buildPdesolve`/`buildNumol` emit a `{deferred:true}` signal (builder-tested) and
+  `NumericBackend.pdesolve/numol` return it — present and typed but **not usable** (no
+  producer, no UI, both still `deferred` end-to-end). Method-of-lines is its own follow-up
+  Refinement row, reusing this slice's cache + producer + downstream + export plumbing.
+- **ODE is dimensionless this slice.** SciPy integrates magnitudes; we do NOT convert/track
+  units through the RHS (risk of a wrong unit label on an unchecked expression). The cache
+  carries an optional `units` map (forward-compat) but the producer leaves it unpopulated.
+  ODE constants are passed as numeric magnitudes.
+
 ## Plot — 3D surface rendering (projected wireframe, Phase 2)
 
 - **Fills the surface seam, renderer-only — no schema/picker change.** The `surface`

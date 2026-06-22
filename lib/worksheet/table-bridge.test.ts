@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CalcEngine, type RegionInput, type RegionResult, type SheetResult } from "@/lib/calc";
+import { CalcEngine, odeConfigHash, type RegionInput, type RegionResult, type SheetResult } from "@/lib/calc";
 import {
   buildEngineInputs,
   settleTables,
   worksheetScopeFromResults,
   type TableEngine,
 } from "./flatten";
-import type { Region, TableRegion, WorksheetContent } from "./content";
+import type { Region, SolveRegion, TableRegion, WorksheetContent } from "./content";
 import { buildChartFromRange } from "./chart-from-range";
 
 function doc(regions: Region[]): WorksheetContent {
@@ -282,5 +282,43 @@ describe("settleTables — solve blocks (scope-bridge)", () => {
     const { sheet, solves } = settleTables(content, engine);
     expect(solves.get("s1")?.status).toBe("solved");
     expect(sheet.regions.find((r) => r.name === "d")?.formatted).toMatch(/^500\b/); // 500 mm²
+  });
+
+  it("folds a cached ODE trajectory back so downstream regions read the solution vectors", () => {
+    // A cached odesolve solution (the async worker's output) binds `t` and `y` as
+    // sampled vectors; downstream math regions consume them through the UNMODIFIED
+    // engine — the load-bearing proof that an integrated ODE feeds downstream.
+    const region: SolveRegion = {
+      id: "s1",
+      type: "solve",
+      indent: 0,
+      algorithm: "odesolve",
+      guesses: [{ var: "y", value: "1" }],
+      constraints: [],
+      ode: { system: ["y' = -y"], indepVar: "t", range: { min: 0, max: 1 }, conditions: ["y(0) = 1"] },
+    };
+    const solution = {
+      v: 1 as const,
+      hash: odeConfigHash(region),
+      indepVar: "t",
+      indep: [0, 0.5, 1],
+      vars: { y: [1, 0.61, 0.37] },
+      computedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const content = doc([
+      { ...region, solution },
+      { id: "ymax", type: "math", indent: 0, source: "ymax := max(y)" },
+      { id: "tend", type: "math", indent: 0, source: "tend := max(t)" },
+    ]);
+    const { engine, passes } = countingEngine();
+    const { sheet, solves } = settleTables(content, engine);
+
+    expect(solves.get("s1")?.status).toBe("solved");
+    const ymax = sheet.regions.find((r) => r.name === "ymax");
+    expect(ymax?.error).toBeUndefined();
+    expect(ymax?.formatted).toMatch(/^1\b/); // max(y) = 1 (the initial condition)
+    expect(sheet.regions.find((r) => r.name === "tend")?.formatted).toMatch(/^1\b/); // max(t) = 1
+    expect(sheet.regions.some((r) => r.id.startsWith("slv:"))).toBe(false); // synthetic stripped
+    expect(passes()).toBeLessThanOrEqual(9);
   });
 });

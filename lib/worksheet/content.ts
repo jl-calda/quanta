@@ -459,7 +459,7 @@ const solveGuessSchema = z.object({
   /** Optional unit appended to the guess (e.g. "mm", "deg"). */
   unit: z.string().optional(),
 });
-/** Typed-but-inert ODE/PDE config (round-trips now; the integrator ships next). */
+/** ODE/PDE config — round-trips through the content tree; edited in the inspector. */
 const odeConfigSchema = z.object({
   system: z.array(z.string()).default([]),
   indepVar: z.string().default("x"),
@@ -467,6 +467,20 @@ const odeConfigSchema = z.object({
   conditions: z.array(z.string()).default([]),
   step: z.number().optional(),
   mesh: z.number().int().optional(),
+});
+/** Worker-computed ODE solution cached on the region (read sync by the engine + export). */
+const solveSolutionCacheSchema = z.object({
+  v: z.literal(1),
+  /** FNV-1a of the ODE config + guesses; a config edit makes it stale. */
+  hash: z.string(),
+  indepVar: z.string(),
+  indep: z.array(z.number()),
+  vars: z.record(z.array(z.number())),
+  /** Optional unit label per output name. */
+  units: z.record(z.string()).optional(),
+  /** Serialized referenced scope constants at compute time (upstream-change staleness). */
+  inputs: z.record(z.string()).optional(),
+  computedAt: z.string(),
 });
 const solveRegionSchema = z
   .object({
@@ -489,6 +503,8 @@ const solveRegionSchema = z
     /** On non-convergence: surface `no-solution` (default) or bind the last iterate. */
     onNonConverge: z.enum(["error", "last"]).optional(),
     ode: odeConfigSchema.optional(),
+    /** Worker-computed ODE solution (versioned, keyed by region id + config hash). */
+    solution: solveSolutionCacheSchema.optional(),
   })
   .passthrough();
 
@@ -637,6 +653,7 @@ export type ControlOption = z.infer<typeof controlOptionSchema>;
 export type SolveAlgorithm = z.infer<typeof solveAlgoSchema>;
 export type SolveGuess = z.infer<typeof solveGuessSchema>;
 export type OdeConfig = z.infer<typeof odeConfigSchema>;
+export type SolveSolutionCache = z.infer<typeof solveSolutionCacheSchema>;
 export type SymbolicCache = z.infer<typeof symbolicCacheSchema>;
 export type UserUnitDef = z.infer<typeof userUnitDefSchema>;
 export type WorksheetUnits = z.infer<typeof worksheetUnitsSchema>;
@@ -774,8 +791,10 @@ export interface SolveRegion extends RegionBase {
   scaling?: number;
   maxIter?: number;
   onNonConverge?: "error" | "last";
-  /** Round-tripped config for the deferred odesolve / pdesolve / numol. */
+  /** Round-tripped config for odesolve / pdesolve / numol. */
   ode?: OdeConfig;
+  /** Worker-computed ODE solution, read synchronously by the engine + export. */
+  solution?: SolveSolutionCache;
   [key: string]: unknown;
 }
 
