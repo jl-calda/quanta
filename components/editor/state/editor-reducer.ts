@@ -39,6 +39,7 @@ import {
   type SolveAlgorithm,
   type SolveGuess,
   type SolveSolutionCache,
+  type SweepOutput,
   type SurfaceOptions,
   type SymbolicCache,
   type ColumnValidation,
@@ -154,7 +155,8 @@ export interface RegionPatch {
   surface?: SurfaceOptions;
   histogram?: PlotHistogram;
   vector?: PlotVector;
-  param?: PlotParam;
+  /** Plot parametric config (object) OR a sweep's parameter name (string). */
+  param?: PlotParam | string;
   /** Input-control fields (Mockup §6.7). `kind`/`unit`/`label` shared above. */
   bind?: string;
   label?: string;
@@ -174,12 +176,23 @@ export interface RegionPatch {
   scaling?: number;
   maxIter?: number;
   onNonConverge?: "error" | "last";
+  /** Find up to N distinct solution sets via deterministic multi-start. */
+  maxSolutions?: number;
   ode?: OdeConfig;
   /** Worker-computed ODE solution, written by the solve producer (use-solve-eval). */
   solution?: SolveSolutionCache;
   /** Program-block fields (Functional Brief §2) — `name`/`unit` shared above. */
   params?: string[];
   body?: ProgramStatement[];
+  /** Parametric-sweep fields (§2) — `name`/`param` shared above. */
+  from?: string;
+  to?: string;
+  steps?: number;
+  stepSize?: string;
+  scale?: "linear" | "log";
+  outputs?: SweepOutput[];
+  targetSolve?: string;
+  reSolvePerStep?: boolean;
 }
 
 /** Inspector-editable table-column properties (Object.assigned onto the column). */

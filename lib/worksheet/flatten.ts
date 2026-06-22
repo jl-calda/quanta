@@ -10,6 +10,7 @@ import {
   evaluatePlot,
   evaluateProgram,
   evaluateSolve,
+  evaluateSweep,
   evaluateTable,
   serializeForScope,
   syncPrograms,
@@ -24,6 +25,7 @@ import type {
   RegionResult,
   SheetResult,
   SolveResult,
+  SweepResult,
   TableResult,
   UnitSystem,
 } from "@/lib/calc";
@@ -34,6 +36,7 @@ import type {
   Region,
   Row,
   SolveRegion,
+  SweepRegion,
   TableRegion,
   WorksheetContent,
 } from "./content";
@@ -147,6 +150,15 @@ export function programRegions(content: WorksheetContent): ProgramRegion[] {
   return out;
 }
 
+/** Every parametric sweep, in reading order — drives the provider's sweep evaluation. */
+export function sweepRegions(content: WorksheetContent): SweepRegion[] {
+  const out: SweepRegion[] = [];
+  for (const region of walkRegions(content)) {
+    if (region.type === "sweep") out.push(region);
+  }
+  return out;
+}
+
 /** A program region is a callable function when it has a name and ≥1 parameter. */
 function isFunctionProgram(region: ProgramRegion): boolean {
   return !!region.name?.trim() && (region.params ?? []).some((p) => p.trim());
@@ -212,6 +224,7 @@ export function buildEngineInputs(
   tableExports?: Map<string, Record<string, string>>,
   solveExports?: Map<string, Record<string, string>>,
   programExports?: Map<string, Record<string, string>>,
+  sweepExports?: Map<string, Record<string, string>>,
 ): RegionInput[] {
   const inputs: RegionInput[] = [];
   for (const region of walkRegions(content)) {
@@ -260,6 +273,16 @@ export function buildEngineInputs(
           }
         }
       }
+    } else if (region.type === "sweep") {
+      // A sweep is an exporter like a table: its named series fold back as synthetic
+      // vector definitions at its reading-order position so the UNMODIFIED engine
+      // resolves them for downstream plots / tables / math.
+      const exp = sweepExports?.get(region.id);
+      if (exp) {
+        for (const [name, source] of Object.entries(exp)) {
+          inputs.push({ id: `${SWEEP_PREFIX}${region.id}:${name}`, source: `${name} := ${source}` });
+        }
+      }
     }
   }
   return inputs;
@@ -279,13 +302,15 @@ const MAX_SETTLE_ITERS = 8;
 const SYNTHETIC_PREFIX = "tbl:";
 const SOLVE_PREFIX = "slv:";
 const PROG_PREFIX = "prog:";
+const SWEEP_PREFIX = "swp:";
 
-/** True for an engine input id that is a folded-back table/solve/program export. */
+/** True for an engine input id that is a folded-back table/solve/program/sweep export. */
 function isSynthetic(id: string): boolean {
   return (
     id.startsWith(SYNTHETIC_PREFIX) ||
     id.startsWith(SOLVE_PREFIX) ||
-    id.startsWith(PROG_PREFIX)
+    id.startsWith(PROG_PREFIX) ||
+    id.startsWith(SWEEP_PREFIX)
   );
 }
 
@@ -349,19 +374,21 @@ export function settleTables(
   plots: Map<string, PlotResult>;
   solves: Map<string, SolveResult>;
   programs: Map<string, ProgramResult>;
+  sweeps: Map<string, SweepResult>;
 } {
   const plotSpecs = plotRegions(content);
   const tableSpecs = tableRegions(content);
   const solveSpecs = solveRegions(content);
   const programSpecs = programRegions(content);
+  const sweepSpecs = sweepRegions(content);
 
   // No exporters ⇒ a single engine pass, then sample plots against its scope.
-  if (tableSpecs.length === 0 && solveSpecs.length === 0 && programSpecs.length === 0) {
+  if (tableSpecs.length === 0 && solveSpecs.length === 0 && programSpecs.length === 0 && sweepSpecs.length === 0) {
     syncPrograms(new Map()); // clear any registry left by a previous worksheet
     engine.setRegions(buildEngineInputs(content));
     const sheet = engine.getResult();
     const plots = evaluatePlotsWith(plotSpecs, worksheetScopeFromResults(sheet.regions), system);
-    return { sheet, tables: new Map(), plots, solves: new Map(), programs: new Map() };
+    return { sheet, tables: new Map(), plots, solves: new Map(), programs: new Map(), sweeps: new Map() };
   }
 
   // One combined export map keyed by region id (ids are unique, so it can serve
@@ -390,11 +417,12 @@ export function settleTables(
   let tables = new Map<string, TableResult>();
   let solves = new Map<string, SolveResult>();
   let programs = new Map<string, ProgramResult>();
+  let sweeps = new Map<string, SweepResult>();
   let prevSheetSig = "";
   const seen = new Set<string>();
 
   for (let iter = 0; iter < MAX_SETTLE_ITERS; iter += 1) {
-    engine.setRegions(buildEngineInputs(content, exportsBySource, exportsBySource, exportsBySource));
+    engine.setRegions(buildEngineInputs(content, exportsBySource, exportsBySource, exportsBySource, exportsBySource));
     sheet = engine.getResult();
     const scope: Record<string, unknown> = { ...worksheetScopeFromResults(sheet.regions), ...exportsRaw };
     // Inject function closures by name (so tables / solves / plots / programs can
@@ -408,6 +436,7 @@ export function settleTables(
     tables = new Map();
     solves = new Map();
     programs = new Map();
+    sweeps = new Map();
     const nextRaw: Record<string, unknown> = {};
     const nextBySource = new Map<string, Record<string, string>>();
 
@@ -448,6 +477,18 @@ export function settleTables(
       if (Object.keys(sources).length > 0) nextBySource.set(spec.id, sources);
     }
 
+    for (const spec of sweepSpecs) {
+      const result = evaluateSweep(spec, scope, system);
+      sweeps.set(spec.id, result);
+      const sources: Record<string, string> = {};
+      for (const [name, value] of Object.entries(result.exports)) {
+        nextRaw[name] = value;
+        const serialized = serializeForScope(value);
+        if (serialized !== null) sources[name] = serialized;
+      }
+      if (Object.keys(sources).length > 0) nextBySource.set(spec.id, sources);
+    }
+
     const snapshot = snapshotExports(nextBySource);
     // A function program changes no export, so also settle on the engine result:
     // re-run while the sheet keeps changing (a scope-capturing program converging).
@@ -469,7 +510,7 @@ export function settleTables(
   }
   const plots = evaluatePlotsWith(plotSpecs, plotScope, system);
 
-  return { sheet: stripSynthetic(sheet), tables, plots, solves, programs };
+  return { sheet: stripSynthetic(sheet), tables, plots, solves, programs, sweeps };
 }
 
 /** All region ids in reading order (every type), e.g. for selection navigation. */

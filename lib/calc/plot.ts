@@ -423,7 +423,7 @@ export function evaluatePlot(
  * x sampling
  * ------------------------------------------------------------------ */
 
-interface Sampling {
+export interface Sampling {
   /** Mode flag — data zips a precomputed x vector; sweep binds `xVar` per point. */
   mode: "data" | "sweep";
   /** x-axis display position of each sample. */
@@ -436,7 +436,7 @@ interface Sampling {
   error?: CalcError;
 }
 
-function resolveSampling(
+export function resolveSampling(
   dataExpr: string | undefined,
   xAxis: PlotAxisSpec,
   xScale: AxisScale,
@@ -872,7 +872,7 @@ function evalOpt(node: MathNode, scope: Record<string, unknown>): unknown {
 }
 
 /** Sweep mode: bind each x sample to `xVar` and evaluate. Per-sample throws are gaps. */
-function sweep(
+export function sweep(
   node: MathNode,
   errNode: MathNode | undefined,
   sampling: Sampling,
@@ -1453,7 +1453,7 @@ function attachUnit(value: number, unit: string | undefined): unknown {
  * reusing the engine's `toDisplayUnit` so a plotted value behaves exactly like a
  * region result. Throws a typed error for anything non-numeric.
  */
-function toAxisNumber(value: unknown, unit: string | undefined, system: UnitSystem): number {
+export function toAxisNumber(value: unknown, unit: string | undefined, system: UnitSystem): number {
   const display = toDisplayUnit(value, realUnit(unit), system);
   if (isUnit(display)) {
     const u = display as Unit;

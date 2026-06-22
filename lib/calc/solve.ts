@@ -26,7 +26,7 @@ import { collectDeps } from "./parse";
 import { formatValue } from "./format";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 import { serializeForScope } from "./table";
-import { classifyThrow, makeError } from "./errors";
+import { CalcEngineError, classifyThrow, makeError } from "./errors";
 import type { CalcError, UnitSystem } from "./types";
 
 /* ------------------------------------------------------------------ *
@@ -50,6 +50,14 @@ export interface SolveGuessSpec {
   value: string;
   /** Optional unit appended to the guess (e.g. "mm", "deg"). */
   unit?: string;
+  /** First-class lower bound (unit-bearing expression, e.g. "0", "2 mm"). */
+  lower?: string;
+  /** First-class upper bound (unit-bearing expression, e.g. "L", "50 mm"). */
+  upper?: string;
+  /** Restrict this unknown to integer values (mixed-integer solve). */
+  integer?: boolean;
+  /** Restrict this unknown to a discrete set (magnitudes in the guess's unit), e.g. rebar sizes. */
+  discrete?: number[];
 }
 
 /** The full math source for a guess — its value with the optional unit juxtaposed. */
@@ -109,6 +117,8 @@ export interface SolveSpec {
   maxIter?: number;
   /** On non-convergence: surface `no-solution` (default) or bind the last iterate. */
   onNonConverge?: "error" | "last";
+  /** Find up to N distinct solution sets (default 1) via deterministic multi-start. */
+  maxSolutions?: number;
   ode?: SolveOdeConfig;
   /** Worker-computed ODE solution, read synchronously here (set by the producer). */
   solution?: SolveSolutionCache;
@@ -127,10 +137,22 @@ export interface SolveOutput {
 
 export type SolveStatus = "solved" | "no-solution" | "deferred" | "empty" | "error";
 
+/**
+ * One distinct solution found by a multi-start `find` / optimisation (or one
+ * feasible integer/discrete combination). Named `solutionSets` on the result to
+ * avoid colliding with the ODE `SolveSolutionCache` / `SolveRegion.solution`.
+ */
+export interface SolveSolutionSet {
+  outputs: SolveOutput[];
+  /** L2 norm of the equality residuals at this solution. */
+  residualNorm: number;
+  iterations: number;
+}
+
 export interface SolveResult {
   status: SolveStatus;
   algorithm: SolveAlgorithm;
-  /** Solved unknowns (empty unless `solved`, or `last` on non-convergence). */
+  /** Solved unknowns (empty unless `solved`, or `last` on non-convergence). The PRIMARY (best) solution. */
   outputs: SolveOutput[];
   /** The unknown names, for the read view's `(t, θ) :=` line even before solving. */
   unknowns: string[];
@@ -138,6 +160,8 @@ export interface SolveResult {
   iterations?: number;
   /** L2 norm of the equality residuals at the solution (find / minerr). */
   residualNorm?: number;
+  /** All distinct solutions found (incl. the primary) when more than one — display-only; only `outputs` exports to scope. */
+  solutionSets?: SolveSolutionSet[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -261,30 +285,53 @@ export function evaluateSolve(
     };
   }
 
-  let run: SolveRun;
   try {
-    run = backend.run(problem);
+    return solveProblem(built, problem, algorithm, spec, system, backend);
   } catch (error) {
     return { status: "error", algorithm, outputs: [], unknowns: names, error: classifyThrow(error) };
   }
+}
 
-  return interpretRun(run, built, algorithm, spec, system);
+/* ------------------------------------------------------------------ *
+ * Orchestration — single run, multi-start (multiple solutions), or a
+ * mixed-integer / discrete enumeration. All pure, synchronous, bounded.
+ * ------------------------------------------------------------------ */
+
+const COMBO_CAP = 4096; // integer/discrete combinations enumerated before falling back
+const START_CAP = 16; // deterministic multi-start points for multiple solutions
+
+function solveProblem(
+  built: Problem,
+  problem: NumericProblem,
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+  backend: SolverBackend,
+): SolveResult {
+  const discreteIdx = built.unknowns.map((_, i) => i).filter((i) => built.unknowns[i].integer || built.unknowns[i].discrete);
+  const maxSolutions = Math.max(1, positiveInt(spec.maxSolutions) ?? 1);
+
+  if (discreteIdx.length > 0) {
+    return solveDiscrete(built, problem, discreteIdx, algorithm, spec, system, backend, maxSolutions);
+  }
+  if (maxSolutions > 1) {
+    return solveMultiple(built, problem, algorithm, spec, system, backend, maxSolutions);
+  }
+  return interpretRun(backend.run(problem), built, algorithm, spec, system);
 }
 
 /* ------------------------------------------------------------------ *
  * Result interpretation + unit reattachment
  * ------------------------------------------------------------------ */
 
-function interpretRun(
-  run: SolveRun,
-  built: Problem,
-  algorithm: SolveAlgorithm,
-  spec: SolveSpec,
-  system: UnitSystem,
-): SolveResult {
-  const names = built.unknowns.map((u) => u.name);
-  const tol = positive(spec.ctol) ?? DEFAULT_CTOL;
+/** Convergence / feasibility / residual assessment of a single run (shared by all paths). */
+interface RunAssessment {
+  ok: boolean;
+  feasible: boolean;
+  residualNorm: number;
+}
 
+function assessRun(run: SolveRun, built: Problem, algorithm: SolveAlgorithm, tol: number): RunAssessment {
   // Equality residual norm at the solution (a clean number for the read view).
   let residualNorm = run.residualNorm;
   try {
@@ -305,6 +352,32 @@ function interpretRun(
   } else {
     ok = run.x.every(Number.isFinite) && feasible;
   }
+  return { ok, feasible, residualNorm };
+}
+
+/** Reattach each unknown's unit and format like any region result. */
+function buildOutputs(built: Problem, x: number[], system: UnitSystem): SolveOutput[] {
+  return built.unknowns.map((u, i) => {
+    const value = u.unit ? math.unit(x[i], u.unit) : x[i];
+    return {
+      name: u.name,
+      value,
+      formatted: formatValue(toDisplayUnit(value, u.unit ?? undefined, system)),
+      unit: u.unit ?? null,
+    };
+  });
+}
+
+function interpretRun(
+  run: SolveRun,
+  built: Problem,
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+): SolveResult {
+  const names = built.unknowns.map((u) => u.name);
+  const tol = positive(spec.ctol) ?? DEFAULT_CTOL;
+  const { ok, feasible, residualNorm } = assessRun(run, built, algorithm, tol);
 
   if (!ok && (spec.onNonConverge ?? "error") === "error") {
     return {
@@ -318,25 +391,257 @@ function interpretRun(
     };
   }
 
-  // Reattach each unknown's unit and format like any region result.
-  const outputs: SolveOutput[] = built.unknowns.map((u, i) => {
-    const value = u.unit ? math.unit(run.x[i], u.unit) : run.x[i];
-    return {
-      name: u.name,
-      value,
-      formatted: formatValue(toDisplayUnit(value, u.unit ?? undefined, system)),
-      unit: u.unit ?? null,
-    };
-  });
-
   return {
     status: "solved",
     algorithm,
-    outputs,
+    outputs: buildOutputs(built, run.x, system),
     unknowns: names,
     iterations: run.iterations,
     residualNorm: Number.isFinite(residualNorm) ? residualNorm : undefined,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Multiple solutions (deterministic multi-start) + mixed-integer / discrete
+ * enumeration — both gather candidate runs, dedupe, rank, and bind the best.
+ * ------------------------------------------------------------------ */
+
+interface Candidate {
+  x: number[];
+  ok: boolean;
+  feasible: boolean;
+  residualNorm: number;
+  iterations: number;
+  /** Ranking key (lower is better): objective value for optimise, residual norm otherwise. */
+  score: number;
+}
+
+/** Run one numeric problem and assess it into a ranked candidate. */
+function runCandidate(built: Problem, problem: NumericProblem, algorithm: SolveAlgorithm, tol: number, backend: SolverBackend): Candidate {
+  const run = backend.run(problem);
+  const a = assessRun(run, built, algorithm, tol);
+  const score = problem.objective ? problem.objective(run.x) : a.residualNorm;
+  return { x: run.x, ok: a.ok, feasible: a.feasible, residualNorm: a.residualNorm, iterations: run.iterations, score: Number.isFinite(score) ? score : Infinity };
+}
+
+/** A tolerance-rounded key so distinct roots separate but numeric noise collapses. */
+function solutionKey(x: number[]): string {
+  return x.map((v) => (Math.abs(v) < 1e-9 ? "0" : Number(v.toPrecision(6)).toString())).join("|");
+}
+
+/** Dedupe candidates by rounded position, keeping the best-scoring per key. */
+function dedupeCandidates(cands: Candidate[]): Candidate[] {
+  const best = new Map<string, Candidate>();
+  for (const c of cands) {
+    const k = solutionKey(c.x);
+    const prev = best.get(k);
+    if (!prev || c.score < prev.score) best.set(k, c);
+  }
+  return [...best.values()];
+}
+
+/** Turn gathered candidates into a result: rank, bind the best as primary, list the rest. */
+function finalizeCandidates(
+  built: Problem,
+  cands: Candidate[],
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+  maxSolutions: number,
+): SolveResult {
+  const names = built.unknowns.map((u) => u.name);
+  const solved = cands.filter((c) => c.ok);
+  const pool = dedupeCandidates(solved.length > 0 ? solved : cands).sort((a, b) => a.score - b.score);
+
+  if (solved.length === 0) {
+    const best = pool[0];
+    if ((spec.onNonConverge ?? "error") === "error" || !best) {
+      return {
+        status: "no-solution",
+        algorithm,
+        outputs: [],
+        unknowns: names,
+        iterations: best?.iterations,
+        residualNorm: best && Number.isFinite(best.residualNorm) ? best.residualNorm : undefined,
+        error: noSolution(names, best ? best.feasible : false),
+      };
+    }
+    // onNonConverge === "last": bind the best-scoring iterate even though infeasible.
+    return {
+      status: "solved",
+      algorithm,
+      outputs: buildOutputs(built, best.x, system),
+      unknowns: names,
+      iterations: best.iterations,
+      residualNorm: Number.isFinite(best.residualNorm) ? best.residualNorm : undefined,
+    };
+  }
+
+  const sets: SolveSolutionSet[] = pool.slice(0, maxSolutions).map((c) => ({
+    outputs: buildOutputs(built, c.x, system),
+    residualNorm: Number.isFinite(c.residualNorm) ? c.residualNorm : 0,
+    iterations: c.iterations,
+  }));
+  const best = pool[0];
+  return {
+    status: "solved",
+    algorithm,
+    outputs: buildOutputs(built, best.x, system),
+    unknowns: names,
+    iterations: best.iterations,
+    residualNorm: Number.isFinite(best.residualNorm) ? best.residualNorm : undefined,
+    solutionSets: sets.length > 1 ? sets : undefined,
+  };
+}
+
+/**
+ * Multiple solutions: run the same problem from a deterministic spread of starts
+ * (the base guess, per-axis sign flips, an all-negated point, and ±decade scales),
+ * gather the distinct converged solutions, and bind the best as primary.
+ */
+function solveMultiple(
+  built: Problem,
+  problem: NumericProblem,
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+  backend: SolverBackend,
+  maxSolutions: number,
+): SolveResult {
+  const tol = positive(spec.ctol) ?? DEFAULT_CTOL;
+  const cands = multiStarts(problem.x0).map((x0) => runCandidate(built, { ...problem, x0 }, algorithm, tol, backend));
+  return finalizeCandidates(built, cands, algorithm, spec, system, maxSolutions);
+}
+
+/** Deterministic multi-start points around `x0` (capped, deduped). */
+function multiStarts(x0: number[]): number[][] {
+  const starts: number[][] = [x0.slice()];
+  for (let i = 0; i < x0.length; i += 1) {
+    const flip = x0.slice();
+    flip[i] = x0[i] === 0 ? 1 : -x0[i];
+    starts.push(flip);
+    if (x0[i] === 0) {
+      const neg = x0.slice();
+      neg[i] = -1;
+      starts.push(neg);
+    }
+  }
+  starts.push(x0.map((v) => (v === 0 ? -1 : -v)));
+  starts.push(x0.map((v) => (v === 0 ? 0.5 : v * 0.1)));
+  starts.push(x0.map((v) => (v === 0 ? 5 : v * 10)));
+
+  const seen = new Set<string>();
+  const out: number[][] = [];
+  for (const s of starts) {
+    const k = s.join(",");
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+    if (out.length >= START_CAP) break;
+  }
+  return out;
+}
+
+/**
+ * Mixed-integer / discrete solve. When the discrete search space is bounded and
+ * small, enumerate every combination — fixing the discrete unknowns and solving
+ * the continuous remainder — and keep the feasible combos, ranked. Otherwise fall
+ * back to solving the relaxation and snapping discrete unknowns to the nearest
+ * allowed value, then re-solving. Pure + deterministic (fixed enumeration order).
+ */
+function solveDiscrete(
+  built: Problem,
+  problem: NumericProblem,
+  discreteIdx: number[],
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+  backend: SolverBackend,
+  maxSolutions: number,
+): SolveResult {
+  const tol = positive(spec.ctol) ?? DEFAULT_CTOL;
+  const choices = discreteIdx.map((i) => candidateValues(built.unknowns[i], problem.lower[i], problem.upper[i]));
+
+  // Unbounded integer (no finite candidate list) or too large ⇒ round-and-fix.
+  const combos = choices.reduce((n, c) => n * (c?.length ?? Infinity), 1);
+  if (choices.some((c) => c === null) || !Number.isFinite(combos) || combos > COMBO_CAP || combos < 1) {
+    return roundAndFix(built, problem, discreteIdx, algorithm, spec, system, backend);
+  }
+
+  const lists = choices as number[][];
+  const cands: Candidate[] = [];
+  for (const combo of cartesian(lists)) {
+    const lower = problem.lower.slice();
+    const upper = problem.upper.slice();
+    const x0 = problem.x0.slice();
+    discreteIdx.forEach((idx, k) => {
+      lower[idx] = combo[k];
+      upper[idx] = combo[k];
+      x0[idx] = combo[k];
+    });
+    cands.push(runCandidate(built, { ...problem, lower, upper, x0 }, algorithm, tol, backend));
+  }
+  return finalizeCandidates(built, cands, algorithm, spec, system, maxSolutions);
+}
+
+/** Allowed integer / discrete values for an unknown within its box bounds, or null when unbounded-integer. */
+function candidateValues(u: Unknown, lo: number, hi: number): number[] | null {
+  if (u.discrete && u.discrete.length > 0) {
+    return u.discrete.filter((v) => v >= lo - 1e-9 && v <= hi + 1e-9);
+  }
+  // integer
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  const out: number[] = [];
+  for (let v = Math.ceil(lo - 1e-9); v <= Math.floor(hi + 1e-9); v += 1) out.push(v);
+  return out;
+}
+
+/** Cartesian product of value lists, in a fixed (deterministic) order. */
+function cartesian(lists: number[][]): number[][] {
+  return lists.reduce<number[][]>((acc, list) => acc.flatMap((row) => list.map((v) => [...row, v])), [[]]);
+}
+
+/** Round-and-fix fallback: solve the relaxation, snap discrete unknowns, re-solve the rest. */
+function roundAndFix(
+  built: Problem,
+  problem: NumericProblem,
+  discreteIdx: number[],
+  algorithm: SolveAlgorithm,
+  spec: SolveSpec,
+  system: UnitSystem,
+  backend: SolverBackend,
+): SolveResult {
+  const relaxed = backend.run(problem);
+  const lower = problem.lower.slice();
+  const upper = problem.upper.slice();
+  const x0 = relaxed.x.slice();
+  for (const idx of discreteIdx) {
+    const u = built.unknowns[idx];
+    const snapped = u.discrete && u.discrete.length > 0
+      ? nearest(relaxed.x[idx], u.discrete)
+      : clamp(Math.round(relaxed.x[idx]), problem.lower[idx], problem.upper[idx]);
+    lower[idx] = snapped;
+    upper[idx] = snapped;
+    x0[idx] = snapped;
+  }
+  return interpretRun(backend.run({ ...problem, lower, upper, x0 }), built, algorithm, spec, system);
+}
+
+function nearest(value: number, options: number[]): number {
+  let best = options[0];
+  let bestD = Infinity;
+  for (const o of options) {
+    const d = Math.abs(o - value);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
 }
 
 function noSolution(names: string[], feasible: boolean): CalcError {
@@ -354,6 +659,10 @@ interface Unknown {
   name: string;
   /** Display unit string the guess carried, or null (dimensionless). */
   unit: string | null;
+  /** Restrict to integer values (mixed-integer solve). */
+  integer: boolean;
+  /** Restrict to this discrete set (magnitudes in `unit`), or null when continuous. */
+  discrete: number[] | null;
 }
 
 interface Problem {
@@ -398,6 +707,7 @@ function buildProblem(
   // --- unknowns + initial guess (unit-bearing) ------------------------------
   const unknowns: Unknown[] = [];
   const x0: number[] = [];
+  const guessSpecs: SolveGuessSpec[] = []; // parallel to unknowns, for first-class bound parsing
   const seen = new Set<string>();
   for (const g of spec.guesses ?? []) {
     const name = g.var?.trim();
@@ -409,14 +719,18 @@ function buildProblem(
     } catch (error) {
       return { status: "error", error: classifyThrow(error), unknowns: [...seen] };
     }
+    const integer = !!g.integer;
+    const discrete = Array.isArray(g.discrete) && g.discrete.length > 0 ? g.discrete.filter((n) => Number.isFinite(n)) : null;
     if (isUnit(value)) {
       const u = value as Unit;
       const unit = u.formatUnits();
-      unknowns.push({ name, unit: unit || null });
+      unknowns.push({ name, unit: unit || null, integer, discrete });
       x0.push(u.toNumber(unit));
+      guessSpecs.push(g);
     } else if (typeof value === "number") {
-      unknowns.push({ name, unit: null });
+      unknowns.push({ name, unit: null, integer, discrete });
       x0.push(value);
+      guessSpecs.push(g);
     } else {
       return {
         status: "error",
@@ -437,6 +751,22 @@ function buildProblem(
   const lower = unknowns.map(() => -Infinity);
   const upper = unknowns.map(() => Infinity);
   const indexOf = new Map(names.map((n, i) => [n, i] as const));
+
+  // --- first-class bounds (per-guess lower / upper, unit-bearing) -----------
+  // These compose with the box bounds inferred from `var ⋛ const` constraints
+  // below: the tightest wins. A bad bound expression / dimensional mismatch
+  // surfaces as a typed error (parse / unit-mismatch), like any other source.
+  for (let i = 0; i < unknowns.length; i += 1) {
+    const g = guessSpecs[i];
+    try {
+      if (g.lower?.trim()) lower[i] = Math.max(lower[i], boundMagnitude(g.lower, unknowns[i], externalScope));
+      if (g.upper?.trim()) upper[i] = Math.min(upper[i], boundMagnitude(g.upper, unknowns[i], externalScope));
+    } catch (error) {
+      return { status: "error", error: classifyThrow(error), unknowns: names };
+    }
+    // Clamp the start into the box so the search begins feasible.
+    x0[i] = Math.min(upper[i], Math.max(lower[i], x0[i]));
+  }
 
   const bind = (x: number[]): Record<string, unknown> => {
     const s: Record<string, unknown> = { ...externalScope };
@@ -630,6 +960,23 @@ function toMagnitude(node: MathNode, unknown: Unknown, scope: Record<string, unk
   } catch {
     return null;
   }
+}
+
+/**
+ * Evaluate a first-class bound EXPRESSION to a magnitude in the unknown's unit.
+ * Unlike {@link toMagnitude} it THROWS on failure (a parse slip or a true
+ * dimensional mismatch) so the caller surfaces a typed error, not a silent drop.
+ */
+function boundMagnitude(expr: string, unknown: Unknown, scope: Record<string, unknown>): number {
+  const v = math.parse(expr).evaluate({ ...scope });
+  if (isUnit(v)) {
+    const u = v as Unit;
+    return unknown.unit ? u.to(unknown.unit).toNumber(unknown.unit) : u.toNumber(u.formatUnits());
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  throw new CalcEngineError(
+    makeError("parse", `The bound "${expr}" isn't a number.`, "Use a numeric bound, e.g. 0 or 50 mm."),
+  );
 }
 
 /* ------------------------------------------------------------------ *

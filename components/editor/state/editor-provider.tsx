@@ -20,6 +20,7 @@ import {
   type RegionResult,
   type SheetResult,
   type SolveResult,
+  type SweepResult,
   type TableResult,
 } from "@/lib/calc";
 import { buildEngineInputs, settleTables, worksheetScopeFromResults } from "@/lib/worksheet/flatten";
@@ -73,6 +74,8 @@ export interface EditorContextValue {
   plotResults: Map<string, PlotResult>;
   /** Per-solve-block results (unknowns + convergence), keyed by region id. */
   solveResults: Map<string, SolveResult>;
+  /** Per-sweep results (parameter + output series), keyed by region id. */
+  sweepResults: Map<string, SweepResult>;
   /** Per-program-block results (value / function / error), keyed by region id. */
   programResults: Map<string, ProgramResult>;
   /** Transient symbolic-compute status (computing / error), keyed by region id. */
@@ -149,6 +152,7 @@ export function EditorProvider({
   const [tableResults, setTableResults] = useState<Map<string, TableResult>>(() => new Map());
   const [plotResults, setPlotResults] = useState<Map<string, PlotResult>>(() => new Map());
   const [solveResults, setSolveResults] = useState<Map<string, SolveResult>>(() => new Map());
+  const [sweepResults, setSweepResults] = useState<Map<string, SweepResult>>(() => new Map());
   const [programResults, setProgramResults] = useState<Map<string, ProgramResult>>(() => new Map());
 
   // Document-level settings (page setup / headers / text styles). Held here so a
@@ -177,10 +181,11 @@ export function EditorProvider({
   };
 
   const publishReconcile = (content: WorksheetContent) => {
-    const { sheet, tables, plots, solves, programs } = reconcile(content);
+    const { sheet, tables, plots, solves, programs, sweeps } = reconcile(content);
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
+    setSweepResults(sweeps);
     setProgramResults(programs);
     dispatch({ type: "SET_RESULTS", sheet: withSymbolic(content, sheet) });
   };
@@ -227,11 +232,12 @@ export function EditorProvider({
   const recalculate = () => publishReconcile(state.content);
 
   const recalculateToHere = (id: string) => {
-    const { sheet, tables, plots, solves, programs } = reconcile(state.content);
+    const { sheet, tables, plots, solves, programs, sweeps } = reconcile(state.content);
     const fresh = withSymbolic(state.content, sheet);
     setTableResults(tables);
     setPlotResults(plots);
     setSolveResults(solves);
+    setSweepResults(sweeps);
     setProgramResults(programs);
     const cut = fresh.regions.findIndex((r) => r.id === id);
     if (cut === -1) {
@@ -314,15 +320,16 @@ export function EditorProvider({
       tableResults,
       plotResults,
       solveResults,
+      sweepResults,
       programResults,
       symbolicStatus,
       solveStatus,
     }),
-    // `state`, `tableResults`, `plotResults`, `solveResults`, `programResults`,
-    // `symbolicStatus`, and `solveStatus` are the changing dependencies consumers
-    // read; the callbacks close over them and are recreated each render.
+    // `state`, `tableResults`, `plotResults`, `solveResults`, `sweepResults`,
+    // `programResults`, `symbolicStatus`, and `solveStatus` are the changing
+    // dependencies consumers read; the callbacks close over them and are recreated each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults, programResults, symbolicStatus, solveStatus],
+    [state, canEdit, worksheetId, workspaceId, pageSettings, layoutSettings, tableResults, plotResults, solveResults, sweepResults, programResults, symbolicStatus, solveStatus],
   );
 
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;

@@ -321,6 +321,7 @@ function ResultArea({
   }
 
   // solved
+  const extra = result.solutionSets && result.solutionSets.length > 1 ? result.solutionSets : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {result.outputs.map((out) => (
@@ -344,6 +345,37 @@ function ResultArea({
           </span>
         </span>
       ))}
+      {extra && <SolutionSets sets={extra} />}
+    </div>
+  );
+}
+
+/** Additional solution sets from a multi-start / discrete solve (display-only; the first exports to scope). */
+function SolutionSets({ sets }: { sets: NonNullable<SolveResult["solutionSets"]> }) {
+  return (
+    <div style={{ marginTop: 6, paddingTop: 8, borderTop: "1px solid var(--border-hairline)" }}>
+      <div
+        style={{
+          font: "600 9.5px/1 var(--font-sans)",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          marginBottom: 7,
+        }}
+      >
+        Solutions ({sets.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {sets.map((s, i) => (
+          <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "0 14px", font: "12px/1.5 var(--font-mono)", color: i === 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
+            {s.outputs.map((o) => (
+              <span key={o.name}>
+                {o.name} = {o.formatted}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
