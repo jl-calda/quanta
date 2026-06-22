@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SheetResult } from "@/lib/calc";
-import { parseContent, type ControlRegion, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
+import { parseContent, type AreaRegion, type ControlRegion, type PlotRegion, type WorksheetContent } from "@/lib/worksheet/content";
 import { findRegion, flattenToRegionInputs, readingOrderIds } from "@/lib/worksheet/flatten";
 import {
   editorReducer,
@@ -1029,5 +1029,44 @@ describe("UNGROUP_AREA", () => {
     const before = freshState(listDoc());
     const s = editorReducer(before, { type: "UNGROUP_AREA", id: "A" });
     expect(s).toBe(before);
+  });
+});
+
+describe("area region", () => {
+  const areaDoc: WorksheetContent = {
+    version: 1,
+    rows: [
+      {
+        id: "r1",
+        columns: 1,
+        cells: [
+          {
+            regions: [
+              { id: "AR", type: "area", indent: 0, title: "Area", collapsed: false, regions: [] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const getArea = (s: EditorState) => findRegion(s.content, "AR") as AreaRegion;
+
+  it("SET_REGION_PROP renames the area title and marks the doc unsaved", () => {
+    const s = editorReducer(freshState(areaDoc), { type: "SET_REGION_PROP", id: "AR", patch: { title: "Loads" } });
+    expect(getArea(s).title).toBe("Loads");
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("SET_REGION_PROP toggles the collapsed flag", () => {
+    const s = editorReducer(freshState(areaDoc), { type: "SET_REGION_PROP", id: "AR", patch: { collapsed: true } });
+    expect(getArea(s).collapsed).toBe(true);
+  });
+
+  it("the renamed title round-trips through the content schema (save→load)", () => {
+    const s = editorReducer(freshState(areaDoc), { type: "SET_REGION_PROP", id: "AR", patch: { title: "Loads" } });
+    const parsed = parseContent(s.content);
+    expect((findRegion(parsed, "AR") as AreaRegion).title).toBe("Loads");
+    // A re-parse (save→load) is stable — the passthrough schema keeps the typed title.
+    expect(parseContent(parsed)).toEqual(parsed);
   });
 });

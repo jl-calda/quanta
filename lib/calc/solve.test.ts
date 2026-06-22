@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSolve, jsSolverBackend, odeConfigHash, type SolveSpec, type SolveSolutionCache } from "./solve";
+import { evaluateSolve, jsSolverBackend, odeConfigHash, parseGuessLine, type SolveSpec, type SolveSolutionCache } from "./solve";
 import type { Unit } from "./math";
 
 /** A find spec with sensible defaults; override per test. */
@@ -103,6 +103,129 @@ describe("evaluateSolve — units", () => {
     const r = evaluateSolve(spec({ guesses: [{ var: "x", value: "1", unit: "mm" }], constraints: ["x = 5 kN"] }));
     expect(r.status).toBe("error");
     expect(r.error?.kind).toBe("unit-mismatch");
+  });
+});
+
+describe("evaluateSolve — exact linear systems", () => {
+  it("solves a square linear system exactly in one step", () => {
+    // x + y = 10, x − y = 2  ⇒  x = 6, y = 4 (exact, direct lusolve).
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10", "x - y = 2"],
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(6, 12);
+    expect(mag(r.outputs[1].value)).toBeCloseTo(4, 12);
+    expect(r.iterations).toBe(1);
+  });
+
+  it("reattaches units on a unit-bearing linear system", () => {
+    // x + y = 10 mm, x − y = 2 mm  ⇒  x = 6 mm, y = 4 mm.
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0", unit: "mm" },
+          { var: "y", value: "0", unit: "mm" },
+        ],
+        constraints: ["x + y = 10 mm", "x - y = 2 mm"],
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(r.outputs[0].unit).toBe("mm");
+    expect(mag(r.outputs[0].value, "mm")).toBeCloseTo(6, 9);
+    expect(mag(r.outputs[1].value, "mm")).toBeCloseTo(4, 9);
+  });
+
+  it("reads worksheet scope names in a linear system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = a", "x - y = b"],
+      }),
+      { a: 10, b: 2 },
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(6, 9);
+    expect(mag(r.outputs[1].value)).toBeCloseTo(4, 9);
+  });
+
+  it("solves an overdetermined but consistent linear system exactly", () => {
+    // x = 3 and 2x = 6 are consistent ⇒ unique x = 3 (normal equations + lusolve).
+    const r = evaluateSolve(
+      spec({ guesses: [{ var: "x", value: "0" }], constraints: ["x = 3", "2 * x = 6"] }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 12);
+  });
+
+  it("reports infinitely many solutions for an underdetermined system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10"],
+      }),
+    );
+    expect(r.status).toBe("no-solution");
+    expect(r.error?.kind).toBe("singular");
+    expect(r.error?.message).toMatch(/infinitely many/i);
+  });
+
+  it("reports a contradiction for an inconsistent linear system", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [
+          { var: "x", value: "0" },
+          { var: "y", value: "0" },
+        ],
+        constraints: ["x + y = 10", "x + y = 12"],
+      }),
+    );
+    expect(r.status).toBe("no-solution");
+    expect(r.error?.kind).toBe("no-solution");
+    expect(r.error?.message).toMatch(/contradict/i);
+  });
+
+  it("defers a non-unique linear system to the iterate under onNonConverge 'last'", () => {
+    const r = evaluateSolve(
+      spec({
+        guesses: [{ var: "x", value: "0" }],
+        constraints: ["x = 1", "x = 2"],
+        onNonConverge: "last",
+      }),
+    );
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(1.5, 1); // least-squares compromise
+  });
+
+  it("keeps a nonlinear find on the iterative path (not misrouted)", () => {
+    const r = evaluateSolve(spec({ guesses: [{ var: "x", value: "2" }], constraints: ["x^2 = 9"] }));
+    expect(r.status).toBe("solved");
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+
+  it("is deterministic across runs for a linear system", () => {
+    const s = spec({
+      guesses: [
+        { var: "x", value: "0" },
+        { var: "y", value: "0" },
+      ],
+      constraints: ["x + y = 10", "x - y = 2"],
+    });
+    const a = evaluateSolve(s);
+    const b = evaluateSolve(s);
+    expect(mag(a.outputs[0].value)).toBe(mag(b.outputs[0].value));
+    expect(mag(a.outputs[1].value)).toBe(mag(b.outputs[1].value));
   });
 });
 
@@ -316,6 +439,43 @@ describe("evaluateSolve — multiple solution sets", () => {
     );
     expect(r.status).toBe("solved");
     expect(r.solutionSets).toBeUndefined();
+    expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
+  });
+});
+
+describe("parseGuessLine — inline guess commits (inverse of guessSource)", () => {
+  it("splits a `var := value unit` line, folding the unit into value", () => {
+    expect(parseGuessLine("x := 10 mm", "x")).toEqual({ var: "x", value: "10 mm" });
+  });
+
+  it("keeps the existing var when the commit is a bare expression", () => {
+    expect(parseGuessLine("L/2", "t")).toEqual({ var: "t", value: "L/2" });
+  });
+
+  it("reads the Mathcad colon form and trims both sides", () => {
+    expect(parseGuessLine("theta : 30 deg", "x")).toEqual({ var: "theta", value: "30 deg" });
+  });
+
+  it("yields an empty value for a half-typed `x :=` (the caller no-ops)", () => {
+    expect(parseGuessLine("x :=", "x")).toEqual({ var: "x", value: "" });
+  });
+
+  it("solves with the unit folded into value (no separate unit field)", () => {
+    // The inline-edit form: guessSource is identical, so evaluateSolve derives the
+    // unit by parsing it — equivalent to { value: "100", unit: "mm^2" }.
+    const folded = parseGuessLine("A := 100 mm^2", "A");
+    const r = evaluateSolve(spec({ guesses: [{ ...folded }], constraints: ["100 kN / A = 200 MPa"] }));
+    expect(r.status).toBe("solved");
+    expect(r.outputs[0].unit).toBe("mm^2");
+    expect(mag(r.outputs[0].value, "mm^2")).toBeCloseTo(500, 1);
+  });
+
+  it("preserves merged bounds alongside a folded value", () => {
+    // The view merges parseGuessLine onto the existing guess, so first-class bounds
+    // (lower/upper/integer/discrete) survive an inline edit.
+    const folded = parseGuessLine("x := 1", "x");
+    const r = evaluateSolve(spec({ guesses: [{ ...folded, lower: "0" }], constraints: ["x^2 = 9"] }));
+    expect(r.status).toBe("solved");
     expect(mag(r.outputs[0].value)).toBeCloseTo(3, 6);
   });
 });

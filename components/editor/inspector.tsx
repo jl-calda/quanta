@@ -4,6 +4,7 @@ import type { Dispatch, ReactNode } from "react";
 import { Badge, IconButton, Input, Select, Switch } from "@/components/ds";
 import { findRegion } from "@/lib/worksheet/flatten";
 import type {
+  AreaRegion,
   CellAlign,
   ComplexForm,
   ControlKind,
@@ -84,6 +85,7 @@ export function Inspector() {
           {region.type === "table" && <TableInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "plot" && <PlotInspector region={region} set={set} dispatch={dispatch} />}
           {region.type === "control" && <ControlInspector region={region} set={set} />}
+          {region.type === "area" && <AreaInspector region={region} set={set} />}
           {region.type === "solve" && <SolveInspector region={region} set={set} />}
           {region.type === "program" && <ProgramInspector region={region} set={set} />}
           {region.type === "sweep" && <SweepInspector region={region} set={set} />}
@@ -198,6 +200,28 @@ function TextInspector({ region, set }: { region: TextRegion; set: (p: RegionPat
         <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Eyebrow</span>
         <Input defaultValue={region.eyebrow ?? ""} placeholder="Optional label" onBlur={(e) => set({ eyebrow: e.target.value || undefined })} />
       </div>
+    </Group>
+  );
+}
+
+/**
+ * Area inspector — rename the collapsible section and toggle its fold state. Both
+ * persist through the shared `SET_REGION_PROP` path (`RegionPatch.title` /
+ * `.collapsed` already exist), so no dedicated action or schema change is needed.
+ * Title falls back to "Area" when cleared (the schema default — it's required).
+ * `visibleWhen` is intentionally not surfaced here: it's an engine-touching seam
+ * owned by a later tracker row.
+ */
+function AreaInspector({ region, set }: { region: AreaRegion; set: (p: RegionPatch) => void }) {
+  return (
+    <Group eyebrow="Area">
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ font: "12.5px/1 var(--font-sans)", color: "var(--text-primary)" }}>Title</span>
+        <Input key={region.id} defaultValue={region.title} placeholder="Area" onBlur={(e) => set({ title: e.target.value.trim() || "Area" })} />
+      </div>
+      <Row label="Collapsed">
+        <Switch checked={region.collapsed} onChange={(e) => set({ collapsed: e.target.checked })} />
+      </Row>
     </Group>
   );
 }

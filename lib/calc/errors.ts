@@ -83,6 +83,32 @@ export function blockedBy(name: string): CalcError {
 }
 
 /**
+ * A linear solve block's equations contradict each other — the augmented system
+ * has higher rank than the coefficient matrix, so no assignment satisfies them
+ * all. (Solve block, §6.5.)
+ */
+export function inconsistentSystem(): CalcError {
+  return makeError(
+    "no-solution",
+    "These equations contradict each other, so there's no solution.",
+    "Two or more constraints can't all hold. Remove or correct one, or switch to minerr for a best fit.",
+  );
+}
+
+/**
+ * A linear solve block is underdetermined — its coefficient matrix is rank
+ * deficient but consistent, so the system has infinitely many solutions and no
+ * single one can be reported. (Solve block, §6.5.)
+ */
+export function infiniteSolutions(): CalcError {
+  return makeError(
+    "singular",
+    "This system has infinitely many solutions.",
+    "Add an equation, or fix one variable, so there are as many independent equations as unknowns.",
+  );
+}
+
+/**
  * Classify a raw mathjs/JS throw into a typed error. The numeric/parse layer
  * surfaces consistent message fragments ("Units do not match", "Undefined
  * symbol x", "Unexpected …") we can match on.

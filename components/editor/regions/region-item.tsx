@@ -161,15 +161,6 @@ function RegionBody(props: RegionRenderProps) {
 
 function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>) {
   const count = region.regions.length;
-  const [renaming, setRenaming] = useState(false);
-
-  const commitTitle = (value: string) => {
-    setRenaming(false);
-    const title = value.trim();
-    if (title && title !== region.title) {
-      dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title } });
-    }
-  };
 
   return (
     <div
@@ -183,7 +174,6 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
       <div
         onClick={(e) => {
           e.stopPropagation();
-          if (renaming) return;
           dispatch({ type: "TOGGLE_AREA", id: region.id });
         }}
         style={{
@@ -199,41 +189,7 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         <span style={{ color: "var(--text-muted)", display: "inline-flex" }}>
           <Icon name={region.collapsed ? "chevR" : "chevD"} size={16} />
         </span>
-        {renaming ? (
-          <input
-            autoFocus
-            defaultValue={region.title}
-            onClick={(e) => e.stopPropagation()}
-            onBlur={(e) => commitTitle(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Enter") commitTitle(e.currentTarget.value);
-              else if (e.key === "Escape") setRenaming(false);
-            }}
-            style={{
-              font: "600 12px/1 var(--font-sans)",
-              letterSpacing: "0.02em",
-              color: "var(--text-primary)",
-              background: "var(--surface-raised)",
-              border: "1px solid var(--accent)",
-              borderRadius: "var(--radius-sm)",
-              padding: "2px 6px",
-              outline: "none",
-            }}
-          />
-        ) : (
-          <span
-            onDoubleClick={(e) => {
-              if (!canEdit) return;
-              e.stopPropagation();
-              setRenaming(true);
-            }}
-            title={canEdit ? "Double-click to rename" : undefined}
-            style={{ font: "600 12px/1 var(--font-sans)", letterSpacing: "0.02em", color: "var(--text-primary)" }}
-          >
-            {region.title}
-          </span>
-        )}
+        <AreaTitle region={region} canEdit={canEdit} dispatch={dispatch} />
         <span
           style={{
             font: "11px/1 var(--font-sans)",
@@ -304,6 +260,70 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Inline-editable area title — looks like the header label until focused, then
+ * edits in place (commit on Enter / blur, Esc reverts). Mirrors the plot region's
+ * inline title and the text region's commit/Esc flow; persists through the shared
+ * `SET_REGION_PROP` path, so no dedicated area action is needed. Empty falls back
+ * to "Area" (the schema default — area titles are required). Read-only roles see
+ * the static label. Click / mousedown stop propagation so editing the title never
+ * toggles the area's collapse.
+ */
+function AreaTitle({ region, canEdit, dispatch }: { region: AreaRegion; canEdit: boolean; dispatch: Dispatch<EditorAction> }) {
+  const [draft, setDraft] = useState(region.title);
+  useEffect(() => setDraft(region.title), [region.title]);
+
+  const titleStyle = { font: "600 12px/1 var(--font-sans)", letterSpacing: "0.02em", color: "var(--text-primary)" } as const;
+
+  if (!canEdit) {
+    return <span style={titleStyle}>{region.title}</span>;
+  }
+
+  const commit = () => {
+    const next = draft.trim() || "Area";
+    if (next !== region.title) dispatch({ type: "SET_REGION_PROP", id: region.id, patch: { title: next } });
+    setDraft(next);
+  };
+
+  return (
+    <input
+      value={draft}
+      placeholder="Area"
+      size={Math.max(4, draft.length)}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          setDraft(region.title);
+          e.currentTarget.blur();
+        }
+      }}
+      style={{
+        ...titleStyle,
+        border: "1px solid transparent",
+        borderRadius: "var(--radius-sm)",
+        background: "transparent",
+        padding: "2px 5px",
+        margin: "-2px 0",
+        outline: "none",
+        cursor: "text",
+        minWidth: 0,
+      }}
+      onFocus={(e) => {
+        e.currentTarget.style.background = "var(--surface-raised)";
+        e.currentTarget.style.borderColor = "var(--border-strong)";
+      }}
+      onBlurCapture={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.borderColor = "transparent";
+      }}
+    />
   );
 }
 
