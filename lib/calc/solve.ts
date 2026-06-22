@@ -22,7 +22,7 @@
  */
 import { math } from "./math";
 import type { MathNode, Unit } from "./math";
-import { collectDeps } from "./parse";
+import { collectDeps, splitDefinition } from "./parse";
 import { formatValue } from "./format";
 import { toDisplayUnit, SI_SYSTEM, isUnit } from "./units";
 import { serializeForScope } from "./table";
@@ -65,6 +65,27 @@ export function guessSource(g: SolveGuessSpec): string {
   const value = g.value?.trim() || "0";
   const unit = g.unit?.trim();
   return unit ? `${value} ${unit}` : value;
+}
+
+/**
+ * Inverse of {@link guessSource} for inline editing: split a committed
+ * `var := value` line back into a guess's `{ var, value }`. Any unit stays folded
+ * into `value` (no separate `unit` key) — that is engine-equivalent, because
+ * `buildProblem` derives the unknown's unit by parsing the combined `guessSource`
+ * (`math.parse(guessSource(g))` → `formatUnits()`), never from `g.unit`. A bare
+ * expression (no `:=` / `:`) keeps the caller's existing var name.
+ *
+ * Pure and synchronous. Assumes plain-text engine source (the MathLive field
+ * already converts LaTeX via `latexToSource` on commit), mirroring
+ * `splitDefinition`'s own contract. The caller merges the result onto the
+ * existing guess so first-class bounds (`lower` / `upper` / `integer` /
+ * `discrete`) are preserved.
+ */
+export function parseGuessLine(source: string, fallbackVar = ""): Pick<SolveGuessSpec, "var" | "value"> {
+  const { name, expr } = splitDefinition(source);
+  return name !== null
+    ? { var: name.trim(), value: expr.trim() }
+    : { var: fallbackVar, value: source.trim() };
 }
 
 /** ODE/PDE config (round-trips through the content tree; edited in the inspector). */

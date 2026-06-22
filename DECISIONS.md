@@ -2,6 +2,37 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Solve block — inline MathLive editing of guesses/constraints (Phase 2)
+
+- **In-block click-to-edit, mirroring `AlgoMenu`.** Each guess and constraint in the read view
+  (`components/editor/regions/solve-region.tsx`) is now a reset `<button>` showing the committed
+  KaTeX; clicking swaps in a `MathField`. The button (not a `div`) inherits the global 2px blueprint
+  `:focus-visible` ring and is keyboard-activatable. Commit (Enter/blur) + cancel (Esc) come from
+  `MathField`; the parent maps the committed plain-text `source` back via the existing
+  `SET_REGION_PROP` action — no reducer/schema/entity change. The Inspector remains the home for
+  add/remove, var rename, bounds, tolerances, and ODE config; inline editing is the deferred
+  *alternative*, not a replacement.
+- **`useKeymap` isolated to the editable path.** The inline component (`InlineEditableLine`) is rendered
+  only when `canEdit && dispatch`, so the hook never runs in `StaticSolveRegionView` (history snapshots
+  have no `PreferencesProvider`). The static path keeps rendering plain `KatexMath`.
+- **Guesses edit the full `var := value` line and fold any unit into `value`.** `parseGuessLine`
+  (new, pure, in `lib/calc/solve.ts`) is the inverse of `guessSource`, reusing `splitDefinition`.
+  Folding the unit (no separate `unit` key) is **engine-equivalent**: `buildProblem` derives the
+  unknown's display unit by parsing the combined `guessSource`, never from `g.unit`. The commit
+  **merges** onto the existing guess, so the post-#60 first-class fields (`lower`/`upper`/`integer`/
+  `discrete`) survive an inline edit. The Inspector's value/unit split may differ after an inline edit
+  (value carries the unit, unit box blank) — accepted. Empty RHS is a no-op (delete a guess in the
+  Inspector); an emptied constraint is dropped from the array (mirrors the Inspector's blank-line filter).
+- **Constraints are MathLive-edited by seeding with `constraintToLatex`, not `sourceToLatex`.** A
+  constraint like `x = y` is a relation; `sourceToLatex` would mathjs-parse `=` as an assignment and
+  mis-render it as `x := y`. `constraintToLatex` (already used for the idle render) renders relations
+  correctly, so `MathField` gained a backward-compatible `seedLatex?` prop to seed from it. The commit
+  path is unchanged (`latexToSource`).
+- **Fixed the LaTeX→source bridge for relations.** `convert()` in `lib/calc/latex.ts` had no case for
+  `\le`/`\ge`/`\ne` (they degraded to `"ge"` etc.), which blocked constraint round-tripping. Added
+  `\le|\leq→<=`, `\ge|\geq→>=`, `\ne|\neq→!=`, `\lt→<`, `\gt→>` (pure, additive). This is what made
+  MathLive editing of inequality constraints viable rather than falling back to a plain mono input.
+
 ## ODE/PDE integrators — odesolve full, PDE seam-only (Phase 2)
 
 - **Mirrors the locked symbolic cache-in-content strategy, not an async solver.** The

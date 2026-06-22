@@ -251,6 +251,18 @@ function convert(s: string): string {
         out += "*";
       } else if (cmd === "div") {
         out += "/";
+      } else if (cmd === "le" || cmd === "leq" || cmd === "leqslant") {
+        // Relational operators — solve-block constraints round-trip through here
+        // (`x \ge 2` → `x >= 2`); the post-processor leaves `<= >= =` untouched.
+        out += "<=";
+      } else if (cmd === "ge" || cmd === "geq" || cmd === "geqslant") {
+        out += ">=";
+      } else if (cmd === "ne" || cmd === "neq") {
+        out += "!=";
+      } else if (cmd === "lt") {
+        out += "<";
+      } else if (cmd === "gt") {
+        out += ">";
       } else if (cmd === "coloneq" || cmd === "coloneqq" || cmd === "Coloneq" || cmd === "Coloneqq") {
         out += ":=";
       } else if (cmd === "colon") {

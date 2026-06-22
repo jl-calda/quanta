@@ -158,6 +158,7 @@ export {
   evaluateSolve,
   jsSolverBackend,
   guessSource,
+  parseGuessLine,
   odeConfigHash,
   type SolveSpec,
   type SolveResult,
