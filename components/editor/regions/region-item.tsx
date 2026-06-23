@@ -17,6 +17,7 @@ import { ProgramRegionView } from "./program-region";
 import { SweepRegionView } from "./sweep-region";
 import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
+import { RegionCommentMarker } from "../comments/region-comment-marker";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -119,6 +120,10 @@ export function RegionItem({ region }: { region: Region }) {
       )}
 
       <RegionBody region={region} result={result} selected={isPrimary} multiActive={multiActive} editing={editing} canEdit={canEdit} dispatch={dispatch} />
+
+      {/* Comment-count marker — surfaced for every role (a reviewer sees it too);
+          gated by open count, not edit rights. Hidden while editing this region. */}
+      {!editing && <RegionCommentMarker region={region} />}
 
       {/* Per-region tools only for a lone selection; a multi-selection uses the
           canvas group bar instead. */}

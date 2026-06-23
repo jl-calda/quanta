@@ -11,6 +11,7 @@ import {
 import { addComment, setCommentResolved } from "@/server/actions/comment";
 import {
   openCommentCount,
+  openCountByRegion,
   reidComment,
   sortCommentsAsc,
   SHEET_ANCHOR,
@@ -22,12 +23,24 @@ interface CommentsContextValue {
   comments: CommentItem[];
   /** Open (unresolved) count — drives the app-bar badge. */
   openCount: number;
+  /**
+   * Open (unresolved) count per region id — drives the canvas per-region markers.
+   * Memoized over `comments`; each marker reads its own count in O(1).
+   */
+  openCountByRegion: Map<string, number>;
   /** Whether the current viewer may post (owner/editor/commenter). */
   canComment: boolean;
   /** A submit is in flight (disables the composer). */
   submitting: boolean;
   /** Last action error, in the app's voice; cleared on the next attempt. */
   error: string | null;
+  /**
+   * The region the drawer is scoped to (set by clicking a region's comment marker),
+   * or null for the full thread. UI-only; never persisted.
+   */
+  focusedRegionId: string | null;
+  /** Scope the drawer to a region's thread, or clear the scope (null). */
+  setFocusedRegion: (id: string | null) => void;
   /** Post a comment anchored to `regionId` (defaults to the sheet). */
   add: (body: string, regionId?: string | null) => Promise<void>;
   /** Resolve / reopen a thread. */
@@ -64,6 +77,7 @@ export function CommentsProvider({
   const [comments, setComments] = useState<CommentItem[]>(() => sortCommentsAsc(initial));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focusedRegionId, setFocusedRegion] = useState<string | null>(null);
 
   const add = useCallback(
     async (body: string, regionId?: string | null) => {
@@ -122,13 +136,16 @@ export function CommentsProvider({
     () => ({
       comments,
       openCount: openCommentCount(comments),
+      openCountByRegion: openCountByRegion(comments),
       canComment,
       submitting,
       error,
+      focusedRegionId,
+      setFocusedRegion,
       add,
       toggleResolved,
     }),
-    [comments, canComment, submitting, error, add, toggleResolved],
+    [comments, canComment, submitting, error, focusedRegionId, add, toggleResolved],
   );
 
   return <CommentsContext.Provider value={value}>{children}</CommentsContext.Provider>;
