@@ -2,6 +2,53 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Worksheet canvas — full bounded multi-page page layout (Phase 2)
+
+- **One shared geometry module, two surfaces.** `lib/page/geometry.ts` (pure, no browser/Node
+  globals) is the single source of page geometry, consumed by BOTH the on-screen canvas page and the
+  export preview (`PreviewPages`). It imports the export constants (`PAGE_DIMS`/`MARGIN_PX`/`pageBox`)
+  from `lib/export/options.ts` rather than duplicating them, and exposes `resolveExportPreviewGeometry`
+  which reproduces the inline `PreviewPages` numbers byte-for-byte (regression-guarded by a test:
+  A4 normal portrait → contentW 678, contentH 967). So the on-screen page and the export render with
+  identical layout math. The on-screen page is driven by `page_settings`; the export preview stays
+  driven by `ExportOptions`.
+- **On-screen page = a continuous interactive column forced to whole pages, with overlay breaks —
+  NOT clipped duplicate pages.** The export preview clips a *static* `ExportDocument` into fixed page
+  boxes via a hidden measurer + `translateY` (it instantiates the body twice). The editor body is
+  *interactive* (MathLive instances, drag, selection, region ids), so duplicating/clipping it would
+  break editing. Instead `PageFrame` (`canvas.tsx`) renders the existing rows continuously and forces
+  the content area's `min-height` to `pageCount × pageContentH`, so the empty space below the last
+  region is on the page and a short/empty sheet still shows one full bounded page. Page boundaries are
+  drawn as absolutely-positioned `.ed-page-break` overlays (dashed rule + "Page N of M" chip,
+  `pointer-events:none` so clicks pass through). A region may visually cross a break line — accepted,
+  the same "approximate" caveat the export preview already states. Region rendering/flow is untouched
+  (`RowView`/`CellView`/`RegionItem`).
+- **Measurement avoids feedback and is zoom-safe.** A `ResizeObserver` reads the flowed rows'
+  `scrollHeight` (layout px — unaffected by the parent `transform: scale(zoom)`, so page-count math
+  stays in unscaled px). The bounding `min-height` lives on a PARENT of the measured rows element, so
+  it can never feed back into the measurement. Initial state assumes one page (no multi-page flash).
+- **Running bands: page-1 header + last-page footer (reserved space) + per-break page chips.** Full
+  per-page header/footer bands can't be reserved mid-column without reflowing content (which would
+  either duplicate interactive DOM or hide a strip of content at each boundary). So `PageBand` renders
+  the page-setup header/footer 3-zone bands (token-expanded via `expandTokens`; `{date}`/`{time}`
+  filled post-mount to avoid SSR hydration drift) only where there is reserved space — the top of
+  page 1 and the bottom of the last page — and intermediate boundaries carry the page number on the
+  break chip. Empty bands fall back to the prior ledger default (Quanta / title / Page N).
+  `differentFirstPage` suppresses the page-1 header. The dot-grid now fills only the content area
+  (inset by the margins) so margins read as real whitespace; `gridlines.spacing`/`show` drive it.
+- **Export seeded from page-setup — defaults only, never a silent downgrade.** The export overlay
+  seeds its initial size/orientation/margins/header/footer from `page_settings`
+  (`pageSettingsToExportOptions`, lossy: legal→Letter, a3/tabloid→A4, mm margins→nearest preset,
+  3-zone band→`bandToString`), so opening export defaults to the same page the editor shows; the user
+  can still override every field. When the page-setup size has no native PDF size
+  (`isLossyExportSize`), the overlay shows a visible note ("Page setup is A3 — exporting as A4 …").
+  `lib/export/pdf.ts`, the Puppeteer generator, and the `exportOptionsSchema` enums are **untouched**
+  this slice. Display/layout only — no schema/Server Action/RLS/migration change; `page_settings`
+  already loads and persists.
+- **Full unify deferred (Option 3).** Extending `PAGE_DIMS` + the PDF pipeline to legal/A3/tabloid and
+  driving export size/margins straight from page-setup (retiring the lossy map + the "exporting as"
+  note) is a new build-tracker Refinement row, to keep this slice display-level and off the PDF pipeline.
+
 ## Solve block — inline MathLive editing of guesses/constraints (Phase 2)
 
 - **In-block click-to-edit, mirroring `AlgoMenu`.** Each guess and constraint in the read view
