@@ -39,7 +39,7 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
     <div
       className="ed-field scroll-y"
       onClick={() => dispatch({ type: "SELECT", id: null })}
-      style={{ flex: 1, height: "100%", padding: "24px 0 120px" }}
+      style={{ flex: 1, height: "100%", padding: "24px 0 48px" }}
     >
       {multi && <GroupBar count={state.selectedIds.length} dispatch={dispatch} />}
       <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform var(--dur-base) var(--ease-out)" }}>

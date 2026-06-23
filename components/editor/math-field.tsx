@@ -47,13 +47,41 @@ export interface MathFieldProps {
    * instead. The commit path is unchanged (`latexToSource(mf.value)`).
    */
   seedLatex?: string;
+  /**
+   * Low-chrome, in-place styling: drops the boxed border/glow so the field reads
+   * as a caret in the worksheet flow (Mathcad/BlockPad feel). Opt-in — the boxed
+   * default stays for callers like the solve block.
+   */
+  chromeless?: boolean;
+  /**
+   * Enter commits and advances (no literal newline). When set, Enter is
+   * intercepted and reported here with the engine source; when absent, Enter
+   * keeps MathLive's default (the `change` event commits), which the solve block
+   * relies on.
+   */
+  onEnter?: (source: string) => void;
+  /**
+   * Esc commits instead of cancelling (matches click-away). Opt-in — the solve
+   * block keeps Esc as cancel/discard.
+   */
+  commitOnEscape?: boolean;
 }
 
-export function MathField({ value, keymap, onCommit, onCancel, onLatexChange, seedLatex }: MathFieldProps) {
+export function MathField({
+  value,
+  keymap,
+  onCommit,
+  onCancel,
+  onLatexChange,
+  seedLatex,
+  chromeless,
+  onEnter,
+  commitOnEscape,
+}: MathFieldProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
   // Keep callbacks/value in a ref so the mount effect runs exactly once.
-  const cb = useRef({ onCommit, onCancel, onLatexChange, value, keymap, seedLatex });
-  cb.current = { onCommit, onCancel, onLatexChange, value, keymap, seedLatex };
+  const cb = useRef({ onCommit, onCancel, onLatexChange, value, keymap, seedLatex, chromeless, onEnter, commitOnEscape });
+  cb.current = { onCommit, onCancel, onLatexChange, value, keymap, seedLatex, chromeless, onEnter, commitOnEscape };
 
   useEffect(() => {
     let disposed = false;
@@ -71,7 +99,7 @@ export function MathField({ value, keymap, onCommit, onCancel, onLatexChange, se
       }
       mf.mathVirtualKeyboardPolicy = "manual"; // Quanta has its own keypad
       mf.smartMode = false; // letters stay math, not prose
-      mf.className = "ed-mathfield";
+      mf.className = "ed-mathfield" + (cb.current.chromeless ? " ed-mathfield--inplace" : "");
 
       // Seed before wiring listeners so the initial value emits no events.
       mf.setValue(cb.current.seedLatex ?? sourceToLatex(cb.current.value));
@@ -89,7 +117,16 @@ export function MathField({ value, keymap, onCommit, onCancel, onLatexChange, se
           e.preventDefault();
           e.stopPropagation();
           done = true;
-          cb.current.onCancel();
+          // Esc commits (like click-away) when the caller opts in; otherwise the
+          // legacy cancel/discard (solve block).
+          if (cb.current.commitOnEscape && mf) cb.current.onCommit(latexToSource(mf.value));
+          else cb.current.onCancel();
+        } else if (e.key === "Enter" && cb.current.onEnter && mf) {
+          // Enter commits and advances to the next line — never a literal newline.
+          e.preventDefault();
+          e.stopPropagation();
+          done = true;
+          cb.current.onEnter(latexToSource(mf.value));
         }
       });
       // LaTeX paste — deterministic, not reliant on MathLive's format sniffing.

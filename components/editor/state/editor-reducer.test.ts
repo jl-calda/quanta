@@ -89,6 +89,41 @@ describe("INSERT_REGION_WITH_SOURCE", () => {
   });
 });
 
+describe("EDIT_AND_ADVANCE", () => {
+  it("commits the source and opens a fresh math region on the next line", () => {
+    const s = editorReducer(freshState(twoColDoc), {
+      type: "EDIT_AND_ADVANCE",
+      id: "A",
+      source: "a := 5",
+    });
+    const cell = s.content.rows[0].cells[0];
+    // Source committed on the anchor.
+    const a = findRegion(s.content, "A");
+    expect(a?.type === "math" && a.source).toBe("a := 5");
+    // A new math region sits directly after the anchor and is now being edited.
+    expect(cell.regions.map((r) => r.id)[0]).toBe("A");
+    expect(cell.regions).toHaveLength(2);
+    const inserted = cell.regions[1];
+    expect(inserted.type).toBe("math");
+    expect(inserted.type === "math" && inserted.source).toBe("");
+    expect(s.editingId).toBe(inserted.id);
+    expect(s.selectedId).toBe(inserted.id);
+    expect(s.saveState).toBe("unsaved");
+  });
+
+  it("on a blank source just exits editing — no runaway empty regions", () => {
+    const s = editorReducer(freshState(twoColDoc), {
+      type: "EDIT_AND_ADVANCE",
+      id: "A",
+      source: "   ",
+    });
+    const cell = s.content.rows[0].cells[0];
+    expect(cell.regions).toHaveLength(1);
+    expect(cell.regions[0].id).toBe("A");
+    expect(s.editingId).toBeNull();
+  });
+});
+
 describe("INSERT_HEADING", () => {
   it("creates an H1 text region in an empty doc and opens it for editing", () => {
     const s = editorReducer(freshState(), {

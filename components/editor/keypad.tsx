@@ -1,47 +1,48 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useKeymap } from "@/lib/preferences/provider";
 import { insertIntoActiveField, OPERATOR_TEMPLATES } from "./math-entry";
 import { useEditor } from "./state/editor-provider";
 import { Icon } from "./icons";
 
 /**
- * Floating math keypad — a draggable palette that inserts notation into the
- * focused formula field. Buttons use mousedown+preventDefault so they never
- * steal focus from the editor; insertion goes through the shared math-entry
- * bridge so it works in both the MathLive field and the mono input. Tabs mirror
- * the design mockup.
+ * Math keypad — a persistent toolbar docked at the bottom of the editor (the
+ * lower toolbar area), never an overlay over the canvas. Its Build tab is the
+ * build-notation palette (a/b, x², √, _, ^, π, Σ, ∫, ∂, ≤) moved out of the
+ * worksheet flow so nothing covers the formula while typing; further tabs cover
+ * Greek / Operators / Fractions / Functions.
  *
- * This is Quanta's single on-screen keyboard (per the design system — "Quanta
- * has its own keypad"; MathLive's built-in virtual keyboard stays disabled). Its
- * open state lives in the editor UI reducer so the MathInput field can summon it.
- * Structural keys carry the shared `/lib/keymap` operator templates, so clicking
- * one drops a proper 2D structure into the MathLive field (and the ascii/plain
- * fallback into the mono input) — the same source the ribbon and palette use.
+ * Buttons use mousedown+preventDefault so they never steal focus from the active
+ * field; insertion goes through the shared math-entry bridge so it works in the
+ * MathLive field and in plain inputs (table cells, text). Structural keys carry a
+ * `/lib/keymap` operator template — the single source — so a click drops the same
+ * 2D structure the ribbon and keyboard shortcuts do. The grid collapses to the
+ * tab strip via the editor UI reducer (`keypadOpen`), so the ribbon's palette
+ * button still toggles it.
  */
 interface Key {
   s: string;
   insert: string;
   hint?: string;
-  /** Operator template key — its LaTeX builds a 2D structure in the math field. */
+  /** Operator template key — its LaTeX builds a 2D structure, its source seeds plain inputs. */
   op?: keyof typeof OPERATOR_TEMPLATES;
 }
 
 const CATEGORIES: Record<string, Key[]> = {
   Build: [
     { s: "a⁄b", insert: "/", hint: "/", op: "fraction" },
+    { s: "x²", insert: "^", hint: "^", op: "exponent" },
     { s: "xⁿ", insert: "^", hint: "^", op: "exponent" },
     { s: "x_n", insert: "_", hint: "_", op: "subscript" },
     { s: "√", insert: "sqrt(", hint: "\\", op: "root" },
+    { s: "π", insert: "pi", hint: ":p" },
+    { s: "Σ", insert: "summation(", op: "summation" },
+    { s: "∫", insert: "integral(", op: "integral" },
+    { s: "∂", insert: "diff(", op: "partial" },
+    { s: "≤", insert: "<=", hint: "<=" },
     { s: ":=", insert: ":=", hint: ":", op: "assign" },
     { s: "·", insert: "*" },
-    { s: "|x|", insert: "abs(", op: "absolute" },
-    { s: "π", insert: "pi" },
-    { s: "(", insert: "(" },
-    { s: ")", insert: ")" },
-    { s: "[", insert: "[" },
-    { s: "]", insert: "]" },
   ],
   Greek: ["α", "β", "γ", "δ", "ε", "θ", "λ", "μ", "π", "ρ", "σ", "τ", "φ", "ψ", "ω", "Δ", "Σ", "Ω"].map((g) => ({ s: g, insert: g })),
   Operators: [
@@ -63,114 +64,108 @@ const CATEGORIES: Record<string, Key[]> = {
 export function Keypad() {
   const { keymap } = useKeymap();
   const { state, dispatch } = useEditor();
-  const open = state.ui.keypadOpen;
-  const setOpen = (next: boolean) => dispatch({ type: "SET_KEYPAD", open: next });
+  const open = state.ui.keypadOpen; // controls whether the key grid is expanded
+  const editing = state.editingId != null; // keys act on the focused field
   const [cat, setCat] = useState<keyof typeof CATEGORIES>("Build");
-  const [pos, setPos] = useState<{ x: number | null; bottom: number; top?: number }>({ x: null, bottom: 18 });
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
-
-  const onDown = (e: React.MouseEvent) => {
-    const panel = (e.currentTarget as HTMLElement).parentElement!;
-    const rect = panel.getBoundingClientRect();
-    drag.current = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
-    const move = (ev: MouseEvent) => {
-      const d = drag.current;
-      if (!d) return;
-      setPos({ x: d.ox + (ev.clientX - d.sx), bottom: 0, top: d.oy + (ev.clientY - d.sy) });
-    };
-    const up = () => {
-      drag.current = null;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  };
 
   const insert = (key: Key) => {
-    // Structural keys carry an operator template: its LaTeX builds the 2D form in
-    // the MathLive field, the ascii `insert` is the plain/mono fallback.
-    const latex = key.op ? OPERATOR_TEMPLATES[key.op].latex : undefined;
-    insertIntoActiveField({ latex, text: key.insert });
+    // Structural keys carry an operator template (single source: /lib/keymap):
+    // its LaTeX builds the 2D form in the MathLive field, its source is the plain
+    // fallback for inputs. Other keys insert their literal token.
+    if (key.op) {
+      const tpl = OPERATOR_TEMPLATES[key.op];
+      insertIntoActiveField({ latex: tpl.latex, text: tpl.source });
+      return;
+    }
+    insertIntoActiveField({ text: key.insert });
   };
 
-  const panelStyle: React.CSSProperties =
-    pos.x == null
-      ? { left: "50%", transform: "translateX(-50%)", bottom: pos.bottom }
-      : { left: pos.x, top: pos.top };
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 18, zIndex: 40, display: "inline-flex", alignItems: "center", gap: 8, height: 34, padding: "0 14px", borderRadius: "var(--radius-full)", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", boxShadow: "var(--shadow-popover)", cursor: "pointer", color: "var(--text-primary)", font: "500 12.5px/1 var(--font-sans)" }}
-      >
-        <span style={{ fontFamily: "var(--font-math)", fontSize: 15 }}>Σ</span> Math keypad <span style={{ color: "var(--text-muted)" }}><Icon name="chevU" size={14} /></span>
-      </button>
-    );
-  }
-
   return (
-    <div style={{ position: "fixed", zIndex: 40, width: 320, background: "var(--surface-raised)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-modal)", ...panelStyle }}>
-      <div onMouseDown={onDown} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)", cursor: "grab", background: "var(--surface-chrome)", borderRadius: "var(--radius-lg) var(--radius-lg) 0 0" }}>
-        <span style={{ color: "var(--text-muted)", display: "inline-flex" }}><Icon name="grip" size={14} /></span>
-        <span style={{ font: "600 12px/1 var(--font-sans)", color: "var(--text-primary)" }}>Math keypad</span>
-        <span style={{ font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)", background: "var(--accent-tint)", borderRadius: "var(--radius-full)", padding: "3px 7px" }}>
-          Keymap: <span style={{ color: "var(--accent)", fontWeight: 600 }}>{keymap.name}</span>
-        </span>
-        <button onClick={() => setOpen(false)} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, border: "none", background: "transparent", borderRadius: "var(--radius-sm)", color: "var(--text-muted)", cursor: "pointer" }}>
-          <Icon name="chevD" size={15} />
-        </button>
-      </div>
-      <div style={{ display: "flex", gap: 2, padding: "6px 8px 0", flexWrap: "wrap" }}>
+    <div
+      className="ed-keypad-dock"
+      style={{
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--surface-chrome)",
+        borderTop: "1px solid var(--border-hairline)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "5px 12px 0" }}>
         {Object.keys(CATEGORIES).map((k) => (
-          <button key={k} onClick={() => setCat(k as keyof typeof CATEGORIES)} className={"ed-tab" + (cat === k ? " on" : "")} style={{ padding: "5px 7px", font: (cat === k ? "600" : "500") + " 11px/1 var(--font-sans)", color: cat === k ? "var(--text-primary)" : "var(--text-muted)" }}>
+          <button
+            key={k}
+            onClick={() => setCat(k as keyof typeof CATEGORIES)}
+            className={"ed-tab" + (cat === k ? " on" : "")}
+            style={{ padding: "5px 8px", font: (cat === k ? "600" : "500") + " 11px/1 var(--font-sans)", color: cat === k ? "var(--text-primary)" : "var(--text-muted)" }}
+          >
             {k}
           </button>
         ))}
+        <span style={{ flex: 1 }} />
+        <span style={{ font: "10.5px/1 var(--font-sans)", color: "var(--text-muted)", background: "var(--accent-tint)", borderRadius: "var(--radius-full)", padding: "3px 7px" }}>
+          Keymap: <span style={{ color: "var(--accent)", fontWeight: 600 }}>{keymap.name}</span>
+        </span>
+        <button
+          onClick={() => dispatch({ type: "SET_KEYPAD", open: !open })}
+          aria-label={open ? "Collapse math keypad" : "Expand math keypad"}
+          title={open ? "Collapse math keypad" : "Expand math keypad"}
+          style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, border: "none", background: "transparent", borderRadius: "var(--radius-sm)", color: "var(--text-muted)", cursor: "pointer" }}
+        >
+          <Icon name={open ? "chevD" : "chevU"} size={15} />
+        </button>
       </div>
-      <div style={{ borderTop: "1px solid var(--border-hairline)", marginTop: 6, padding: 8, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
-        {CATEGORIES[cat].map((key, i) => (
-          <button
-            key={i}
-            className="kp-key"
-            title={key.hint ? `Key: ${key.hint}` : key.insert}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              insert(key);
-            }}
-            style={{ position: "relative", gridColumn: key.s.length > 2 ? "span 2" : "span 1", fontSize: key.s.length > 2 ? 12 : 15, fontFamily: key.s.length > 2 ? "var(--font-sans)" : "var(--font-math)" }}
-          >
-            {key.s}
-            {key.hint && (
-              // Inline key hint chip (mockup) — 2px bottom border, so the
-              // keyboard path is always discoverable: click to learn, type next time.
-              <span
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  bottom: -1,
-                  right: -1,
-                  font: "8px/1 var(--font-mono)",
-                  color: "var(--text-muted)",
-                  background: "var(--surface-chrome)",
-                  border: "1px solid var(--border-hairline)",
-                  borderBottom: "2px solid var(--border-strong)",
-                  borderRadius: 3,
-                  padding: "1px 2px",
-                  minWidth: 11,
-                  textAlign: "center",
-                }}
-              >
-                {key.hint}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-      <div style={{ borderTop: "1px solid var(--border-hairline)", padding: "6px 10px", font: "10.5px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
-        Type to build notation — click a key to insert it at the cursor.
-      </div>
+
+      {open && (
+        <div
+          // Keys are no-ops without a focused field — dim to signal that.
+          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, padding: "8px 12px", borderTop: "1px solid var(--border-hairline)", marginTop: 5, opacity: editing ? 1 : 0.55, transition: "opacity var(--dur-fast) var(--ease-out)" }}
+        >
+          {CATEGORIES[cat].map((key, i) => (
+            <button
+              key={i}
+              className="kp-key"
+              title={key.hint ? `Key: ${key.hint}` : key.insert}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                insert(key);
+              }}
+              style={{ position: "relative", minWidth: key.s.length > 2 ? 44 : 34, fontSize: key.s.length > 2 ? 12 : 15, fontFamily: key.s.length > 2 ? "var(--font-sans)" : "var(--font-math)" }}
+            >
+              {key.s}
+              {key.hint && (
+                // Inline key-hint chip — the keyboard path is always discoverable:
+                // click to learn, type next time.
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    bottom: -1,
+                    right: -1,
+                    font: "8px/1 var(--font-mono)",
+                    color: "var(--text-muted)",
+                    background: "var(--surface-chrome)",
+                    border: "1px solid var(--border-hairline)",
+                    borderBottom: "2px solid var(--border-strong)",
+                    borderRadius: 3,
+                    padding: "1px 2px",
+                    minWidth: 11,
+                    textAlign: "center",
+                  }}
+                >
+                  {key.hint}
+                </span>
+              )}
+            </button>
+          ))}
+          <span style={{ flex: 1 }} />
+          <span style={{ font: "11px/1.4 var(--font-sans)", color: "var(--text-muted)" }}>
+            Type{" "}
+            <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>/ ^ _ :</code> or{" "}
+            <code style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>space</code> to build notation
+          </span>
+        </div>
+      )}
     </div>
   );
 }

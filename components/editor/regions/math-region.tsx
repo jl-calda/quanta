@@ -388,28 +388,11 @@ function MathEditor({
     dispatch({ type: "END_EDIT" });
   };
 
-  return (
-    <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 8 }}>
-      <span
-        style={{
-          font: "600 var(--text-11)/1 var(--font-sans)",
-          letterSpacing: "var(--tracking-eyebrow)",
-          textTransform: "uppercase",
-          color: "var(--accent)",
-          marginTop: 6,
-        }}
-      >
-        edit
-      </span>
-      <MathInput
-        value={region.source}
-        keymap={keymap}
-        onCommit={commit}
-        onCancel={() => dispatch({ type: "END_EDIT" })}
-        onToggleKeypad={() => dispatch({ type: "TOGGLE_KEYPAD" })}
-      />
-    </div>
-  );
+  // Enter commits and opens the next line (no boxed chrome, no eyebrow — the
+  // field edits in place where the committed notation sat).
+  const advance = (source: string) => dispatch({ type: "EDIT_AND_ADVANCE", id: region.id, source });
+
+  return <MathInput value={region.source} keymap={keymap} onCommit={commit} onEnter={advance} />;
 }
 
 /* ------------------------------------------------------------------ *
