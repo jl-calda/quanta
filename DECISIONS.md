@@ -2089,3 +2089,46 @@ ungroup one). This row fills exactly those, plus light area polish.
   `html.ts`). Always-on soft page-boundary guides / a "Page N of M" scroll tooltip
   in the editing canvas are intentionally out of scope. find/replace and the outline
   navigator were already complete and were left untouched.
+
+## Non-intrusive math input — low-chrome, in-place editing (Phase 2 refinement)
+
+- **In place, not boxed.** Editing a math region no longer shows the heavy bordered
+  EDIT box, the white-paper fill, or the uppercase `edit` eyebrow. `MathEditor`
+  renders `MathInput` directly where the committed notation sat; `.region.is-editing`
+  is now just a faint `--accent-tint` wash (no border-colour change, no 2px glow). The
+  edit point is the thin blinking caret — MathLive's own caret, already
+  `--caret-color: var(--accent)` — surfaced by a new chromeless field variant
+  `.ed-mathfield--inplace` (transparent background, no border/shadow). This
+  **supersedes** the earlier "editing-lines (L-shaped)" idea: a simple vertical caret.
+- **Natural 2D is the only authoring mode.** The `√x`/`Aa` style toggle and the
+  secondary mono `PlainTextEntry` are removed from `MathInput`; MathLive (natural 2D)
+  is always used. `MathInput`'s API shrank to `{ value, keymap, onCommit, onEnter?,
+  onChange? }` — `onCancel`/`onToggleKeypad`/`placeholder` are gone (it had a single
+  caller, the math region). The content tree still stores engine plain-text `source`;
+  pasted LaTeX still round-trips via the `MathField` paste handler.
+- **No palette over the canvas.** The inline `MathPalette` (the 10-key build bar that
+  rendered in the worksheet flow under the field) is removed. The build-notation
+  palette now lives in the **persistent docked bottom toolbar**: `Keypad` was converted
+  from a floating, draggable overlay into a normal flex child docked above the status
+  bar (`editor-app.tsx`), full-width, surface-chrome with a hairline top border. Its
+  **Build** tab carries the brief's glyphs (a/b, x², √, _, ^, π, Σ, ∫, ∂, ≤) plus the
+  "type `/ ^ _ :` or `space`" hint. Structural keys insert via `OPERATOR_TEMPLATES`
+  (single source, `/lib/keymap`) through the existing `insertIntoActiveField` bridge,
+  so the keypad, ribbon, and keyboard stay in lockstep. `keypadOpen` now toggles the
+  key grid's collapse (default expanded) rather than show/hide an overlay, so the
+  ribbon's palette button still does something; the grid dims when nothing is focused.
+  Canvas bottom padding dropped `120px → 48px` (no floating pill to clear).
+- **Enter advances; Esc commits — both via opt-in `MathField` props.** `MathField`
+  gained three optional, backward-compatible props: `chromeless` (the in-place class),
+  `onEnter` (Enter → commit + advance, intercepted in the existing keydown handler so
+  there's never a literal newline; the `done` guard still swallows the blur→change
+  echo), and `commitOnEscape` (Esc commits like click-away instead of cancelling).
+  Only the math region opts in — **the solve block's `MathField` is untouched** (still
+  boxed, Esc still cancels), honouring "don't refactor neighbouring regions".
+- **`EDIT_AND_ADVANCE` reducer action.** Enter dispatches `{ type: "EDIT_AND_ADVANCE",
+  id, source }`: it commits the source, then splices a fresh `newRegion("math")`
+  directly after the anchor (`locate().container.splice(index+1, …)`, falling back to a
+  new bottom row) and opens it for editing. A **blank** source just ends editing — no
+  runaway empties. Reuses the existing `mutate`/`locate`/`findRegion`/`touched`
+  helpers; `graph.ts`/`recalc.ts` and storage are untouched, and `touched()` drives the
+  normal dirty/recalc/autosave path. Covered by two reducer tests.

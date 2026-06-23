@@ -63,9 +63,9 @@
   border-color: var(--accent);
 }
 .region.is-editing {
-  background: var(--surface-paper);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  /* Low-chrome active indicator — a faint tint, no boxed border/glow. Editing
+     happens in place; the thin blinking caret marks the edit point. */
+  background: color-mix(in srgb, var(--accent-tint) 35%, transparent);
 }
 .region.is-error:hover {
   background: color-mix(in srgb, var(--status-error-bg) 55%, transparent);
@@ -270,6 +270,16 @@ input[type="range"].q-slider:focus-visible {
   border-radius: var(--radius-sm);
   --selection-background-color: var(--accent-tint);
   --caret-color: var(--accent);
+}
+/* In-place variant — drops the boxed border/glow so the field reads as a thin
+   blinking caret in the worksheet flow (Mathcad/BlockPad). The accent caret and
+   selection colours stay so the edit point is always visible. */
+.ed-mathfield.ed-mathfield--inplace {
+  min-width: 80px;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  padding: 0 2px;
 }
 .ed-mathfield:focus,
 .ed-mathfield:focus-within {

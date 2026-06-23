@@ -41,9 +41,8 @@ export interface EditorWorksheet {
 
 /**
  * EditorApp — the worksheet editor shell. A full-height flex column: app bar →
- * ribbon → [left panel | canvas | inspector] → status bar, plus the floating
- * math keypad. All state flows through the EditorProvider (reducer + calc engine
- * + autosave).
+ * ribbon → [left panel | canvas | inspector] → docked math keypad → status bar.
+ * All state flows through the EditorProvider (reducer + calc engine + autosave).
  */
 export function EditorApp({
   worksheet,
@@ -96,8 +95,8 @@ export function EditorApp({
             <Inspector />
             <RightDrawer />
           </div>
-          <StatusBar />
           <Keypad />
+          <StatusBar />
           <ReferenceOverlay />
           <ExportOverlay canExport={canExport} worksheetTitle={worksheet.title} />
           <DialogHost />

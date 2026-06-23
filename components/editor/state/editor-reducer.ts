@@ -227,6 +227,7 @@ export type EditorAction =
   | { type: "BEGIN_EDIT"; id: string }
   | { type: "END_EDIT" }
   | { type: "EDIT_SOURCE"; id: string; source: string }
+  | { type: "EDIT_AND_ADVANCE"; id: string; source: string }
   | { type: "EDIT_TEXT"; id: string; text: string }
   | { type: "SET_REGION_PROP"; id: string; patch: RegionPatch }
   | { type: "REPLACE_CONTENT"; content: WorksheetContent }
@@ -634,6 +635,29 @@ export function editorReducer(
         if (region && region.type === "math") region.source = action.source;
       });
       return touched(state, content);
+    }
+    case "EDIT_AND_ADVANCE": {
+      // Enter: commit the current source, then open a fresh math region on the
+      // next line and edit it (Mathcad-style). Enter on a blank region just exits
+      // editing — no runaway empties.
+      const advance = action.source.trim() !== "";
+      const region = advance ? newRegion("math") : null;
+      const content = mutate(state.content, (next) => {
+        const current = findRegion(next, action.id);
+        if (current && current.type === "math") current.source = action.source;
+        if (region) {
+          const loc = locate(next, action.id);
+          if (loc) loc.container.splice(loc.index + 1, 0, region);
+          else next.rows.push(singleColumnRow([region]));
+        }
+      });
+      return touched(
+        state,
+        content,
+        region
+          ? { selectedId: region.id, selectedIds: [region.id], editingId: region.id }
+          : { editingId: null },
+      );
     }
     case "EDIT_TEXT": {
       const content = mutate(state.content, (next) => {
@@ -1422,7 +1446,7 @@ export function initEditorState(args: {
       referenceKind: "FUNCTIONS",
       exportOpen: false,
       rightPanel: "none",
-      keypadOpen: false,
+      keypadOpen: true, // docked math toolbar starts expanded (persistent lower toolbar)
       activeDialog: null,
     },
   };
