@@ -180,10 +180,21 @@ function Binding({
   if (!bind) return hint("Bind a variable in the inspector.");
 
   if (result?.error) {
+    // The message moved to the bottom Problems toolbar; the control keeps only an
+    // unobtrusive marker — the binding name under a red wavy underline, with the
+    // message on hover.
     return (
-      <span style={{ font: "11.5px/1.35 var(--font-sans)", color: "var(--status-error)" }}>
-        {result.error.message}
-        {result.error.fixHint && <span style={{ color: "var(--text-muted)" }}> {result.error.fixHint}</span>}
+      <span
+        title={result.error.fixHint ? `${result.error.message} ${result.error.fixHint}` : result.error.message}
+        style={{
+          font: "13px/1.4 var(--font-mono)",
+          color: "var(--text-primary)",
+          textDecoration: "underline wavy var(--status-error)",
+          textDecorationThickness: "1.5px",
+          textUnderlineOffset: "4px",
+        }}
+      >
+        {bind} :=
       </span>
     );
   }

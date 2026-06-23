@@ -71,8 +71,34 @@ export function StatusBar() {
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot }} /> {statusLabel}
       </span>
-      <span>
-        {regionCount} {regionCount === 1 ? "region" : "regions"} · {state.errorCount} {state.errorCount === 1 ? "error" : "errors"}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span>
+          {regionCount} {regionCount === 1 ? "region" : "regions"} ·
+        </span>
+        {state.errorCount > 0 ? (
+          <button
+            type="button"
+            title="Show problems"
+            onClick={() => dispatch({ type: "TOGGLE_PROBLEMS" })}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "2px 6px",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              background: state.ui.problemsOpen ? "var(--status-error-bg)" : "transparent",
+              color: "var(--status-error)",
+              font: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <Icon name="alertCirc" size={12} />
+            {state.errorCount} {state.errorCount === 1 ? "problem" : "problems"}
+          </button>
+        ) : (
+          <span>No problems</span>
+        )}
       </span>
       <span style={{ flex: 1, display: "flex", justifyContent: "center", gap: 16 }}>
         <span>Page {Math.min(currentPage, totalPages)} of {totalPages}</span>
