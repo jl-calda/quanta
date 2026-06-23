@@ -408,38 +408,23 @@ function MathError({
   message: string;
   fix?: string;
 }) {
+  // The full message moved to the bottom Problems toolbar; the region keeps only
+  // an unobtrusive marker — the source under a red wavy underline, with the
+  // message on hover — so the calculation flow reads cleanly.
   return (
-    <div style={{ display: "inline-flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 14,
-          color: "var(--text-primary)",
-          textDecoration: "underline wavy var(--status-error)",
-          textDecorationThickness: "1.5px",
-          textUnderlineOffset: "4px",
-          paddingBottom: 1,
-        }}
-      >
-        {region.source || "(empty)"}
-      </span>
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 5,
-          font: "11.5px/1.3 var(--font-sans)",
-          color: "var(--status-error)",
-          background: "var(--status-error-bg)",
-          border: "1px solid color-mix(in srgb, var(--status-error) 30%, transparent)",
-          borderRadius: "var(--radius-sm)",
-          padding: "4px 7px",
-        }}
-      >
-        <Icon name="alertCirc" size={13} />
-        {message}
-        {fix && <span style={{ color: "var(--text-muted)" }}>{fix}</span>}
-      </span>
-    </div>
+    <span
+      title={fix ? `${message} ${fix}` : message}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 14,
+        color: "var(--text-primary)",
+        textDecoration: "underline wavy var(--status-error)",
+        textDecorationThickness: "1.5px",
+        textUnderlineOffset: "4px",
+        paddingBottom: 1,
+      }}
+    >
+      {region.source || "(empty)"}
+    </span>
   );
 }

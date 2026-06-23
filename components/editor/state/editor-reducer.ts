@@ -101,6 +101,8 @@ export interface EditorUiState {
   rightPanel: RightPanel;
   /** Whether the floating Quanta math keypad is showing (summonable from a field). */
   keypadOpen: boolean;
+  /** Whether the bottom Problems toolbar is expanded (opened on demand). */
+  problemsOpen: boolean;
   /** The centrally-hosted dialog that is open, or null. */
   activeDialog: EditorDialog | null;
 }
@@ -307,6 +309,7 @@ export type EditorAction =
   | { type: "TOGGLE_RIGHT" }
   | { type: "TOGGLE_KEYPAD" }
   | { type: "SET_KEYPAD"; open: boolean }
+  | { type: "TOGGLE_PROBLEMS" }
   | { type: "SET_RIBBON_TAB"; tab: string }
   | { type: "TOGGLE_RIBBON" }
   | { type: "OPEN_REFERENCE"; kind: RefGroup }
@@ -1375,6 +1378,8 @@ export function editorReducer(
       return { ...state, ui: { ...state.ui, keypadOpen: !state.ui.keypadOpen } };
     case "SET_KEYPAD":
       return { ...state, ui: { ...state.ui, keypadOpen: action.open } };
+    case "TOGGLE_PROBLEMS":
+      return { ...state, ui: { ...state.ui, problemsOpen: !state.ui.problemsOpen } };
     case "SET_RIBBON_TAB":
       return { ...state, ui: { ...state.ui, ribbonTab: action.tab } };
     case "TOGGLE_RIBBON":
@@ -1447,6 +1452,7 @@ export function initEditorState(args: {
       exportOpen: false,
       rightPanel: "none",
       keypadOpen: true, // docked math toolbar starts expanded (persistent lower toolbar)
+      problemsOpen: false, // Problems toolbar starts collapsed; opened from the status bar
       activeDialog: null,
     },
   };

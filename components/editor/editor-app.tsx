@@ -18,6 +18,7 @@ import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { RightDrawer } from "./right-drawer";
 import { StatusBar } from "./status-bar";
+import { ProblemsBar } from "./problems-bar";
 import { Keypad } from "./keypad";
 import { ReferenceOverlay } from "./reference-overlay";
 import { ExportOverlay } from "./export-overlay";
@@ -96,6 +97,7 @@ export function EditorApp({
             <RightDrawer />
           </div>
           <Keypad />
+          <ProblemsBar />
           <StatusBar />
           <ReferenceOverlay />
           <ExportOverlay canExport={canExport} worksheetTitle={worksheet.title} />
