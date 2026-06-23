@@ -10,6 +10,7 @@
  * Gating is enforced HERE on every request — never trusting a client flag.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Density } from "@/lib/preferences/cookies";
 import { parseContent } from "@/lib/worksheet/content";
 import { parseLayoutSettings } from "@/lib/schema/page";
 import { parseWorkspaceSettings } from "@/lib/schema/settings";
@@ -50,6 +51,7 @@ export async function runExport(
   supabase: SupabaseClient,
   worksheetId: string,
   options: ExportOptions,
+  density: Density = "compact",
 ): Promise<UploadedExport> {
   if (options.format === "print") {
     throw new ExportError("Print is handled in the browser, not on the server.", 400);
@@ -95,7 +97,7 @@ export async function runExport(
 
   const content = parseContent(worksheet.content);
   const results = evaluateForExport(content, parseLayoutSettings(worksheet.layout_settings).unitSystem);
-  const props: ExportDocumentProps = { title: worksheet.title, content, results, options };
+  const props: ExportDocumentProps = { title: worksheet.title, content, results, options, density };
 
   try {
     const artifact = await generateExport(format, props);

@@ -161,7 +161,7 @@ function MathSymbolic({
         alignItems: "center",
         flexWrap: "wrap",
         columnGap: "0.35em",
-        rowGap: 4,
+        rowGap: "var(--ws-math-rowgap)",
         cursor: canEdit ? "text" : "default",
       }}
     >
@@ -243,7 +243,7 @@ function MathCommitted({
       <div
         onClick={onClick}
         title={canEdit ? "Click to edit formula" : undefined}
-        style={{ display: "flex", flexDirection: "column", gap: 10, cursor: canEdit ? "text" : "default", opacity: stale ? 0.6 : 1 }}
+        style={{ display: "flex", flexDirection: "column", gap: "var(--ws-steps-gap)", cursor: canEdit ? "text" : "default", opacity: stale ? 0.6 : 1 }}
       >
         {display.formula && (
           <StepSection header="Name := formula" divider={shown++ > 0}>
@@ -272,7 +272,7 @@ function MathCommitted({
         alignItems: "center",
         flexWrap: "wrap",
         columnGap: "0.35em",
-        rowGap: 4,
+        rowGap: "var(--ws-math-rowgap)",
         cursor: canEdit ? "text" : "default",
         opacity: stale ? 0.6 : 1,
       }}
@@ -356,7 +356,7 @@ function StepSection({
   children: React.ReactNode;
 }) {
   return (
-    <div style={divider ? { borderTop: "1px dashed var(--border-hairline)", paddingTop: 9 } : undefined}>
+    <div style={divider ? { borderTop: "1px dashed var(--border-hairline)", paddingTop: "var(--ws-steps-gap)" } : undefined}>
       <div
         style={{
           font: "600 9px/1 var(--font-sans)",

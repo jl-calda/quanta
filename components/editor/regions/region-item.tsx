@@ -99,7 +99,11 @@ export function RegionItem({ region }: { region: Region }) {
       onDragOver={onDragOver}
       onDragLeave={() => setDropPos(null)}
       onDrop={onDrop}
-      style={{ position: "relative", marginLeft: region.indent * 30, padding: "6px 10px" }}
+      style={{
+        position: "relative",
+        marginLeft: `calc(${region.indent} * var(--ws-indent))`,
+        padding: "var(--ws-region-pad-y) var(--ws-region-pad-x)",
+      }}
     >
       {region.indent > 0 && <span className="indent-guide" />}
       {dropPos && <DropLine where={dropPos} />}
@@ -113,7 +117,7 @@ export function RegionItem({ region }: { region: Region }) {
             e.dataTransfer.effectAllowed = "move";
           }}
           title="Drag to reorder"
-          style={{ position: "absolute", left: -20, top: 7, color: "var(--text-muted)", cursor: "grab", display: "inline-flex" }}
+          style={{ position: "absolute", left: -20, top: "var(--ws-region-pad-y)", color: "var(--text-muted)", cursor: "grab", display: "inline-flex" }}
         >
           <Icon name="grip" size={15} />
         </span>
@@ -206,7 +210,7 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "7px 12px",
+          padding: "var(--ws-area-head-y) 12px",
           borderBottom: region.collapsed ? "none" : "1px solid var(--border-hairline)",
           background: "var(--surface-chrome)",
           cursor: "pointer",
@@ -257,7 +261,7 @@ function AreaFrame({ region, canEdit, dispatch }: RegionRenderProps<AreaRegion>)
         )}
       </div>
       {!region.collapsed && (
-        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ padding: "var(--ws-area-body-y) 12px", display: "flex", flexDirection: "column", gap: 2 }}>
           {region.regions.map((child) => (
             <RegionItem key={child.id} region={child} />
           ))}

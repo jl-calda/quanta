@@ -2,6 +2,37 @@
 
 Running log of non-obvious choices, per CLAUDE.md. Newest first.
 
+## Compact worksheet density — `--ws-*` tokens (Phase 2)
+
+- **Wired the worksheet rhythm to the existing density preference; did not rebuild it.** The
+  `compact`/`comfortable` preference already exists end-to-end (cookie → `useDensity` →
+  `<html data-density>` → Settings + `DensityToggle`, default compact). The gap was that the
+  editor regions and the export document used **hardcoded inline px** that ignored it. Added a
+  worksheet token group `--ws-*` to `app/styles/density.css` (compact = tighter new default,
+  comfortable ≈ the prior look) and swapped the inline px in the region components to `var(--ws-*)`.
+  Compact tightens region padding (6→4), indent (30→22), text leading (1.5→1.4), table cell pad
+  (5→4), and math gaps; comfortable restores the looser values.
+- **Density flows through measurement, so pagination "just works."** Post-#69 the canvas measures
+  each row's real `offsetHeight` and runs the shared `paginateBlocks`; the export preview measures
+  the rendered `ExportDocument` the same way. So shrinking region padding via CSS vars yields more
+  lines per page on screen and in the preview with **no** estimate constants to touch.
+- **Two mirrored sources for one set of values (unavoidable).** The editor + browser export
+  (preview/print portal) read `--ws-*` from `density.css` via the `[data-density]` cascade. The
+  **Node** export render (`buildExportHtml`) has no `data-density`, so `documentCss` injects the
+  block from a small pure map `DOC_DENSITY` in `lib/export/density.ts`. The numbers are duplicated
+  between `density.css` and `DOC_DENSITY` and must be kept in sync (commented in both). CSS vars
+  can't be read in the Node render, so this is the cleanest single-purpose split; `document.tsx`
+  uses `var(--ws-*, <compact-fallback>)` so the vars are never undefined.
+- **`ExportDocument` gained an optional `density?` prop (default compact);** the component body
+  still reads CSS vars — only `documentCss` consumes the prop. `runExport` takes a `density` arg
+  that the PDF route and the export action read from `readPreferences()` (the same cookie that
+  drives the UI), so a generated PDF/HTML matches the user's on-screen density.
+- **Left alone on purpose:** top-level `ROW_GAP` (pagination math) and page margins (now
+  page-setup driven via `resolvePageGeometry`) are document/layout concerns, not density — so the
+  rewritten `canvas.tsx`, `editor.css` page body, and `export-overlay.tsx` were not touched. No
+  `useDensity` in the canvas, so static/history renders without `PreferencesProvider` are unaffected.
+  Math glyph sizes are never scaled (legibility floor); pad-y floor 4px, math row-gap floor 3px.
+
 ## Worksheet canvas — full bounded multi-page page layout (Phase 2)
 
 - **One shared geometry module, two surfaces.** `lib/page/geometry.ts` (pure, no browser/Node

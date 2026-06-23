@@ -65,7 +65,8 @@ export function TextRegionView({
           resize: "vertical",
           font: region.heading
             ? (HEADING_STYLE[region.heading].font as string)
-            : "13px/1.5 var(--font-sans)",
+            : "13px var(--font-sans)",
+          lineHeight: region.heading ? undefined : "var(--ws-text-leading)",
           color: "var(--text-primary)",
           background: "var(--surface-raised)",
           border: "1px solid var(--border-focus)",
@@ -105,7 +106,8 @@ export function TextRegionView({
         <p
           style={{
             margin: 0,
-            font: "13px/1.5 var(--font-sans)",
+            font: "13px var(--font-sans)",
+            lineHeight: "var(--ws-text-leading)",
             color: "var(--text-muted)",
             whiteSpace: "pre-wrap",
           }}
