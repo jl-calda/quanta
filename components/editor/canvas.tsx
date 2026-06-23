@@ -50,13 +50,14 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
               {content.rows.length === 0 ? (
                 <EmptyState canEdit={canEdit} dispatch={dispatch} />
               ) : (
-                content.rows.map((row) => (
+                content.rows.map((row, i) => (
                   <RowView
                     key={row.id}
                     row={row}
                     canEdit={canEdit}
                     dispatch={dispatch}
                     live={rowIsLive(row, liveIds)}
+                    isFirst={i === 0}
                   />
                 ))
               )}
@@ -110,11 +111,13 @@ function RowView({
   canEdit,
   dispatch,
   live,
+  isFirst,
 }: {
   row: Row;
   canEdit: boolean;
   dispatch: Dispatch<EditorAction>;
   live: boolean;
+  isFirst: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -122,19 +125,28 @@ function RowView({
 
   const controls = canEdit && hover && <ColumnsControl row={row} dispatch={dispatch} />;
 
+  // A hard page break falls before a row (never the first). The zone shows a rule
+  // only where a break is actually set, and a hover affordance to insert one.
+  const breakZone = !isFirst && (
+    <PageBreakZone rowId={row.id} active={row.breakBefore === true} canEdit={canEdit} dispatch={dispatch} />
+  );
+
   if (row.columns === 1) {
     return (
-      <div
-        className={rowClass}
-        style={{ position: "relative" }}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-      >
-        {controls}
-        {row.cells[0]?.regions.map((r) => (
-          <RegionItem key={r.id} region={r} />
-        ))}
-      </div>
+      <>
+        {breakZone}
+        <div
+          className={rowClass}
+          style={{ position: "relative" }}
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+        >
+          {controls}
+          {row.cells[0]?.regions.map((r) => (
+            <RegionItem key={r.id} region={r} />
+          ))}
+        </div>
+      </>
     );
   }
 
@@ -168,15 +180,139 @@ function RowView({
   });
 
   return (
+    <>
+      {breakZone}
+      <div
+        ref={gridRef}
+        className={rowClass}
+        style={{ position: "relative", display: "grid", gridTemplateColumns: tracks.join(" "), marginTop: 2 }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        {controls}
+        {items}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The page-break boundary above a row. When a break is set it shows a labelled
+ * rule (the only place a break renders — it reflects the real `breakBefore` flag,
+ * never a computed soft boundary). Otherwise, for editors, a thin hover strip
+ * reveals an "Insert page break" affordance; its negative margins keep the
+ * canvas rhythm unchanged. Both toggle `TOGGLE_ROW_BREAK` on this row.
+ */
+function PageBreakZone({
+  rowId,
+  active,
+  canEdit,
+  dispatch,
+}: {
+  rowId: string;
+  active: boolean;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const [hover, setHover] = useState(false);
+  const toggle = () => dispatch({ type: "TOGGLE_ROW_BREAK", rowId });
+
+  if (active) {
+    return (
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          margin: "6px 0",
+          color: "var(--text-muted)",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ flex: 1, height: 0, borderTop: "1px dashed var(--border-strong)" }} />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            font: "11px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Icon name="pagesetup" size={13} /> Page break
+          {canEdit && hover && (
+            <button
+              title="Remove page break"
+              aria-label="Remove page break"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 16,
+                height: 16,
+                marginLeft: 2,
+                border: "none",
+                background: "transparent",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </span>
+        <span style={{ flex: 1, height: 0, borderTop: "1px dashed var(--border-strong)" }} />
+      </div>
+    );
+  }
+
+  if (!canEdit) return null;
+
+  // Net-zero layout: a thin hover target tucked into the inter-row gap.
+  return (
     <div
-      ref={gridRef}
-      className={rowClass}
-      style={{ position: "relative", display: "grid", gridTemplateColumns: tracks.join(" "), marginTop: 2 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      style={{ position: "relative", height: 8, margin: "-5px 0 -3px", zIndex: 4 }}
     >
-      {controls}
-      {items}
+      {hover && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
+          }}
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            height: 18,
+            padding: "0 9px",
+            borderRadius: "var(--radius-full)",
+            border: "1px solid var(--border-strong)",
+            background: "var(--surface-raised)",
+            color: "var(--text-muted)",
+            font: "500 10.5px/1 var(--font-sans)",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            boxShadow: "var(--shadow-popover)",
+          }}
+        >
+          <Icon name="plusSm" size={11} /> Insert page break
+        </button>
+      )}
     </div>
   );
 }

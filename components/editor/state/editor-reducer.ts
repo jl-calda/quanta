@@ -53,7 +53,7 @@ import {
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { colToLetter } from "@/lib/calc";
-import { findRegion, readingOrderIds } from "@/lib/worksheet/flatten";
+import { findRegion, readingOrderIds, visibleReadingOrderIds } from "@/lib/worksheet/flatten";
 import { buildChartFromRange, type CellRect } from "@/lib/worksheet/chart-from-range";
 
 export type CalcMode = "auto" | "manual";
@@ -222,6 +222,8 @@ export type EditorAction =
   | { type: "TOGGLE_SELECT"; id: string }
   | { type: "SELECT_TO"; id: string }
   | { type: "SELECT_ALL" }
+  | { type: "SELECT_STEP"; dir: "next" | "prev"; extend?: boolean }
+  | { type: "SELECT_EDGE"; edge: "first" | "last"; extend?: boolean }
   | { type: "BEGIN_EDIT"; id: string }
   | { type: "END_EDIT" }
   | { type: "EDIT_SOURCE"; id: string; source: string }
@@ -291,6 +293,7 @@ export type EditorAction =
   | { type: "INDENT_SELECTED"; delta: 1 | -1 }
   | { type: "SET_COLUMNS"; rowId: string; columns: 1 | 2 | 3 }
   | { type: "SET_SPLIT"; rowId: string; split: number[] }
+  | { type: "TOGGLE_ROW_BREAK"; rowId: string }
   | { type: "TOGGLE_SPAN"; id: string }
   | { type: "TOGGLE_AREA"; id: string }
   | { type: "SET_RESULTS"; sheet: SheetResult }
@@ -383,6 +386,34 @@ function clampSplit(split: number[]): number[] {
 /** The selection patch for a single primary id (or a cleared selection). */
 function selectOne(id: string | null): Pick<EditorState, "selectedId" | "selectedIds"> {
   return { selectedId: id, selectedIds: id ? [id] : [] };
+}
+
+/**
+ * Resolve a keyboard-navigation move (arrow / Home / End) to a new selection.
+ * `order` is the VISIBLE reading order and `target` the destination index within
+ * it. Without `extend` it single-selects the target; with `extend` it keeps the
+ * far end of the current contiguous selection as a stable anchor and selects the
+ * inclusive reading-order range, so Shift+Arrow / Shift+Home·End both grow and
+ * shrink the selection the way a list/spreadsheet does. Always leaves edit mode.
+ */
+function navSelect(
+  state: EditorState,
+  order: string[],
+  target: number,
+  extend: boolean,
+): EditorState {
+  const id = order[target];
+  if (!extend) {
+    return { ...state, selectedId: id, selectedIds: [id], editingId: null };
+  }
+  const cur = state.selectedId ? order.indexOf(state.selectedId) : -1;
+  const sel = state.selectedIds.map((s) => order.indexOf(s)).filter((i) => i >= 0);
+  // Anchor = the end of the current contiguous selection opposite the primary;
+  // with no usable primary the new id anchors a fresh single selection.
+  const anchor =
+    cur < 0 ? target : cur === Math.max(...sel) ? Math.min(...sel) : Math.max(...sel);
+  const [lo, hi] = anchor <= target ? [anchor, target] : [target, anchor];
+  return { ...state, selectedId: id, selectedIds: order.slice(lo, hi + 1), editingId: null };
 }
 
 /**
@@ -569,6 +600,27 @@ export function editorReducer(
         selectedIds: order,
         editingId: null,
       };
+    }
+    case "SELECT_STEP": {
+      // Move the primary one step in visible reading order (skipping the hidden
+      // children of a collapsed area). With no/lost primary, enter the list from
+      // the matching end. Indices clamp at the ends (no wrap).
+      const order = visibleReadingOrderIds(state.content);
+      if (order.length === 0) return state;
+      const cur = state.selectedId ? order.indexOf(state.selectedId) : -1;
+      const target =
+        cur < 0
+          ? action.dir === "next" ? 0 : order.length - 1
+          : action.dir === "next"
+            ? Math.min(cur + 1, order.length - 1)
+            : Math.max(cur - 1, 0);
+      return navSelect(state, order, target, action.extend ?? false);
+    }
+    case "SELECT_EDGE": {
+      const order = visibleReadingOrderIds(state.content);
+      if (order.length === 0) return state;
+      const target = action.edge === "first" ? 0 : order.length - 1;
+      return navSelect(state, order, target, action.extend ?? false);
     }
     case "BEGIN_EDIT":
       // Editing is inherently single-target — collapse any multi-selection.
@@ -1260,6 +1312,19 @@ export function editorReducer(
       const content = mutate(state.content, (next) => {
         const row = next.rows.find((r) => r.id === action.rowId)!;
         row.split = clampSplit(action.split);
+      });
+      return touched(state, content);
+    }
+    case "TOGGLE_ROW_BREAK": {
+      // A hard page break falls *before* a row. The first row can't carry one
+      // (nothing precedes page 1), so toggling it there is a no-op. Clearing
+      // deletes the flag to keep the JSONB free of `false`.
+      const idx = state.content.rows.findIndex((r) => r.id === action.rowId);
+      if (idx <= 0) return state;
+      const content = mutate(state.content, (next) => {
+        const row = next.rows[idx];
+        if (row.breakBefore) delete row.breakBefore;
+        else row.breakBefore = true;
       });
       return touched(state, content);
     }

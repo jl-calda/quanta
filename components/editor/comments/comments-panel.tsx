@@ -5,8 +5,9 @@ import { Badge, IconButton } from "@/components/ds";
 import { relativeTime } from "@/components/dashboard/format";
 import { findRegion } from "@/lib/worksheet/flatten";
 import type { WorksheetContent } from "@/lib/worksheet/content";
-import { SHEET_ANCHOR, type CommentItem } from "@/lib/worksheet/comments";
+import { commentsForRegion, SHEET_ANCHOR, type CommentItem } from "@/lib/worksheet/comments";
 import { useEditor } from "../state/editor-provider";
+import { scrollToRegion } from "../scroll-to-region";
 import { Icon } from "../icons";
 import { useComments } from "./comments-provider";
 
@@ -18,24 +19,45 @@ import { useComments } from "./comments-provider";
  */
 export function CommentsPanel() {
   const { state, dispatch } = useEditor();
-  const { comments, openCount, canComment, submitting, error, add, toggleResolved } = useComments();
+  const { comments, openCount, canComment, submitting, error, focusedRegionId, setFocusedRegion, add, toggleResolved } =
+    useComments();
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
   const anchorId = state.selectedId;
   const anchorName = anchorLabel(state.content, anchorId);
 
+  // The thread shown: scoped to one region (set by clicking its canvas marker) or
+  // the whole worksheet. `comments` is already oldest-first; the filter preserves it.
+  const visible = focusedRegionId ? commentsForRegion(comments, focusedRegionId) : comments;
+
+  // Clear the region scope whenever the drawer closes (it unmounts), so reopening it
+  // from the app bar shows the full thread rather than a stale region scope.
+  useEffect(() => () => setFocusedRegion(null), [setFocusedRegion]);
+
   // Keep the newest comment in view as the thread grows.
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [comments.length]);
+  }, [visible.length]);
 
   const submit = async () => {
     const body = draft.trim();
     if (!body) return;
     await add(body, anchorId);
     setDraft("");
+  };
+
+  // Jump from a comment to its region: select it, scope the drawer to it, scroll it
+  // into view. Sheet-level notes (no region anchor) just clear the scope.
+  const jumpToRegion = (regionId: string) => {
+    if (regionId === SHEET_ANCHOR) {
+      setFocusedRegion(null);
+      return;
+    }
+    dispatch({ type: "SELECT", id: regionId });
+    setFocusedRegion(regionId);
+    scrollToRegion(regionId);
   };
 
   return (
@@ -59,24 +81,41 @@ export function CommentsPanel() {
         </IconButton>
       </header>
 
-      <div ref={listRef} className="scroll-y" style={{ flex: 1, minHeight: 0, padding: comments.length ? "8px 0" : 0 }}>
-        {comments.length === 0 ? (
+      {focusedRegionId && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderBottom: "1px solid var(--border-hairline)", background: "var(--accent-tint)", font: "11.5px/1.3 var(--font-sans)", color: "var(--text-primary)" }}>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            Showing comments on <span style={{ fontWeight: 600 }}>{anchorLabel(state.content, focusedRegionId)}</span>
+          </span>
+          <button
+            onClick={() => setFocusedRegion(null)}
+            style={{ marginLeft: "auto", flex: "0 0 auto", border: "none", background: "none", padding: 0, color: "var(--accent)", font: "600 11.5px/1 var(--font-sans)", cursor: "pointer" }}
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
+      <div ref={listRef} className="scroll-y" style={{ flex: 1, minHeight: 0, padding: visible.length ? "8px 0" : 0 }}>
+        {visible.length === 0 ? (
           <div style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
             <span style={{ display: "inline-flex", color: "var(--text-muted)" }}>
               <Icon name="comment" size={22} />
             </span>
             <span style={{ font: "12.5px/1.5 var(--font-sans)", color: "var(--text-muted)" }}>
-              No comments yet. {canComment ? "Start the conversation below." : "You'll see new comments here."}
+              {focusedRegionId
+                ? "No comments on this region yet."
+                : `No comments yet. ${canComment ? "Start the conversation below." : "You'll see new comments here."}`}
             </span>
           </div>
         ) : (
-          comments.map((c) => (
+          visible.map((c) => (
             <CommentRow
               key={c.id}
               comment={c}
               anchor={anchorLabel(state.content, c.regionId)}
               canResolve={canComment}
               onToggleResolved={() => toggleResolved(c.id, !c.resolved)}
+              onJump={() => jumpToRegion(c.regionId)}
             />
           ))
         )}
@@ -154,11 +193,14 @@ function CommentRow({
   anchor,
   canResolve,
   onToggleResolved,
+  onJump,
 }: {
   comment: CommentItem;
   anchor: string;
   canResolve: boolean;
   onToggleResolved: () => void;
+  /** Select + scroll to the comment's region (no-op label for sheet-level notes). */
+  onJump: () => void;
 }) {
   return (
     <div
@@ -199,7 +241,15 @@ function CommentRow({
         </div>
         <div style={{ marginTop: 5, display: "flex", alignItems: "center", gap: 10 }}>
           {anchor !== "the worksheet" && (
-            <span style={{ font: "11px/1 var(--font-mono)", color: "var(--text-muted)" }}>{anchor}</span>
+            <button
+              onClick={onJump}
+              title={`Go to ${anchor}`}
+              style={{ border: "none", background: "none", padding: 0, font: "11px/1 var(--font-mono)", color: "var(--text-muted)", cursor: "pointer" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+            >
+              {anchor}
+            </button>
           )}
           {canResolve && !comment.pending && (
             <button

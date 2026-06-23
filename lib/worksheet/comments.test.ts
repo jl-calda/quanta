@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  commentsForRegion,
   openCommentCount,
+  openCountByRegion,
   reidComment,
   sortCommentsAsc,
   upsertComment,
@@ -30,6 +32,51 @@ describe("openCommentCount", () => {
     ];
     expect(openCommentCount(items)).toBe(2);
     expect(openCommentCount([])).toBe(0);
+  });
+});
+
+describe("openCountByRegion", () => {
+  it("counts only open comments, grouped by region", () => {
+    const counts = openCountByRegion([
+      comment({ id: "a", regionId: "r1" }),
+      comment({ id: "b", regionId: "r1" }),
+      comment({ id: "c", regionId: "r2" }),
+    ]);
+    expect(counts.get("r1")).toBe(2);
+    expect(counts.get("r2")).toBe(1);
+  });
+
+  it("excludes resolved comments (omits a region with none open)", () => {
+    const counts = openCountByRegion([
+      comment({ id: "a", regionId: "r1", resolved: true }),
+      comment({ id: "b", regionId: "r1" }),
+      comment({ id: "c", regionId: "r2", resolved: true }),
+    ]);
+    expect(counts.get("r1")).toBe(1); // one resolved, one open
+    expect(counts.has("r2")).toBe(false); // all resolved → no key
+  });
+
+  it("counts optimistic pending rows like the app-bar badge", () => {
+    const counts = openCountByRegion([
+      comment({ id: "temp", regionId: "r1", pending: true }),
+    ]);
+    expect(counts.get("r1")).toBe(1);
+  });
+
+  it("returns an empty map for no comments", () => {
+    expect(openCountByRegion([]).size).toBe(0);
+  });
+});
+
+describe("commentsForRegion", () => {
+  it("returns the thread for one region, preserving order, and empty for none", () => {
+    const items = [
+      comment({ id: "a", regionId: "r1" }),
+      comment({ id: "b", regionId: "r2" }),
+      comment({ id: "c", regionId: "r1", resolved: true }),
+    ];
+    expect(commentsForRegion(items, "r1").map((c) => c.id)).toEqual(["a", "c"]);
+    expect(commentsForRegion(items, "missing")).toEqual([]);
   });
 });
 
