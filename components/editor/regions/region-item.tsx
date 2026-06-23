@@ -36,6 +36,22 @@ export function RegionItem({ region }: { region: Region }) {
   const isError = result?.status === "error";
 
   const [dropPos, setDropPos] = useState<null | "before" | "after">(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Roving-tabindex focus: keep DOM focus on the lone primary selection (and not
+  // while editing — the field owns focus then) so arrow-key navigation and the
+  // design-system focus ring follow the selection. Guarded to the canvas so it
+  // never steals focus from the inspector, a dialog, the outline search, or a math
+  // field. `el.focus()`'s default block:nearest scroll is a no-op when already
+  // visible (mouse selects) and brings an off-screen keyboard target into view.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || !isPrimary || editing || multiActive) return;
+    const active = document.activeElement;
+    const inCanvas =
+      !active || active === document.body || (active instanceof HTMLElement && !!active.closest(".region"));
+    if (inCanvas && active !== el) el.focus();
+  }, [isPrimary, editing, multiActive]);
 
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -71,8 +87,13 @@ export function RegionItem({ region }: { region: Region }) {
 
   return (
     <div
+      ref={wrapRef}
       id={regionDomId(region.id)}
       className={className}
+      // Roving tabindex: only the primary selection is in the Tab order; the rest
+      // stay click/script focusable (-1) so arrow nav and the focus ring work.
+      tabIndex={isPrimary ? 0 : -1}
+      aria-selected={inSelection}
       onClick={onClick}
       onDragOver={onDragOver}
       onDragLeave={() => setDropPos(null)}

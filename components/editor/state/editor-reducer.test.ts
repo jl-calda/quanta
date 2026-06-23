@@ -1103,3 +1103,84 @@ describe("area region", () => {
     expect(parseContent(parsed)).toEqual(parsed);
   });
 });
+
+describe("SELECT_STEP / SELECT_EDGE — keyboard navigation", () => {
+  it("steps the primary forward and backward in reading order", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "next" });
+    expect(s.selectedId).toBe("B");
+    expect(s.selectedIds).toEqual(["B"]);
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "prev" });
+    expect(s.selectedId).toBe("A");
+  });
+
+  it("clamps at the ends (no wrap)", () => {
+    const top = editorReducer(
+      editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" }),
+      { type: "SELECT_STEP", dir: "prev" },
+    );
+    expect(top.selectedId).toBe("A");
+    const bottom = editorReducer(
+      editorReducer(freshState(listDoc()), { type: "SELECT", id: "C" }),
+      { type: "SELECT_STEP", dir: "next" },
+    );
+    expect(bottom.selectedId).toBe("C");
+  });
+
+  it("enters the list from the matching end when nothing is selected", () => {
+    expect(editorReducer(freshState(listDoc()), { type: "SELECT_STEP", dir: "next" }).selectedId).toBe("A");
+    expect(editorReducer(freshState(listDoc()), { type: "SELECT_STEP", dir: "prev" }).selectedId).toBe("C");
+  });
+
+  it("SELECT_EDGE jumps to first / last", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "B" });
+    s = editorReducer(s, { type: "SELECT_EDGE", edge: "last" });
+    expect(s.selectedId).toBe("C");
+    s = editorReducer(s, { type: "SELECT_EDGE", edge: "first" });
+    expect(s.selectedId).toBe("A");
+  });
+
+  it("extend grows then shrinks a contiguous range from a stable anchor", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "SELECT", id: "A" });
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "next", extend: true });
+    expect(s.selectedIds).toEqual(["A", "B"]);
+    expect(s.selectedId).toBe("B");
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "next", extend: true });
+    expect(s.selectedIds).toEqual(["A", "B", "C"]);
+    // Shrink back toward the anchor (A).
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "prev", extend: true });
+    expect(s.selectedIds).toEqual(["A", "B"]);
+    expect(s.selectedId).toBe("B");
+  });
+
+  it("skips a collapsed area's hidden children", () => {
+    const collapsed = editorReducer(freshState(areaDoc), { type: "TOGGLE_AREA", id: "AR" });
+    const s = editorReducer(
+      editorReducer(collapsed, { type: "SELECT", id: "AR" }),
+      { type: "SELECT_STEP", dir: "next" },
+    );
+    expect(s.selectedId).toBe("Y"); // X (inside AR) is skipped
+  });
+
+  it("falls to a visible end when the primary lives in a now-collapsed area", () => {
+    let s = editorReducer(freshState(areaDoc), { type: "SELECT", id: "X" });
+    s = editorReducer(s, { type: "TOGGLE_AREA", id: "AR" }); // X no longer visible
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "next" });
+    expect(s.selectedId).toBe("AR");
+  });
+
+  it("is a no-op on an empty document", () => {
+    const base = freshState();
+    expect(editorReducer(base, { type: "SELECT_STEP", dir: "next" })).toBe(base);
+    expect(editorReducer(base, { type: "SELECT_EDGE", edge: "last" })).toBe(base);
+  });
+
+  it("leaves edit mode and never touches content (not an undoable edit)", () => {
+    let s = editorReducer(freshState(listDoc()), { type: "BEGIN_EDIT", id: "A" });
+    const before = s.content;
+    s = editorReducer(s, { type: "SELECT_STEP", dir: "next" });
+    expect(s.editingId).toBeNull();
+    expect(s.content).toBe(before); // content reference unchanged → history-neutral
+    expect(s.saveState).toBe("saved");
+  });
+});
