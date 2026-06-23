@@ -1,10 +1,44 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Select } from "@/components/ds";
 import { readingOrderIds } from "@/lib/worksheet/flatten";
 import { useEditor } from "./state/editor-provider";
 import type { UnitsSystem } from "./state/editor-reducer";
 import { Icon } from "./icons";
+
+/**
+ * Live page indicator from the rendered page-break separators (PageFrame). The
+ * page box resizes whenever the page count changes, so a ResizeObserver on it
+ * keeps the total fresh; a passive scroll listener tracks the current page.
+ */
+function usePageIndicator(): { current: number; total: number } {
+  const [state, setState] = useState({ current: 1, total: 1 });
+  useEffect(() => {
+    const field = document.querySelector<HTMLElement>(".ed-field");
+    const page = field?.querySelector<HTMLElement>(".ed-page");
+    if (!field || !page) return;
+    const recompute = () => {
+      const breaks = Array.from(page.querySelectorAll<HTMLElement>(".ed-page-break"));
+      const top = field.getBoundingClientRect().top + 80;
+      let current = 1;
+      for (const b of breaks) {
+        if (b.getBoundingClientRect().top < top) current += 1;
+        else break;
+      }
+      setState({ current, total: breaks.length + 1 });
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(page);
+    field.addEventListener("scroll", recompute, { passive: true });
+    return () => {
+      ro.disconnect();
+      field.removeEventListener("scroll", recompute);
+    };
+  }, []);
+  return state;
+}
 
 /**
  * Status bar (28px): calc status + region/error counts · page indicator ·
@@ -15,6 +49,7 @@ import { Icon } from "./icons";
 export function StatusBar() {
   const { state, dispatch } = useEditor();
   const regionCount = readingOrderIds(state.content).length;
+  const { current: currentPage, total: totalPages } = usePageIndicator();
   const dot = state.calcStatus === "error" ? "var(--status-error)" : state.calcStatus === "stale" ? "var(--status-warning)" : "var(--status-pass)";
   const statusLabel = state.calcStatus === "error" ? "Errors" : state.calcStatus === "stale" ? "Stale" : "All current";
 
@@ -40,7 +75,7 @@ export function StatusBar() {
         {regionCount} {regionCount === 1 ? "region" : "regions"} · {state.errorCount} {state.errorCount === 1 ? "error" : "errors"}
       </span>
       <span style={{ flex: 1, display: "flex", justifyContent: "center", gap: 16 }}>
-        <span>Page 1</span>
+        <span>Page {Math.min(currentPage, totalPages)} of {totalPages}</span>
       </span>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         <span>Units</span>

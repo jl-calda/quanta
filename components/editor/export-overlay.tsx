@@ -5,11 +5,16 @@ import { createPortal } from "react-dom";
 import { Button, IconButton, Switch } from "@/components/ds";
 import {
   DEFAULT_EXPORT_OPTIONS,
-  MARGIN_PX,
-  pageBox,
   type ExportFormat,
   type ExportOptions,
 } from "@/lib/export/options";
+import {
+  bandToString,
+  exportSizeLabel,
+  isLossyExportSize,
+  pageSettingsToExportOptions,
+  resolveExportPreviewGeometry,
+} from "@/lib/page/geometry";
 import { ExportDocument } from "@/lib/export/document";
 import { paginateBlocks } from "@/lib/worksheet/paginate";
 import { exportWorksheet } from "@/server/actions/export";
@@ -28,6 +33,15 @@ const DownloadI = (s?: number) => svg(<><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><p
 const PrintI = (s?: number) => svg(<><path d="M6 9V4h12v5" /><rect x="4" y="9" width="16" height="7" rx="1" /><path d="M7 16h10v4H7z" /></>, s);
 const PlusI = (s?: number) => svg(<path d="M10 6v8M6 10h8" />, s);
 const MinusI = (s?: number) => svg(<path d="M6 10h8" />, s);
+
+/** Human labels for the page-setup sizes (drives the lossy "exporting as …" note). */
+const PAGE_SIZE_LABEL: Record<string, string> = {
+  a4: "A4",
+  letter: "Letter",
+  legal: "Legal",
+  a3: "A3",
+  tabloid: "Tabloid",
+};
 
 const FORMATS: { id: ExportFormat; label: string; sub: string; icon: (s?: number) => React.ReactNode }[] = [
   { id: "pdf", label: "PDF", sub: "Portable document", icon: (s) => svg(<><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M9.5 13.5h1a1 1 0 0 1 0 2h-1zM9.5 13.5v4" /></>, s) },
@@ -104,12 +118,10 @@ const exInput: React.CSSProperties = {
  * the on-screen pages match the exported PDF for normal content.
  * ------------------------------------------------------------------ */
 function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: React.ReactNode; zoom: number }) {
-  const dims = pageBox(options.size, options.orientation);
-  const pad = MARGIN_PX[options.margin];
-  const HEADER_H = 34;
-  const FOOTER_H = 30;
-  const contentH = dims.h - HEADER_H - FOOTER_H - pad.y * 2;
-  const contentW = dims.w - pad.x * 2;
+  // Page geometry from the single shared module, so the export preview and the
+  // on-screen worksheet page render identically.
+  const { dims, pad, headerH: HEADER_H, footerH: FOOTER_H, contentH, contentW } =
+    resolveExportPreviewGeometry(options.size, options.orientation, options.margin);
 
   const measureRef = useRef<HTMLDivElement>(null);
   // The y-offset (within the flowed body) where each page begins.
@@ -206,11 +218,17 @@ function PreviewPages({ options, body, zoom }: { options: ExportOptions; body: R
  * Overlay
  * ------------------------------------------------------------------ */
 export function ExportOverlay({ canExport, worksheetTitle }: { canExport: boolean; worksheetTitle: string }) {
-  const { state, dispatch, worksheetId } = useEditor();
+  const { state, dispatch, worksheetId, pageSettings } = useEditor();
   const open = state.ui.exportOpen;
 
   const [zoom, setZoom] = useState(0.62);
-  const [o, setO] = useState<ExportOptions>({ ...DEFAULT_EXPORT_OPTIONS, header: "", footer: worksheetTitle });
+  // Seed the page options from page-setup so the export defaults to the same page
+  // the editor shows (overridable below). Lazy initializer — seeds once on mount.
+  const [o, setO] = useState<ExportOptions>(() => ({
+    ...DEFAULT_EXPORT_OPTIONS,
+    ...pageSettingsToExportOptions(pageSettings),
+    footer: bandToString(pageSettings.footer) || worksheetTitle,
+  }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof ExportOptions>(k: K, v: ExportOptions[K]) => setO((s) => ({ ...s, [k]: v }));
@@ -327,6 +345,11 @@ export function ExportOverlay({ canExport, worksheetTitle }: { canExport: boolea
               </div>
 
               <Eyebrow>Page</Eyebrow>
+              {isLossyExportSize(pageSettings.size) && (
+                <div style={{ font: "11px/1.4 var(--font-sans)", color: "var(--text-muted)", margin: "-2px 0 12px", padding: "8px 10px", borderRadius: "var(--radius-sm)", background: "var(--surface-hover)", border: "1px solid var(--border-hairline)" }}>
+                  Page setup is {PAGE_SIZE_LABEL[pageSettings.size]} — exporting as {exportSizeLabel(pageSettings.size)}. Full {PAGE_SIZE_LABEL[pageSettings.size]} export is coming soon.
+                </div>
+              )}
               <Field label="Page size"><Seg options={[{ value: "A4", label: "A4" }, { value: "Letter", label: "Letter" }]} value={o.size} set={(v) => set("size", v)} /></Field>
               <Field label="Orientation"><Seg options={[{ value: "portrait", label: "Portrait" }, { value: "landscape", label: "Landscape" }]} value={o.orientation} set={(v) => set("orientation", v)} /></Field>
               <Field label="Margins"><Seg options={[{ value: "narrow", label: "Narrow" }, { value: "normal", label: "Normal" }, { value: "wide", label: "Wide" }]} value={o.margin} set={(v) => set("margin", v)} /></Field>
