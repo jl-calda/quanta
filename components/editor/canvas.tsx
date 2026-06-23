@@ -1,8 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, ReactNode, RefObject } from "react";
-import type { Region, Row } from "@/lib/worksheet/content";
+import type { Region, Row, WorksheetContent } from "@/lib/worksheet/content";
+import type { HeaderFooterBand, PageSettings } from "@/lib/schema/page";
+import {
+  expandTokens,
+  pageCountForHeight,
+  resolvePageGeometry,
+  type PageGeometry,
+  type TokenCtx,
+} from "@/lib/page/geometry";
 import { useEditor } from "./state/editor-provider";
 import type { EditorAction } from "./state/editor-reducer";
 import { RegionItem } from "./regions/region-item";
@@ -26,10 +34,9 @@ const MIN_COL = 0.14;
  * split ratio, span, indent, delete, and multi-select group ops.
  */
 export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
-  const { state, dispatch, canEdit } = useEditor();
+  const { state, dispatch, canEdit, pageSettings } = useEditor();
   const { content, zoom } = state;
 
-  const virtualize = content.rows.length > VIRTUALIZE_ROWS;
   const liveIds = new Set(state.selectedIds);
   if (state.editingId) liveIds.add(state.editingId);
 
@@ -39,32 +46,211 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
     <div
       className="ed-field scroll-y"
       onClick={() => dispatch({ type: "SELECT", id: null })}
-      style={{ flex: 1, height: "100%", padding: "24px 0 120px" }}
+      style={{ flex: 1, height: "100%", overflowX: "auto", padding: "24px 0 120px" }}
     >
       {multi && <GroupBar count={state.selectedIds.length} dispatch={dispatch} />}
       <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform var(--dur-base) var(--ease-out)" }}>
-        <article className="ed-page">
-          <Band left="Quanta" right={worksheetTitle} />
-          <div className={"ed-page-body q-grid" + (virtualize ? " ed-virtualize" : "")}>
-            <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-              {content.rows.length === 0 ? (
-                <EmptyState canEdit={canEdit} dispatch={dispatch} />
-              ) : (
-                content.rows.map((row) => (
-                  <RowView
-                    key={row.id}
-                    row={row}
-                    canEdit={canEdit}
-                    dispatch={dispatch}
-                    live={rowIsLive(row, liveIds)}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-          <Band left="Quanta" right="Page 1" footer />
-        </article>
+        <PageFrame
+          content={content}
+          pageSettings={pageSettings}
+          worksheetTitle={worksheetTitle}
+          canEdit={canEdit}
+          dispatch={dispatch}
+          liveIds={liveIds}
+        />
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Page frame — a full bounded page (page-setup size/orientation/margins),
+ * forced to whole page-heights so empty space below the last region is on the
+ * page, with on-screen page-break separators for multi-page worksheets. The
+ * geometry is the shared `lib/page/geometry` module, so the on-screen page
+ * tracks the export/print layout. Content flows continuously (regions are
+ * untouched); breaks are drawn as overlays — a region may cross a break line on
+ * screen, exactly as the export preview notes.
+ * ------------------------------------------------------------------ */
+
+function PageFrame({
+  content,
+  pageSettings,
+  worksheetTitle,
+  canEdit,
+  dispatch,
+  liveIds,
+}: {
+  content: WorksheetContent;
+  pageSettings: PageSettings;
+  worksheetTitle: string;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+  liveIds: Set<string>;
+}) {
+  const geom = useMemo(() => resolvePageGeometry(pageSettings), [pageSettings]);
+  const virtualize = content.rows.length > VIRTUALIZE_ROWS;
+
+  // Measure the flowed rows' natural height (layout px — `scrollHeight` is
+  // unaffected by the parent `transform: scale(zoom)`), so page-count math stays
+  // in unscaled px. The min-height that bounds the page lives on a PARENT of
+  // `rowsRef`, so it can't feed back into this measurement.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const [contentH, setContentH] = useState(geom.pageContentH);
+  useLayoutEffect(() => {
+    const el = rowsRef.current;
+    if (!el) return;
+    const update = () => setContentH(el.scrollHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [content, geom.pageContentH]);
+
+  const pageCount = pageCountForHeight(contentH, geom);
+  const bodyAreaH = pageCount * geom.pageContentH;
+
+  // Field tokens; date/time resolved after mount to avoid SSR hydration drift.
+  const [clock, setClock] = useState({ date: "", time: "" });
+  useEffect(() => {
+    const now = new Date();
+    setClock({
+      date: now.toLocaleDateString(),
+      time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    });
+  }, []);
+
+  return (
+    <article className="ed-page" style={{ width: geom.pageW }}>
+      {!pageSettings.differentFirstPage && (
+        <PageBand
+          kind="header"
+          band={pageSettings.header}
+          fallback={{ left: "Quanta", center: "", right: worksheetTitle }}
+          geom={geom}
+          ctx={{ page: 1, pages: pageCount, title: worksheetTitle, ...clock }}
+        />
+      )}
+      <div
+        style={{
+          padding: `${geom.marginTop}px ${geom.marginRight}px ${geom.marginBottom}px ${geom.marginLeft}px`,
+        }}
+      >
+        <div
+          className={"ed-page-body" + (geom.gridShow ? " q-grid" : "") + (virtualize ? " ed-virtualize" : "")}
+          style={{
+            minHeight: bodyAreaH,
+            backgroundSize: geom.gridShow ? `${geom.gridSpacing}px ${geom.gridSpacing}px` : undefined,
+          }}
+        >
+          <div ref={rowsRef} style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+            {content.rows.length === 0 ? (
+              <EmptyState canEdit={canEdit} dispatch={dispatch} />
+            ) : (
+              content.rows.map((row) => (
+                <RowView
+                  key={row.id}
+                  row={row}
+                  canEdit={canEdit}
+                  dispatch={dispatch}
+                  live={rowIsLive(row, liveIds)}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      <PageBand
+        kind="footer"
+        band={pageSettings.footer}
+        fallback={{ left: "Quanta", center: "", right: `Page ${pageCount} of ${pageCount}` }}
+        geom={geom}
+        ctx={{ page: pageCount, pages: pageCount, title: worksheetTitle, ...clock }}
+      />
+      {Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1).map((k) => (
+        <PageBreak
+          key={k}
+          top={geom.headerH + geom.marginTop + k * geom.pageContentH}
+          pageNo={k + 1}
+          pageCount={pageCount}
+          gutter={geom.marginRight}
+        />
+      ))}
+    </article>
+  );
+}
+
+/** A running header/footer band (3 zones), token-expanded; falls back to the
+ *  ledger default (Quanta / title / page) when the page-setup band is empty. */
+function PageBand({
+  kind,
+  band,
+  fallback,
+  geom,
+  ctx,
+}: {
+  kind: "header" | "footer";
+  band: HeaderFooterBand;
+  fallback: HeaderFooterBand;
+  geom: PageGeometry;
+  ctx: TokenCtx;
+}) {
+  const footer = kind === "footer";
+  const isCustom = `${band.left}${band.center}${band.right}`.trim().length > 0;
+  const zones = isCustom ? band : fallback;
+  const zone = (text: string, justify: "flex-start" | "center" | "flex-end") => (
+    <span style={{ flex: 1, minWidth: 0, display: "inline-flex", justifyContent: justify, alignItems: "center", gap: 6 }}>
+      {footer && !isCustom && justify === "flex-start" && <Icon name="dot" size={10} />}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expandTokens(text, ctx)}</span>
+    </span>
+  );
+  return (
+    <div
+      className="ed-page-band"
+      style={{
+        flex: "0 0 auto",
+        height: footer ? geom.footerH : geom.headerH,
+        display: "flex",
+        alignItems: "center",
+        padding: `0 ${geom.marginRight}px 0 ${geom.marginLeft}px`,
+        [footer ? "borderTop" : "borderBottom"]: "1px solid var(--border-hairline)",
+        font: "10.5px/1 var(--font-sans)",
+        letterSpacing: footer ? undefined : "0.06em",
+        textTransform: footer ? undefined : "uppercase",
+        color: "var(--text-muted)",
+      }}
+    >
+      {zone(zones.left, "flex-start")}
+      {zone(zones.center, "center")}
+      {zone(zones.right, "flex-end")}
+    </div>
+  );
+}
+
+/** A full-width on-screen page boundary (dashed rule + page-number chip). Drawn
+ *  over the content (clicks pass through); a region may cross it, as in export. */
+function PageBreak({ top, pageNo, pageCount, gutter }: { top: number; pageNo: number; pageCount: number; gutter: number }) {
+  return (
+    <div
+      aria-hidden
+      className="ed-page-break"
+      style={{ position: "absolute", left: 0, right: 0, top, pointerEvents: "none", zIndex: 2, borderTop: "1px dashed var(--border-strong)" }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          right: Math.max(8, gutter),
+          top: 4,
+          font: "600 10px/1 var(--font-sans)",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--text-muted)",
+          background: "var(--surface-paper)",
+          padding: "1px 5px",
+        }}
+      >
+        Page {pageNo} of {pageCount}
+      </span>
     </div>
   );
 }
@@ -76,29 +262,6 @@ function rowIsLive(row: Row, liveIds: Set<string>): boolean {
   const walk = (regions: Region[]): boolean =>
     regions.some((r) => liveIds.has(r.id) || (r.type === "area" && walk(r.regions)));
   return row.cells.some((cell) => walk(cell.regions));
-}
-
-function Band({ left, right, footer }: { left: string; right: string; footer?: boolean }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "8px 52px",
-        [footer ? "borderTop" : "borderBottom"]: "1px solid var(--border-hairline)",
-        font: "10.5px/1 var(--font-sans)",
-        letterSpacing: footer ? undefined : "0.06em",
-        textTransform: footer ? undefined : "uppercase",
-        color: "var(--text-muted)",
-      }}
-    >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        {footer && <Icon name="dot" size={10} />} {left}
-      </span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 400 }}>{right}</span>
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------ *

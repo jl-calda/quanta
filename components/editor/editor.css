@@ -34,16 +34,29 @@
 .ed-field {
   background: var(--canvas-field);
 }
+/* The page box. Width follows the page-setup size/orientation (set inline from
+   the shared geometry); a flex column stacks the running header band, the margin
+   frame, and the footer band so the sheet is a full bounded page. */
 .ed-page {
-  width: 816px;
   margin: 0 auto;
   background: var(--surface-paper);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-sm);
-}
-.ed-page-body {
-  padding: 26px 52px 40px;
   position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* Content area inside the margins; min-height is forced to whole pages inline so
+   empty space below the last region is part of the page. */
+.ed-page-body {
+  position: relative;
+}
+/* Running header/footer bands + multi-page break separators. */
+.ed-page-band {
+  user-select: none;
+}
+.ed-page-break {
+  user-select: none;
 }
 
 /* ---- region chrome ---- */
