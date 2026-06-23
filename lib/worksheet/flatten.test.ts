@@ -8,6 +8,7 @@ import {
   flattenToRegionInputs,
   mapResults,
   readingOrderIds,
+  visibleReadingOrderIds,
 } from "./flatten";
 
 /** A doc: a single-col row, then a 2-col row, then an area with a child math. */
@@ -129,6 +130,80 @@ describe("flattenToRegionInputs — controls", () => {
 describe("readingOrderIds", () => {
   it("includes every region (math, text, area, area children) in order", () => {
     expect(readingOrderIds(doc)).toEqual(["A", "B", "N", "AREA", "C"]);
+  });
+});
+
+describe("visibleReadingOrderIds", () => {
+  it("matches readingOrderIds when no area is collapsed", () => {
+    expect(visibleReadingOrderIds(doc)).toEqual(readingOrderIds(doc));
+  });
+
+  it("excludes a collapsed area's children but keeps the area itself", () => {
+    const collapsed: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "AREA",
+                  type: "area",
+                  indent: 0,
+                  title: "Inputs",
+                  collapsed: true,
+                  regions: [{ id: "C", type: "math", indent: 1, source: "c := 1" }],
+                },
+                { id: "D", type: "math", indent: 0, source: "d := 2" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    // "C" (the area child) drops out; "AREA" stays navigable.
+    expect(visibleReadingOrderIds(collapsed)).toEqual(["AREA", "D"]);
+    // readingOrderIds is unchanged — it still sees the hidden child.
+    expect(readingOrderIds(collapsed)).toEqual(["AREA", "C", "D"]);
+  });
+
+  it("hides all descendants when an outer nested area is collapsed", () => {
+    const nested: WorksheetContent = {
+      version: 1,
+      rows: [
+        {
+          id: "r1",
+          columns: 1,
+          cells: [
+            {
+              regions: [
+                {
+                  id: "OUTER",
+                  type: "area",
+                  indent: 0,
+                  title: "Outer",
+                  collapsed: true,
+                  regions: [
+                    {
+                      id: "INNER",
+                      type: "area",
+                      indent: 0,
+                      title: "Inner",
+                      collapsed: false,
+                      regions: [{ id: "X", type: "math", indent: 0, source: "x := 1" }],
+                    },
+                  ],
+                },
+                { id: "Y", type: "math", indent: 0, source: "y := 2" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(visibleReadingOrderIds(nested)).toEqual(["OUTER", "Y"]);
   });
 });
 

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useEditor } from "./state/editor-provider";
 import { selectedRegionsInReadingOrder } from "./state/editor-reducer";
+import { findRegion } from "@/lib/worksheet/flatten";
 import { parseRegions, serializeRegions } from "@/lib/worksheet/clipboard";
 
 /**
@@ -77,6 +78,44 @@ export function EditorKeyboard() {
       if (key === "/") {
         e.preventDefault();
         dispatch({ type: "OPEN_DIALOG", dialog: { kind: "shortcuts" } });
+        return;
+      }
+
+      // ---- Undo / redo. Canvas-only (we already returned for fields) so a math /
+      // text field keeps its own native character-level undo while editing; the
+      // document-structure undo applies when not editing a region. ----
+      if (canEdit && mod && lower === "z" && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: "UNDO" });
+        return;
+      }
+      if (canEdit && ((mod && e.shiftKey && lower === "z") || (mod && lower === "y"))) {
+        e.preventDefault();
+        dispatch({ type: "REDO" });
+        return;
+      }
+
+      // ---- Region navigation — reading order, reaching every visible region. Arrow
+      // up/down step the primary; Home/End jump to first/last; Shift extends the
+      // range. Enter opens the inline-editable types; everything else configures via
+      // the inspector on selection. (We're past the field guard, so these never fight
+      // a field's own arrows.) ----
+      if (key === "ArrowDown" || key === "ArrowUp") {
+        e.preventDefault();
+        dispatch({ type: "SELECT_STEP", dir: key === "ArrowDown" ? "next" : "prev", extend: e.shiftKey });
+        return;
+      }
+      if (key === "Home" || key === "End") {
+        e.preventDefault();
+        dispatch({ type: "SELECT_EDGE", edge: key === "Home" ? "first" : "last", extend: e.shiftKey });
+        return;
+      }
+      if (key === "Enter" && canEdit && state.selectedId) {
+        const region = findRegion(state.content, state.selectedId);
+        if (region && (region.type === "math" || region.type === "text")) {
+          e.preventDefault();
+          dispatch({ type: "BEGIN_EDIT", id: state.selectedId });
+        }
         return;
       }
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, ReactNode, RefObject } from "react";
 import type { Region, Row, WorksheetContent } from "@/lib/worksheet/content";
 import type { HeaderFooterBand, PageSettings } from "@/lib/schema/page";
+import { paginateBlocks, type PageBlock } from "@/lib/worksheet/paginate";
 import {
   expandTokens,
-  pageCountForHeight,
   resolvePageGeometry,
   type PageGeometry,
   type TokenCtx,
@@ -24,6 +24,8 @@ const VIRTUALIZE_ROWS = 60;
 const GUTTER = 16;
 /** Smallest column fraction the split drag will produce (mirrors the reducer). */
 const MIN_COL = 0.14;
+/** Vertical spacing between top-level rows (folded into the page-flow height). */
+const ROW_GAP = 2;
 
 /**
  * Canvas — the worksheet field. A grey scroll field holds the white page (dot-
@@ -46,7 +48,7 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
     <div
       className="ed-field scroll-y"
       onClick={() => dispatch({ type: "SELECT", id: null })}
-      style={{ flex: 1, height: "100%", overflowX: "auto", padding: "24px 0 120px" }}
+      style={{ flex: 1, height: "100%", overflowX: "auto", padding: "24px 0 48px" }}
     >
       {multi && <GroupBar count={state.selectedIds.length} dispatch={dispatch} />}
       <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center", transition: "transform var(--dur-base) var(--ease-out)" }}>
@@ -64,13 +66,14 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
 }
 
 /* ------------------------------------------------------------------ *
- * Page frame — a full bounded page (page-setup size/orientation/margins),
- * forced to whole page-heights so empty space below the last region is on the
- * page, with on-screen page-break separators for multi-page worksheets. The
- * geometry is the shared `lib/page/geometry` module, so the on-screen page
- * tracks the export/print layout. Content flows continuously (regions are
- * untouched); breaks are drawn as overlays — a region may cross a break line on
- * screen, exactly as the export preview notes.
+ * Page frame — a full bounded page (page-setup size/orientation/margins). Pages
+ * are bounded to whole page-heights so empty space below the last region is on
+ * the page. Pagination reuses the SAME pure block paginator as the export
+ * preview (`paginateBlocks`), so the on-screen pages break between the same rows
+ * as the PDF: a region is never split, and a row's hard `breakBefore` forces a
+ * new page. Each new page is reached by a flow spacer that fills the rest of the
+ * previous page, so a break line never crosses a region. Regions themselves are
+ * untouched.
  * ------------------------------------------------------------------ */
 
 function PageFrame({
@@ -91,24 +94,44 @@ function PageFrame({
   const geom = useMemo(() => resolvePageGeometry(pageSettings), [pageSettings]);
   const virtualize = content.rows.length > VIRTUALIZE_ROWS;
 
-  // Measure the flowed rows' natural height (layout px — `scrollHeight` is
-  // unaffected by the parent `transform: scale(zoom)`), so page-count math stays
-  // in unscaled px. The min-height that bounds the page lives on a PARENT of
-  // `rowsRef`, so it can't feed back into this measurement.
+  // Measure each top-level row's natural height (layout px — `offsetHeight` is
+  // unaffected by the parent `transform: scale(zoom)`). The page-filling spacers
+  // are siblings of the measured blocks, so they never feed back into a block's
+  // own height — no measurement loop.
   const rowsRef = useRef<HTMLDivElement>(null);
-  const [contentH, setContentH] = useState(geom.pageContentH);
+  const [blockHeights, setBlockHeights] = useState<number[]>([]);
   useLayoutEffect(() => {
     const el = rowsRef.current;
     if (!el) return;
-    const update = () => setContentH(el.scrollHeight);
-    update();
-    const ro = new ResizeObserver(update);
+    const measure = () => {
+      const blocks = Array.from(el.querySelectorAll<HTMLElement>(":scope > [data-block]"));
+      setBlockHeights(blocks.map((b) => b.offsetHeight + ROW_GAP));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [content, geom.pageContentH]);
 
-  const pageCount = pageCountForHeight(contentH, geom);
-  const bodyAreaH = pageCount * geom.pageContentH;
+  // Block pagination — identical decision to the export preview.
+  const blocks: PageBlock[] = content.rows.map((row, i) => ({
+    height: blockHeights[i] ?? 0,
+    breakBefore: row.breakBefore,
+  }));
+  const { pageOfBlock, pageCount } = paginateBlocks(blocks, geom.pageContentH);
+
+  // Height used on each page → the spacer that fills the rest of the previous
+  // page before the row that starts the next one, so each page is full height.
+  const pageUsed = new Array<number>(pageCount).fill(0);
+  blocks.forEach((b, i) => {
+    pageUsed[pageOfBlock[i]] += b.height;
+  });
+  const spacerBefore = (i: number): number => {
+    if (i === 0) return 0;
+    const page = pageOfBlock[i];
+    if (page === pageOfBlock[i - 1]) return 0;
+    return Math.max(0, geom.pageContentH - pageUsed[page - 1]);
+  };
 
   // Field tokens; date/time resolved after mount to avoid SSR hydration drift.
   const [clock, setClock] = useState({ date: "", time: "" });
@@ -139,25 +162,43 @@ function PageFrame({
         <div
           className={"ed-page-body" + (geom.gridShow ? " q-grid" : "") + (virtualize ? " ed-virtualize" : "")}
           style={{
-            minHeight: bodyAreaH,
+            position: "relative",
+            minHeight: pageCount * geom.pageContentH,
             backgroundSize: geom.gridShow ? `${geom.gridSpacing}px ${geom.gridSpacing}px` : undefined,
           }}
         >
-          <div ref={rowsRef} style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+          <div ref={rowsRef} style={{ position: "relative", zIndex: 1 }}>
             {content.rows.length === 0 ? (
               <EmptyState canEdit={canEdit} dispatch={dispatch} />
             ) : (
-              content.rows.map((row) => (
-                <RowView
-                  key={row.id}
-                  row={row}
-                  canEdit={canEdit}
-                  dispatch={dispatch}
-                  live={rowIsLive(row, liveIds)}
-                />
-              ))
+              content.rows.map((row, i) => {
+                const spacer = spacerBefore(i);
+                return (
+                  <Fragment key={row.id}>
+                    {spacer > 0 && <div aria-hidden style={{ height: spacer }} />}
+                    <div data-block style={{ marginBottom: ROW_GAP }}>
+                      <RowView
+                        row={row}
+                        canEdit={canEdit}
+                        dispatch={dispatch}
+                        live={rowIsLive(row, liveIds)}
+                        isFirst={i === 0}
+                      />
+                    </div>
+                  </Fragment>
+                );
+              })
             )}
           </div>
+          {Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1).map((k) => (
+            <PageBreak
+              key={k}
+              top={k * geom.pageContentH}
+              pageNo={k + 1}
+              pageCount={pageCount}
+              gutter={geom.marginRight}
+            />
+          ))}
         </div>
       </div>
       <PageBand
@@ -167,15 +208,6 @@ function PageFrame({
         geom={geom}
         ctx={{ page: pageCount, pages: pageCount, title: worksheetTitle, ...clock }}
       />
-      {Array.from({ length: Math.max(0, pageCount - 1) }, (_, i) => i + 1).map((k) => (
-        <PageBreak
-          key={k}
-          top={geom.headerH + geom.marginTop + k * geom.pageContentH}
-          pageNo={k + 1}
-          pageCount={pageCount}
-          gutter={geom.marginRight}
-        />
-      ))}
     </article>
   );
 }
@@ -273,11 +305,13 @@ function RowView({
   canEdit,
   dispatch,
   live,
+  isFirst,
 }: {
   row: Row;
   canEdit: boolean;
   dispatch: Dispatch<EditorAction>;
   live: boolean;
+  isFirst: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -285,19 +319,28 @@ function RowView({
 
   const controls = canEdit && hover && <ColumnsControl row={row} dispatch={dispatch} />;
 
+  // A hard page break falls before a row (never the first). The zone shows a rule
+  // only where a break is actually set, and a hover affordance to insert one.
+  const breakZone = !isFirst && (
+    <PageBreakZone rowId={row.id} active={row.breakBefore === true} canEdit={canEdit} dispatch={dispatch} />
+  );
+
   if (row.columns === 1) {
     return (
-      <div
-        className={rowClass}
-        style={{ position: "relative" }}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-      >
-        {controls}
-        {row.cells[0]?.regions.map((r) => (
-          <RegionItem key={r.id} region={r} />
-        ))}
-      </div>
+      <>
+        {breakZone}
+        <div
+          className={rowClass}
+          style={{ position: "relative" }}
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+        >
+          {controls}
+          {row.cells[0]?.regions.map((r) => (
+            <RegionItem key={r.id} region={r} />
+          ))}
+        </div>
+      </>
     );
   }
 
@@ -331,15 +374,139 @@ function RowView({
   });
 
   return (
+    <>
+      {breakZone}
+      <div
+        ref={gridRef}
+        className={rowClass}
+        style={{ position: "relative", display: "grid", gridTemplateColumns: tracks.join(" "), marginTop: 2 }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        {controls}
+        {items}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The page-break boundary above a row. When a break is set it shows a labelled
+ * rule (the only place a break renders — it reflects the real `breakBefore` flag,
+ * never a computed soft boundary). Otherwise, for editors, a thin hover strip
+ * reveals an "Insert page break" affordance; its negative margins keep the
+ * canvas rhythm unchanged. Both toggle `TOGGLE_ROW_BREAK` on this row.
+ */
+function PageBreakZone({
+  rowId,
+  active,
+  canEdit,
+  dispatch,
+}: {
+  rowId: string;
+  active: boolean;
+  canEdit: boolean;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const [hover, setHover] = useState(false);
+  const toggle = () => dispatch({ type: "TOGGLE_ROW_BREAK", rowId });
+
+  if (active) {
+    return (
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          margin: "6px 0",
+          color: "var(--text-muted)",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ flex: 1, height: 0, borderTop: "1px dashed var(--border-strong)" }} />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            font: "11px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Icon name="pagesetup" size={13} /> Page break
+          {canEdit && hover && (
+            <button
+              title="Remove page break"
+              aria-label="Remove page break"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 16,
+                height: 16,
+                marginLeft: 2,
+                border: "none",
+                background: "transparent",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          )}
+        </span>
+        <span style={{ flex: 1, height: 0, borderTop: "1px dashed var(--border-strong)" }} />
+      </div>
+    );
+  }
+
+  if (!canEdit) return null;
+
+  // Net-zero layout: a thin hover target tucked into the inter-row gap.
+  return (
     <div
-      ref={gridRef}
-      className={rowClass}
-      style={{ position: "relative", display: "grid", gridTemplateColumns: tracks.join(" "), marginTop: 2 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      style={{ position: "relative", height: 8, margin: "-5px 0 -3px", zIndex: 4 }}
     >
-      {controls}
-      {items}
+      {hover && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
+          }}
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            height: 18,
+            padding: "0 9px",
+            borderRadius: "var(--radius-full)",
+            border: "1px solid var(--border-strong)",
+            background: "var(--surface-raised)",
+            color: "var(--text-muted)",
+            font: "500 10.5px/1 var(--font-sans)",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            boxShadow: "var(--shadow-popover)",
+          }}
+        >
+          <Icon name="plusSm" size={11} /> Insert page break
+        </button>
+      )}
     </div>
   );
 }

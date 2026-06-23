@@ -17,6 +17,7 @@ import { ProgramRegionView } from "./program-region";
 import { SweepRegionView } from "./sweep-region";
 import { GenericRegionView, ImageRegionView } from "./render-only";
 import { applyModifierSelect } from "./region-select";
+import { RegionCommentMarker } from "../comments/region-comment-marker";
 import type { RegionRenderProps } from "./types";
 
 /**
@@ -36,6 +37,22 @@ export function RegionItem({ region }: { region: Region }) {
   const isError = result?.status === "error";
 
   const [dropPos, setDropPos] = useState<null | "before" | "after">(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Roving-tabindex focus: keep DOM focus on the lone primary selection (and not
+  // while editing — the field owns focus then) so arrow-key navigation and the
+  // design-system focus ring follow the selection. Guarded to the canvas so it
+  // never steals focus from the inspector, a dialog, the outline search, or a math
+  // field. `el.focus()`'s default block:nearest scroll is a no-op when already
+  // visible (mouse selects) and brings an off-screen keyboard target into view.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || !isPrimary || editing || multiActive) return;
+    const active = document.activeElement;
+    const inCanvas =
+      !active || active === document.body || (active instanceof HTMLElement && !!active.closest(".region"));
+    if (inCanvas && active !== el) el.focus();
+  }, [isPrimary, editing, multiActive]);
 
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -71,8 +88,13 @@ export function RegionItem({ region }: { region: Region }) {
 
   return (
     <div
+      ref={wrapRef}
       id={regionDomId(region.id)}
       className={className}
+      // Roving tabindex: only the primary selection is in the Tab order; the rest
+      // stay click/script focusable (-1) so arrow nav and the focus ring work.
+      tabIndex={isPrimary ? 0 : -1}
+      aria-selected={inSelection}
       onClick={onClick}
       onDragOver={onDragOver}
       onDragLeave={() => setDropPos(null)}
@@ -98,6 +120,10 @@ export function RegionItem({ region }: { region: Region }) {
       )}
 
       <RegionBody region={region} result={result} selected={isPrimary} multiActive={multiActive} editing={editing} canEdit={canEdit} dispatch={dispatch} />
+
+      {/* Comment-count marker — surfaced for every role (a reviewer sees it too);
+          gated by open count, not edit rights. Hidden while editing this region. */}
+      {!editing && <RegionCommentMarker region={region} />}
 
       {/* Per-region tools only for a lone selection; a multi-selection uses the
           canvas group bar instead. */}

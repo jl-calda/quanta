@@ -639,6 +639,8 @@ const rowSchema = z.object({
   columns: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
   /** Column width ratios summing to ~1; omitted → equal columns. */
   split: z.array(z.number()).optional(),
+  /** Hard page break before this row (honored by export/print + the preview). */
+  breakBefore: z.boolean().optional(),
   cells: z.array(cellSchema).default([]),
 });
 
@@ -921,6 +923,8 @@ export interface Row {
   id: string;
   columns: 1 | 2 | 3;
   split?: number[];
+  /** Hard page break before this row (honored by export/print + the preview). */
+  breakBefore?: boolean;
   cells: Cell[];
 }
 

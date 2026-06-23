@@ -34,6 +34,31 @@ export function openCommentCount(items: CommentItem[]): number {
 }
 
 /**
+ * Open (unresolved) comment count per anchor, keyed by `regionId` — the source for
+ * the canvas per-region comment markers (a region shows a badge when its count > 0).
+ * Mirrors {@link openCommentCount} semantics (resolved excluded) and counts optimistic
+ * `pending` rows too, so a fresh post bumps the marker immediately and reverts with the
+ * optimistic row on failure. Anchors with no open comments are omitted (no zero keys).
+ */
+export function openCountByRegion(items: CommentItem[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of items) {
+    if (c.resolved) continue;
+    counts.set(c.regionId, (counts.get(c.regionId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The thread anchored to one region (open and resolved alike), preserving the input
+ * order — drives the drawer's region-scoped view. A region with no comments yields an
+ * empty list.
+ */
+export function commentsForRegion(items: CommentItem[], regionId: string): CommentItem[] {
+  return items.filter((c) => c.regionId === regionId);
+}
+
+/**
  * Oldest-first ordering for the thread (newest at the bottom, chat-style). Stable
  * for equal timestamps; optimistic items (created "now") naturally sort last.
  */

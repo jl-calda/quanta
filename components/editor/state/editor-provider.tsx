@@ -34,20 +34,19 @@ import {
 } from "@/server/actions/worksheet";
 import { updateLayoutSettings } from "@/server/actions/page";
 import {
-  editorReducer,
-  initEditorState,
   type CalcMode,
-  type EditorAction,
   type EditorState,
   type UnitsSystem,
 } from "./editor-reducer";
+import { editorHistoryReducer, initHistory, type HistoryAction } from "./editor-history";
 import { useAutosave } from "./use-autosave";
 import { useSymbolicEval, type SymbolicStatus } from "./use-symbolic-eval";
 import { useSolveEval, type SolveEvalStatus } from "./use-solve-eval";
 
 export interface EditorContextValue {
   state: EditorState;
-  dispatch: Dispatch<EditorAction>;
+  /** Accepts every editor action plus the UNDO / REDO history controls. */
+  dispatch: Dispatch<HistoryAction>;
   canEdit: boolean;
   worksheetId: string;
   /** The owning workspace (for workspace-default settings writes). */
@@ -134,11 +133,14 @@ export function EditorProvider({
   canEdit,
   children,
 }: EditorProviderProps) {
-  const [state, dispatch] = useReducer(
-    editorReducer,
+  // Undo/redo wraps the pure reducer: `hist.present` is the live EditorState every
+  // consumer reads; the wrapper records document snapshots and handles UNDO / REDO.
+  const [hist, dispatch] = useReducer(
+    editorHistoryReducer,
     { content: initialContent, calcMode: initialCalcMode, unitsSystem: initialUnits },
-    initEditorState,
+    initHistory,
   );
+  const state = hist.present;
 
   // The calc engine lives beside the reducer (a pure, synchronous core), kept in
   // a ref and reconciled from `content`. Its DISPLAY unit-system is derived from
