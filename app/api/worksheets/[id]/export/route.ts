@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { exportOptionsSchema } from "@/lib/export/options";
 import { ExportError, runExport } from "@/lib/export/run";
+import { readPreferences } from "@/lib/preferences/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,7 +35,9 @@ export async function POST(
 
   const supabase = await createClient();
   try {
-    const { signedUrl, filename } = await runExport(supabase, id, parsed.data);
+    // Honour the user's display density so the PDF matches what they see on screen.
+    const { density } = await readPreferences();
+    const { signedUrl, filename } = await runExport(supabase, id, parsed.data, density);
     return NextResponse.json({ url: signedUrl, filename });
   } catch (error) {
     if (error instanceof ExportError) {

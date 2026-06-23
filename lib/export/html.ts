@@ -19,6 +19,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { createElement } from "react";
 import { ExportDocument, type ExportDocumentProps } from "./document";
+import { worksheetDensityCss } from "./density";
 import { MARGIN_CSS, pageBox } from "./options";
 
 const require = createRequire(import.meta.url);
@@ -69,11 +70,15 @@ function documentCss(props: ExportDocumentProps): string {
   const { size, orientation, margin } = props.options;
   const box = pageBox(size, orientation);
   const m = MARGIN_CSS[margin];
+  // Worksheet density tokens — the on-screen editor + browser preview get these
+  // from the [data-density] cascade; the Node render has no <html data-density>,
+  // so inject the chosen density's block so region spacing matches the screen.
   return `
 :root{
   --font-sans:'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;
   --font-mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
   --font-math:'STIX Two Text','Cambria Math',Cambria,'Times New Roman',serif;
+  ${worksheetDensityCss(props.density)}
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:#fff;color:#15181D;font-family:var(--font-sans);}

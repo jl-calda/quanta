@@ -141,7 +141,7 @@ export function TablePresent({ region, result }: { region: TableRegion; result?:
                 <th
                   key={col.key}
                   style={{
-                    padding: "5px 12px",
+                    padding: "var(--ws-cell-pad-y) 12px",
                     textAlign: colAlign(col),
                     font: "600 11px/1.3 var(--font-sans)",
                     color: "var(--text-primary)",
@@ -170,7 +170,7 @@ export function TablePresent({ region, result }: { region: TableRegion; result?:
                     <td
                       key={col.key}
                       style={{
-                        padding: "5px 12px",
+                        padding: "var(--ws-cell-pad-y) 12px",
                         textAlign: colAlign(col),
                         font: `${numericColumn(col) ? "" : "600 "}12px/1.4 ${colFontFamily(col)}`,
                         fontWeight: cell?.style ? 600 : numericColumn(col) ? 400 : 600,

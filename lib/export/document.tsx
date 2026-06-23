@@ -42,6 +42,7 @@ import {
   type WorksheetContent,
 } from "@/lib/worksheet/content";
 import { themePalette } from "@/lib/worksheet/plot-theme";
+import type { Density } from "@/lib/preferences/cookies";
 import { selectInputs } from "./inputs";
 import type { ExportOptions } from "./options";
 
@@ -62,6 +63,14 @@ export interface ExportDocumentProps {
   options: ExportOptions;
   /** Optional meta shown under the title (project / by / date / rev). */
   meta?: { label: string; value: string }[];
+  /**
+   * Worksheet density. The component itself reads spacing from `--ws-*` CSS vars
+   * (cascading from `<html data-density>` in the browser preview/print portal);
+   * this field is consumed by `documentCss` (html.ts) to inject the matching
+   * tokens for the Node render, where there is no `data-density`. Defaults to
+   * compact (the engineering default) when omitted.
+   */
+  density?: Density;
 }
 
 /** Render engine TeX to KaTeX HTML (same config as the editor's KatexMath). */
@@ -113,10 +122,21 @@ function NameMath({ name }: { name: string }): ReactNode {
  * Region blocks
  * ------------------------------------------------------------------ */
 
+/* Worksheet density — region spacing follows the same `--ws-*` tokens as the
+ * editor. In the browser preview / print portal these cascade from
+ * `<html data-density>`; for the Node render `documentCss` (html.ts) injects the
+ * matching block from DOC_DENSITY. The compact value is the inline fallback so
+ * the vars are never undefined. Math glyph sizes are intentionally not scaled. */
+const WS_INDENT = "var(--ws-indent, 22px)";
+/** Indent margin for a region's nesting level (density-aware). */
+function indentMargin(indent: number | undefined): string {
+  return `calc(${indent || 0} * ${WS_INDENT})`;
+}
+
 function regionBoxStyle(borders: boolean, indent: number): React.CSSProperties {
   return {
-    padding: borders ? "7px 9px" : "5px 0",
-    marginLeft: (indent || 0) * 22,
+    padding: borders ? "var(--ws-region-pad-y, 4px) 9px" : "var(--ws-region-pad-y, 4px) 0",
+    marginLeft: indentMargin(indent),
     border: borders ? `1px solid ${HAIRLINE}` : "1px solid transparent",
     borderRadius: 3,
     marginBottom: borders ? 5 : 2,
@@ -174,7 +194,7 @@ function MathBlock({
           alignItems: "center",
           flexWrap: "wrap",
           columnGap: "0.3em",
-          rowGap: 3,
+          rowGap: "var(--ws-math-rowgap, 3px)",
         }}
       >
         {display.formula && result?.tex ? (
@@ -231,7 +251,7 @@ function MathBlock({
 
 function TextBlock({ region }: { region: TextRegion }): ReactNode {
   if (region.disabled) return null;
-  const indent = (region.indent || 0) * 22;
+  const indent = indentMargin(region.indent);
   if (region.heading) {
     return (
       <div style={{ marginLeft: indent, breakInside: "avoid", breakAfter: "avoid" }}>
@@ -266,7 +286,8 @@ function TextBlock({ region }: { region: TextRegion }): ReactNode {
     <div
       style={{
         marginLeft: indent,
-        font: "11px/1.6 var(--font-sans)",
+        font: "11px var(--font-sans)",
+        lineHeight: "var(--ws-text-leading, 1.4)",
         color: "#3A4048",
         margin: "4px 0",
         breakInside: "avoid",
@@ -293,7 +314,7 @@ function TableBlock({ region }: { region: TableRegion }): ReactNode {
         borderRadius: 3,
         overflow: "hidden",
         marginBottom: 12,
-        marginLeft: (region.indent || 0) * 22,
+        marginLeft: indentMargin(region.indent),
         breakInside: "avoid",
       }}
     >
@@ -304,7 +325,7 @@ function TableBlock({ region }: { region: TableRegion }): ReactNode {
               <th
                 key={col.key}
                 style={{
-                  padding: "5px 9px",
+                  padding: "var(--ws-cell-pad-y, 4px) 9px",
                   font: "600 8px/1 var(--font-sans)",
                   letterSpacing: "0.04em",
                   textTransform: "uppercase",
@@ -329,7 +350,7 @@ function TableBlock({ region }: { region: TableRegion }): ReactNode {
                   <td
                     key={col.key}
                     style={{
-                      padding: "5px 9px",
+                      padding: "var(--ws-cell-pad-y, 4px) 9px",
                       font: "10.5px/1.2 var(--font-mono)",
                       color: cell?.style?.color ?? INK,
                       textAlign: align(col),
@@ -366,7 +387,7 @@ function PlotBlock({
         borderRadius: 3,
         padding: borders ? 10 : 0,
         marginBottom: 8,
-        marginLeft: (region.indent || 0) * 22,
+        marginLeft: indentMargin(region.indent),
         breakInside: "avoid",
       }}
     >
@@ -616,7 +637,7 @@ function ImageBlock({ region }: { region: RenderOnlyRegion }): ReactNode {
       alt={typeof data.alt === "string" ? data.alt : ""}
       style={{
         maxWidth: "100%",
-        marginLeft: (region.indent || 0) * 22,
+        marginLeft: indentMargin(region.indent),
         borderRadius: 3,
         border: `1px solid ${HAIRLINE}`,
         breakInside: "avoid",
@@ -689,7 +710,7 @@ function SolveBlock({ region }: { region: SolveRegion }): ReactNode {
         background: "#fff",
         padding: "8px 11px 9px",
         marginBottom: 8,
-        marginLeft: (region.indent || 0) * 22,
+        marginLeft: indentMargin(region.indent),
         breakInside: "avoid",
       }}
     >
@@ -781,7 +802,7 @@ function ProgramBlock({ region }: { region: ProgramRegion }): ReactNode {
         background: "#fff",
         padding: "8px 11px 9px",
         marginBottom: 8,
-        marginLeft: (region.indent || 0) * 22,
+        marginLeft: indentMargin(region.indent),
         breakInside: "avoid",
       }}
     >
@@ -850,7 +871,7 @@ function RegionBlock({
     case "area":
       // Areas are always expanded for print; render a faint title, then children.
       return (
-        <div style={{ marginLeft: (region.indent || 0) * 22 }}>
+        <div style={{ marginLeft: indentMargin(region.indent) }}>
           {region.title && (
             <div
               style={{

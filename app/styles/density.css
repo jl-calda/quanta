@@ -35,6 +35,20 @@
   --space-4: 12px;
   --space-3: 9px;
   --space-2: 6px;
+
+  /* worksheet rhythm — tighter on-screen + export region spacing. Consumed by
+     the editor region components via var(); mirrored for the Node export render
+     by DOC_DENSITY in lib/export/density.ts (keep the two in sync). Math glyph
+     sizes are NOT scaled — only padding / indent / line-height / cell padding. */
+  --ws-region-pad-y: 4px;   /* shared region wrapper vertical padding */
+  --ws-region-pad-x: 8px;   /* shared region wrapper horizontal padding */
+  --ws-indent: 22px;        /* indent step per level */
+  --ws-area-head-y: 5px;    /* area header vertical padding */
+  --ws-area-body-y: 6px;    /* area body vertical padding */
+  --ws-text-leading: 1.4;   /* committed text body line-height */
+  --ws-cell-pad-y: 4px;     /* table read-mode cell vertical padding */
+  --ws-steps-gap: 8px;      /* show-steps section gap / divider padding */
+  --ws-math-rowgap: 3px;    /* math wrap row gap (floor) */
 }
 
 :root[data-density="comfortable"] {
@@ -58,4 +72,15 @@
   --space-4: 16px;
   --space-3: 12px;
   --space-2: 8px;
+
+  /* worksheet rhythm — comfortable adds breathing room (≈ the prior look). */
+  --ws-region-pad-y: 6px;
+  --ws-region-pad-x: 10px;
+  --ws-indent: 30px;
+  --ws-area-head-y: 7px;
+  --ws-area-body-y: 8px;
+  --ws-text-leading: 1.55;
+  --ws-cell-pad-y: 5px;
+  --ws-steps-gap: 10px;
+  --ws-math-rowgap: 4px;
 }

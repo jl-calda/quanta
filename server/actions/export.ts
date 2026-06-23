@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ok, err, type ActionResult } from "@/server/result";
 import { exportOptionsSchema } from "@/lib/export/options";
 import { ExportError, runExport } from "@/lib/export/run";
+import { readPreferences } from "@/lib/preferences/server";
 import { z } from "zod";
 
 const exportInputSchema = z.object({
@@ -32,7 +33,9 @@ export async function exportWorksheet(
 
   const supabase = await createClient();
   try {
-    const { signedUrl, filename } = await runExport(supabase, worksheetId, options);
+    // Match the user's on-screen density in the generated artifact.
+    const { density } = await readPreferences();
+    const { signedUrl, filename } = await runExport(supabase, worksheetId, options, density);
     return ok({ url: signedUrl, filename });
   } catch (error) {
     if (error instanceof ExportError) return err(error.message);
