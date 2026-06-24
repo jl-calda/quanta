@@ -122,11 +122,14 @@ export function MathField({
           if (cb.current.commitOnEscape && mf) cb.current.onCommit(latexToSource(mf.value));
           else cb.current.onCancel();
         } else if (e.key === "Enter" && cb.current.onEnter && mf) {
-          // Enter commits and advances to the next line — never a literal newline.
+          // Enter commits and advances to the next line — never a literal
+          // newline. Shift+Enter commits in place (no new region), so an
+          // engineer can finish a region without flowing on.
           e.preventDefault();
           e.stopPropagation();
           done = true;
-          cb.current.onEnter(latexToSource(mf.value));
+          if (e.shiftKey) cb.current.onCommit(latexToSource(mf.value));
+          else cb.current.onEnter(latexToSource(mf.value));
         }
       });
       // LaTeX paste — deterministic, not reliant on MathLive's format sniffing.

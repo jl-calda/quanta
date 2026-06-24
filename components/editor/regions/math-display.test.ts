@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluate } from "@/lib/calc";
-import { MATH_PALETTE, splitResultUnit } from "./math-display";
+import { MATH_PALETTE, resultEchoesDefinition, splitResultUnit } from "./math-display";
 
 describe("splitResultUnit", () => {
   it("splits a unit-bearing result into magnitude + unit", () => {
@@ -36,6 +36,28 @@ describe("splitResultUnit", () => {
       magnitude: "hello world",
       unit: null,
     });
+  });
+});
+
+describe("resultEchoesDefinition", () => {
+  it("suppresses a definition whose result is just its own value", () => {
+    expect(resultEchoesDefinition("B := 2 mm", "2 mm")).toBe(true);
+  });
+
+  it("ignores whitespace differences in the RHS vs the formatted result", () => {
+    expect(resultEchoesDefinition("g := 9.81 m/s^2", "9.81 m/s^2")).toBe(true);
+  });
+
+  it("keeps the result when the RHS is a real computation", () => {
+    expect(resultEchoesDefinition("C := A+B", "4 mm")).toBe(false);
+  });
+
+  it("keeps the result when a symbolic RHS evaluates to a value", () => {
+    expect(resultEchoesDefinition("N_Rd := φ·A_s·f_ub", "52.8 kN")).toBe(false);
+  });
+
+  it("keeps the result for a bare evaluation (no :=)", () => {
+    expect(resultEchoesDefinition("B", "2 mm")).toBe(false);
   });
 });
 

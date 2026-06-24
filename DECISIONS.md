@@ -2213,3 +2213,39 @@ ungroup one). This row fills exactly those, plus light area polish.
   runaway empties. Reuses the existing `mutate`/`locate`/`findRegion`/`touched`
   helpers; `graph.ts`/`recalc.ts` and storage are untouched, and `touched()` drives the
   normal dirty/recalc/autosave path. Covered by two reducer tests.
+
+## Editor — Word/Mathcad formula-entry polish (Phase 2 refinement)
+
+Four small, independent display/client-editor changes to make formula entry feel like
+Word/Mathcad. Scope honoured: no `/lib/calc` changes (engine stays pure), no server
+actions.
+
+- **Suppress a definition that echoes its own value (`B := 2 mm = 2 mm`).** New pure,
+  exported helper `resultEchoesDefinition(source, formatted)` in
+  `components/editor/regions/math-display.ts`: an evaluation (no `:=`) always keeps its
+  result; for a definition the RHS (after the first `:=`) is compared to `formatted`
+  with both normalized (whitespace stripped, lowercased, `·`≡`*`) and the result is
+  suppressed when they match. `MathCommitted`'s single `hasResult` flag gained the
+  `!resultEchoesDefinition(...)` guard, so both the show-steps and compact paths are
+  covered by one change. Five focused unit tests added.
+- **Reused `EDIT_AND_ADVANCE`/`onEnter` instead of new `COMMIT_MATH_AND_CONTINUE`/
+  `onCommitNext`.** The task spec'd a new reducer action + prop, but the branch already
+  had functionally-identical, tested equivalents from the low-chrome work above, so
+  per CLAUDE.md ("reuse over new code") they were reused rather than duplicated (user
+  confirmed). The only genuine gap was added to `math-field.tsx`: **Shift+Enter commits
+  in place** (`onCommit`) while plain Enter still commits + advances (`onEnter`). Esc
+  keeps the existing `commitOnEscape` (commit, click-away parity) rather than the spec's
+  literal "Esc → cancel", to avoid a data-loss regression on a deliberate prior UX.
+- **Click empty canvas → new math region with an instant caret.** `canvas.tsx`'s
+  `.ed-page-body` got an `onClick` guarded by `e.target === e.currentTarget` (so only a
+  genuine empty-space click below the content fires, never a region/page-break child)
+  that dispatches `INSERT_REGION` (math) anchored to the last region — which already
+  opens it for editing. `editingId` is threaded into `PageFrame` for the not-editing
+  guard; `stopPropagation` keeps the outer `.ed-field` deselect from clearing the new
+  selection. `EmptyState` is now wholly clickable to create+edit and its button CTA was
+  replaced with a faint hint ("Click anywhere to start typing — or press =").
+- **Quieter chrome.** `editor.css`: `.region:hover` drops its fill (just `cursor:text`);
+  `.region.is-selected` is now a 1px accent hairline via `inset box-shadow` with no
+  fill. The always-rendered `InsertBelow` affordance was removed from `region-item.tsx`
+  (click-to-type + Enter replace it); the reorder grip and `SelectionToolbar` stay. The
+  "edit" eyebrow was already gone from the in-place editor (no-op).
