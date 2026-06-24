@@ -313,6 +313,8 @@ export type Database = {
           discipline: string | null;
           standard: string | null;
           template_type: string | null;
+          category: string | null;
+          tags: string[];
           content: Json;
           thumbnail_url: string | null;
           visibility: string;
@@ -328,6 +330,8 @@ export type Database = {
           discipline?: string | null;
           standard?: string | null;
           template_type?: string | null;
+          category?: string | null;
+          tags?: string[];
           content: Json;
           thumbnail_url?: string | null;
           visibility?: string;
@@ -341,6 +345,8 @@ export type Database = {
           discipline?: string | null;
           standard?: string | null;
           template_type?: string | null;
+          category?: string | null;
+          tags?: string[];
           content?: Json;
           thumbnail_url?: string | null;
           visibility?: string;

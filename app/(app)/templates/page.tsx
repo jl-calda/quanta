@@ -26,8 +26,9 @@ function one(value: string | string[] | undefined): string | undefined {
 
 /**
  * Template gallery (§4.4). A Server Component resolves the active workspace,
- * parses the discipline/standard/type/tab/search filters from the URL, and runs
- * the RLS-scoped reads in parallel before handing them to the client gallery.
+ * parses the category/discipline/standard/type/tag/tab/search filters from the
+ * URL, and runs the RLS-scoped reads in parallel before handing them to the
+ * client gallery.
  */
 export default async function TemplatesPage({
   searchParams,
@@ -47,6 +48,8 @@ export default async function TemplatesPage({
     discipline: one(sp.discipline),
     standard: one(sp.standard),
     type: one(sp.type),
+    category: one(sp.category),
+    tag: one(sp.tag),
   });
   const previewId = one(sp.preview);
 
@@ -73,6 +76,8 @@ export default async function TemplatesPage({
         discipline: filters.discipline,
         standard: filters.standard,
         type: filters.type,
+        category: filters.category,
+        tag: filters.tag,
       }}
       query={filters.q ?? ""}
       initialPreviewId={previewId}

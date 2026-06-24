@@ -19,6 +19,8 @@ export const templateFiltersSchema = z.object({
   discipline: z.string().trim().max(80).optional().catch(undefined),
   standard: z.string().trim().max(80).optional().catch(undefined),
   type: z.string().trim().max(80).optional().catch(undefined),
+  category: z.string().trim().max(80).optional().catch(undefined),
+  tag: z.string().trim().max(40).optional().catch(undefined),
 });
 export type TemplateFilters = z.infer<typeof templateFiltersSchema>;
 
@@ -26,6 +28,9 @@ export type TemplateFilters = z.infer<typeof templateFiltersSchema>;
  * UI label for the stored `private` visibility (visible only to the author). */
 export const templateScopeSchema = z.enum(["author", "workspace", "public"]);
 export type TemplateScope = z.infer<typeof templateScopeSchema>;
+
+/** Upper bound on tags per template — keeps the chip row and `tags[]` sane. */
+export const MAX_TEMPLATE_TAGS = 12;
 
 export const saveAsTemplateSchema = z.object({
   workspaceId: z.string().uuid("Pick a workspace."),
@@ -35,9 +40,34 @@ export const saveAsTemplateSchema = z.object({
   discipline: z.string().trim().max(80).optional(),
   standard: z.string().trim().max(80).optional(),
   templateType: z.string().trim().max(80).optional(),
+  category: z.string().trim().max(80).optional(),
+  tags: z
+    .array(z.string().trim().min(1).max(40))
+    .max(MAX_TEMPLATE_TAGS, `Use at most ${MAX_TEMPLATE_TAGS} tags.`)
+    .optional(),
   scope: templateScopeSchema,
 });
 export type SaveAsTemplateInput = z.infer<typeof saveAsTemplateSchema>;
+
+/**
+ * Parse a comma-separated tag string (from the "Save as template" dialog) into a
+ * clean array: trimmed, blanks dropped, case-insensitively de-duplicated, and
+ * capped at {@link MAX_TEMPLATE_TAGS}. Pure so it can be unit-tested and shared.
+ */
+export function parseTagsInput(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const tag = part.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= MAX_TEMPLATE_TAGS) break;
+  }
+  return out;
+}
 
 /** Map the UI scope to the stored `templates.visibility` value. */
 export function scopeToVisibility(scope: TemplateScope): string {

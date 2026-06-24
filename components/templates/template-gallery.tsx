@@ -74,10 +74,24 @@ export function TemplateGallery({
 
   const onSearch = (q: string) => setParams({ q: q || null });
   const onSelectTab = (next: TemplateTab) =>
-    setParams({ tab: next === "all" ? null : next, discipline: null, standard: null, type: null });
+    setParams({
+      tab: next === "all" ? null : next,
+      discipline: null,
+      standard: null,
+      type: null,
+      category: null,
+      tag: null,
+    });
   const onToggle = (group: FilterGroup, value: string) =>
     setParams({ [group]: active[group] === value ? null : value });
-  const onClear = () => setParams({ discipline: null, standard: null, type: null });
+  const onClear = () =>
+    setParams({
+      discipline: null,
+      standard: null,
+      type: null,
+      category: null,
+      tag: null,
+    });
 
   return (
     <div style={{ display: "flex", minWidth: 0, flex: 1, flexDirection: "column", height: "100%" }}>

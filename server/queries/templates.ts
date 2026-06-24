@@ -20,6 +20,8 @@ export type GalleryTemplate = {
   discipline: string | null;
   standard: string | null;
   template_type: string | null;
+  category: string | null;
+  tags: string[];
   content: Json;
   visibility: string;
   author_id: string | null;
@@ -31,13 +33,17 @@ export type TemplateFacets = {
   discipline: string[];
   standard: string[];
   type: string[];
+  category: string[];
+  // Distinct tag values across the scope (the singular key mirrors the `type`
+  // group-key convention used by the FilterBar).
+  tag: string[];
 };
 
 export type TemplateCounts = { all: number; mine: number };
 export type WorksheetOption = { id: string; title: string };
 
 const LIST_COLS =
-  "id, title, description, discipline, standard, template_type, content, visibility, author_id, usage_count";
+  "id, title, description, discipline, standard, template_type, category, tags, content, visibility, author_id, usage_count";
 
 /** The OR predicate for the shared ("all") gallery: public + this workspace's
  * own `workspace`-visibility templates. */
@@ -87,6 +93,8 @@ export async function listTemplates(
   if (filters.discipline) query = query.eq("discipline", filters.discipline);
   if (filters.standard) query = query.eq("standard", filters.standard);
   if (filters.type) query = query.eq("template_type", filters.type);
+  if (filters.category) query = query.eq("category", filters.category);
+  if (filters.tag) query = query.contains("tags", [filters.tag]);
 
   const safeQ = filters.q ? sanitizeSearch(filters.q) : "";
   if (safeQ) {
@@ -120,7 +128,7 @@ export async function getTemplateFacets(
   const supabase = await createClient();
   let query = supabase
     .from("templates")
-    .select("discipline, standard, template_type");
+    .select("discipline, standard, template_type, category, tags");
   query =
     tab === "mine"
       ? query.eq("author_id", userId)
@@ -138,6 +146,8 @@ export async function getTemplateFacets(
     discipline: distinct(rows.map((r) => r.discipline)),
     standard: distinct(rows.map((r) => r.standard)),
     type: distinct(rows.map((r) => r.template_type)),
+    category: distinct(rows.map((r) => r.category)),
+    tag: distinct(rows.flatMap((r) => r.tags ?? [])),
   };
 }
 

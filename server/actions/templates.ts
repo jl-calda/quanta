@@ -21,6 +21,8 @@ export async function saveAsTemplate(input: {
   discipline?: string;
   standard?: string;
   templateType?: string;
+  category?: string;
+  tags?: string[];
   scope: "author" | "workspace" | "public";
 }): Promise<ActionResult<{ id: string }>> {
   const parsed = saveAsTemplateSchema.safeParse(input);
@@ -37,6 +39,8 @@ export async function saveAsTemplate(input: {
     discipline,
     standard,
     templateType,
+    category,
+    tags,
     scope,
   } = parsed.data;
 
@@ -67,6 +71,8 @@ export async function saveAsTemplate(input: {
       discipline: discipline ?? null,
       standard: standard ?? null,
       template_type: templateType ?? null,
+      category: category ?? null,
+      tags: tags ?? [],
       content: worksheet.content,
       visibility: scopeToVisibility(scope),
       author_id: user.id,

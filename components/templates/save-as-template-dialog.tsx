@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog, Input, Select } from "@/components/ds";
 import { saveAsTemplate } from "@/server/actions/templates";
-import type { TemplateScope } from "@/lib/schema/templates";
+import { parseTagsInput, type TemplateScope } from "@/lib/schema/templates";
 import type { WorksheetOption } from "@/server/queries/templates";
 import { PlusIcon } from "./icons";
 
@@ -38,6 +38,8 @@ export function SaveAsTemplateDialog({
   const [discipline, setDiscipline] = useState("");
   const [standard, setStandard] = useState("");
   const [templateType, setTemplateType] = useState("");
+  const [category, setCategory] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
   const [scope, setScope] = useState<TemplateScope>("workspace");
 
   const worksheetOptions = useMemo(
@@ -59,6 +61,7 @@ export function SaveAsTemplateDialog({
   function submit() {
     setError(null);
     startTransition(async () => {
+      const tags = parseTagsInput(tagsInput);
       const result = await saveAsTemplate({
         workspaceId,
         worksheetId,
@@ -67,6 +70,8 @@ export function SaveAsTemplateDialog({
         discipline: discipline || undefined,
         standard: standard || undefined,
         templateType: templateType || undefined,
+        category: category || undefined,
+        tags: tags.length > 0 ? tags : undefined,
         scope,
       });
       if (result.ok) {
@@ -143,6 +148,18 @@ export function SaveAsTemplateDialog({
                   value={templateType}
                   onChange={(e) => setTemplateType(e.target.value)}
                   placeholder="Member check"
+                />
+              </Field>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Category">
+                <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Beams" />
+              </Field>
+              <Field label="Tags">
+                <Input
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder="beam, steel, ULS"
                 />
               </Field>
             </div>
