@@ -318,6 +318,8 @@ export type Database = {
           visibility: string;
           author_id: string | null;
           usage_count: number;
+          is_featured: boolean;
+          archived_at: string | null;
           created_at: string;
         },
         {
@@ -333,6 +335,8 @@ export type Database = {
           visibility?: string;
           author_id?: string | null;
           usage_count?: number;
+          is_featured?: boolean;
+          archived_at?: string | null;
           created_at?: string;
         },
         {
@@ -345,6 +349,8 @@ export type Database = {
           thumbnail_url?: string | null;
           visibility?: string;
           usage_count?: number;
+          is_featured?: boolean;
+          archived_at?: string | null;
         }
       >;
       tags: Table<
@@ -410,6 +416,14 @@ export type Database = {
         Returns: WorksheetRole;
       };
       increment_template_usage: { Args: { tpl: string }; Returns: undefined };
+      set_template_curation: {
+        Args: {
+          p_template_id: string;
+          p_is_featured?: boolean | null;
+          p_archived?: boolean | null;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       workspace_role: WorkspaceRole;

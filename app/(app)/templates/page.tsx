@@ -16,6 +16,9 @@ import type { WorkspaceRole } from "@/lib/supabase/types";
 export const metadata = { title: "Templates · Quanta" };
 
 const CAN_CREATE_ROLES: WorkspaceRole[] = ["owner", "admin", "engineer"];
+/** Curation (feature/archive) is an admin editorial act; the RPC enforces it
+ * server-side, this just gates whether the controls render. */
+const CAN_CURATE_ROLES: WorkspaceRole[] = ["owner", "admin"];
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -39,15 +42,24 @@ export default async function TemplatesPage({
 
   const workspaceId = active.workspace.id;
   const canCreate = CAN_CREATE_ROLES.includes(active.role);
+  const canCurate = CAN_CURATE_ROLES.includes(active.role);
 
   const sp = await searchParams;
-  const filters = templateFiltersSchema.parse({
+  const parsed = templateFiltersSchema.parse({
     tab: one(sp.tab),
     q: one(sp.q),
     discipline: one(sp.discipline),
     standard: one(sp.standard),
     type: one(sp.type),
+    archived: one(sp.archived),
   });
+  // The archived view is curator-only; ignore the param for everyone else so a
+  // hand-edited URL can't surface retired templates (the reads enforce it).
+  const filters = {
+    ...parsed,
+    archived: canCurate ? parsed.archived : undefined,
+  };
+  const showingArchived = filters.archived === true;
   const previewId = one(sp.preview);
 
   const user = await getCurrentUser();
@@ -64,6 +76,8 @@ export default async function TemplatesPage({
     <TemplateGallery
       workspaceId={workspaceId}
       canCreate={canCreate}
+      canCurate={canCurate}
+      showingArchived={showingArchived}
       worksheets={worksheets}
       templates={templates}
       facets={facets}

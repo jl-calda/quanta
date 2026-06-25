@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Switch } from "@/components/ds";
 import type { TemplateTab } from "@/lib/schema/templates";
 import type {
   GalleryTemplate,
@@ -19,6 +20,8 @@ import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 export interface TemplateGalleryProps {
   workspaceId: string;
   canCreate: boolean;
+  canCurate: boolean;
+  showingArchived: boolean;
   worksheets: WorksheetOption[];
   templates: GalleryTemplate[];
   facets: TemplateFacets;
@@ -38,6 +41,8 @@ export interface TemplateGalleryProps {
 export function TemplateGallery({
   workspaceId,
   canCreate,
+  canCurate,
+  showingArchived,
   worksheets,
   templates,
   facets,
@@ -107,6 +112,15 @@ export function TemplateGallery({
             </div>
           </div>
           <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+            {canCurate && (
+              <Switch
+                checked={showingArchived}
+                label="Archived"
+                onChange={(e) =>
+                  setParams({ archived: e.currentTarget.checked ? "1" : null })
+                }
+              />
+            )}
             {canCreate && <SaveAsTemplateDialog workspaceId={workspaceId} worksheets={worksheets} />}
             <SearchInput initialQuery={query} onSearch={onSearch} />
           </div>
@@ -137,12 +151,22 @@ export function TemplateGallery({
               <div
                 style={{ font: "600 15px/1.3 var(--font-sans)", color: "var(--text-primary)", marginBottom: 6 }}
               >
-                {tab === "mine" ? "No templates yet" : "No templates match those filters"}
+                {showingArchived
+                  ? "No archived templates"
+                  : tab === "mine"
+                    ? "No templates yet"
+                    : tab === "public"
+                      ? "No public templates yet"
+                      : "No templates match those filters"}
               </div>
               <div style={{ font: "13px/1.5 var(--font-sans)" }}>
-                {tab === "mine"
-                  ? "Save a worksheet as a template to find it here."
-                  : "Try clearing a filter to widen the search."}
+                {showingArchived
+                  ? "Archive a template to retire it from the gallery — it'll wait here, ready to restore."
+                  : tab === "mine"
+                    ? "Save a worksheet as a template to find it here."
+                    : tab === "public"
+                      ? "Public templates shared across workspaces show up here."
+                      : "Try clearing a filter to widen the search."}
               </div>
             </div>
           ) : (
@@ -161,6 +185,7 @@ export function TemplateGallery({
                   template={template}
                   workspaceId={workspaceId}
                   canCreate={canCreate}
+                  canCurate={canCurate}
                   onPreview={setPreview}
                 />
               ))}

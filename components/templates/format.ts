@@ -28,3 +28,29 @@ export function initialsOf(name: string): string {
     .slice(0, 2)
     .toUpperCase();
 }
+
+/** A template is archived once it carries an `archived_at` timestamp; restoring
+ * clears it back to null. */
+export function isArchived(t: { archived_at: string | null }): boolean {
+  return t.archived_at != null;
+}
+
+/** The complement of {@link isArchived} — i.e. lives in the active gallery. */
+export function isActive(t: { archived_at: string | null }): boolean {
+  return !isArchived(t);
+}
+
+/** Gallery ordering — featured first, then most-used, then newest. Mirrors the
+ * SQL order `listTemplates` applies, kept here so the precedence is pinned and
+ * any client-side re-sort stays consistent with the server. */
+export function sortFeaturedFirst<
+  T extends {
+    is_featured: boolean;
+    usage_count: number;
+    created_at?: string | null;
+  },
+>(a: T, b: T): number {
+  if (a.is_featured !== b.is_featured) return a.is_featured ? -1 : 1;
+  if (a.usage_count !== b.usage_count) return b.usage_count - a.usage_count;
+  return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+}

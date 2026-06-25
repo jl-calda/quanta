@@ -1,8 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { saveAsTemplateSchema, scopeToVisibility } from "@/lib/schema/templates";
+import { createClient, rpcAsUser } from "@/lib/supabase/server";
+import {
+  saveAsTemplateSchema,
+  scopeToVisibility,
+  templateCurationSchema,
+} from "@/lib/schema/templates";
 import { ok, err, type ActionResult } from "@/server/result";
 
 /**
@@ -85,4 +89,68 @@ export async function saveAsTemplate(input: {
 
   revalidatePath("/templates");
   return ok({ id: template.id });
+}
+
+/**
+ * Curate a workspace template (§4.4, Phase 2) — feature it to the top of the
+ * gallery, archive it (soft-retire), or restore it. Curation is admins-only and
+ * enforced *server-side*: the write goes through the `set_template_curation`
+ * SECURITY DEFINER RPC, which re-checks `auth.uid()` + `is_workspace_admin` and
+ * rejects global/public starters. We route it via `rpcAsUser` (not
+ * `supabase.rpc`) because writes otherwise reach Postgres as `anon` in this
+ * runtime — the same proven path `create_worksheet` uses. A null flag is a no-op,
+ * so feature and archive compose. SQLSTATEs surface in the app's voice.
+ */
+async function setCuration(input: {
+  templateId: string;
+  isFeatured?: boolean;
+  archived?: boolean;
+}): Promise<ActionResult<undefined>> {
+  const parsed = templateCurationSchema.safeParse(input);
+  if (!parsed.success) {
+    return err(
+      parsed.error.issues[0]?.message ?? "We couldn't update that template.",
+    );
+  }
+  const { templateId, isFeatured, archived } = parsed.data;
+
+  const { error } = await rpcAsUser("set_template_curation", {
+    p_template_id: templateId,
+    p_is_featured: isFeatured ?? null,
+    p_archived: archived ?? null,
+  });
+
+  if (error) {
+    if (error.code === "28000") {
+      return err("You're signed out. Sign in and try again.");
+    }
+    if (error.code === "42501") {
+      return err("Only workspace admins can curate templates here.");
+    }
+    if (error.code === "P0002") {
+      return err("That template no longer exists.");
+    }
+    return err("We couldn't update the template. Try again.");
+  }
+
+  revalidatePath("/templates");
+  return ok(undefined);
+}
+
+/** Feature (or un-feature) a workspace template — pins it to the top of the
+ * gallery. Admins only (enforced by the RPC). */
+export async function featureTemplate(
+  templateId: string,
+  isFeatured: boolean,
+): Promise<ActionResult<undefined>> {
+  return setCuration({ templateId, isFeatured });
+}
+
+/** Archive (or restore) a workspace template. Archived templates leave the
+ * default gallery but stay restorable. Admins only (enforced by the RPC). */
+export async function archiveTemplate(
+  templateId: string,
+  archived: boolean,
+): Promise<ActionResult<undefined>> {
+  return setCuration({ templateId, archived });
 }

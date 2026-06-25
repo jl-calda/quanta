@@ -15,6 +15,7 @@ type Client = Awaited<ReturnType<typeof createClient>>;
 
 export type GalleryTemplate = {
   id: string;
+  workspace_id: string | null;
   title: string;
   description: string | null;
   discipline: string | null;
@@ -25,6 +26,8 @@ export type GalleryTemplate = {
   author_id: string | null;
   authorName: string | null;
   usage_count: number;
+  is_featured: boolean;
+  archived_at: string | null;
 };
 
 export type TemplateFacets = {
@@ -33,11 +36,11 @@ export type TemplateFacets = {
   type: string[];
 };
 
-export type TemplateCounts = { all: number; mine: number };
+export type TemplateCounts = { all: number; mine: number; public: number };
 export type WorksheetOption = { id: string; title: string };
 
 const LIST_COLS =
-  "id, title, description, discipline, standard, template_type, content, visibility, author_id, usage_count";
+  "id, workspace_id, title, description, discipline, standard, template_type, content, visibility, author_id, usage_count, is_featured, archived_at";
 
 /** The OR predicate for the shared ("all") gallery: public + this workspace's
  * own `workspace`-visibility templates. */
@@ -79,10 +82,19 @@ export async function listTemplates(
   const supabase = await createClient();
   let query = supabase.from("templates").select(LIST_COLS);
 
-  query =
-    filters.tab === "mine"
-      ? query.eq("author_id", userId)
-      : query.or(allScopeFilter(workspaceId));
+  if (filters.tab === "mine") {
+    query = query.eq("author_id", userId);
+  } else if (filters.tab === "public") {
+    query = query.eq("visibility", "public");
+  } else {
+    query = query.or(allScopeFilter(workspaceId));
+  }
+
+  // Archived templates drop out of every default list. The curator-only archived
+  // view (admins) flips this to show just the retired ones, ready to restore.
+  query = filters.archived
+    ? query.not("archived_at", "is", null)
+    : query.is("archived_at", null);
 
   if (filters.discipline) query = query.eq("discipline", filters.discipline);
   if (filters.standard) query = query.eq("standard", filters.standard);
@@ -94,6 +106,7 @@ export async function listTemplates(
   }
 
   const { data } = await query
+    .order("is_featured", { ascending: false })
     .order("usage_count", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(120);
@@ -120,11 +133,15 @@ export async function getTemplateFacets(
   const supabase = await createClient();
   let query = supabase
     .from("templates")
-    .select("discipline, standard, template_type");
-  query =
-    tab === "mine"
-      ? query.eq("author_id", userId)
-      : query.or(allScopeFilter(workspaceId));
+    .select("discipline, standard, template_type")
+    .is("archived_at", null);
+  if (tab === "mine") {
+    query = query.eq("author_id", userId);
+  } else if (tab === "public") {
+    query = query.eq("visibility", "public");
+  } else {
+    query = query.or(allScopeFilter(workspaceId));
+  }
 
   const { data } = await query.limit(500);
 
@@ -148,17 +165,29 @@ export async function getTemplateCounts(
 ): Promise<TemplateCounts> {
   const supabase = await createClient();
 
+  // Counts mirror the default (active) lists, so the tab badges match the grid.
   const allQuery = supabase
     .from("templates")
     .select("id", { count: "exact", head: true })
+    .is("archived_at", null)
     .or(allScopeFilter(workspaceId));
   const mineQuery = supabase
     .from("templates")
     .select("id", { count: "exact", head: true })
+    .is("archived_at", null)
     .eq("author_id", userId);
+  const publicQuery = supabase
+    .from("templates")
+    .select("id", { count: "exact", head: true })
+    .is("archived_at", null)
+    .eq("visibility", "public");
 
-  const [all, mine] = await Promise.all([allQuery, mineQuery]);
-  return { all: all.count ?? 0, mine: mine.count ?? 0 };
+  const [all, mine, pub] = await Promise.all([
+    allQuery,
+    mineQuery,
+    publicQuery,
+  ]);
+  return { all: all.count ?? 0, mine: mine.count ?? 0, public: pub.count ?? 0 };
 }
 
 /** The user's worksheets in this workspace — feeds the "Save as template"

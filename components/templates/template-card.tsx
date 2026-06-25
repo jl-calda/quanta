@@ -4,6 +4,7 @@ import { TemplateThumb } from "./template-thumb";
 import { Byline } from "./byline";
 import { Chip } from "./chip";
 import { UseTemplateButton } from "./use-template-button";
+import { CurationControls } from "./curation-controls";
 import { fmtUses } from "./format";
 import { FlameIcon, UsersIcon, EyeIcon, PlusIcon } from "./icons";
 
@@ -17,15 +18,21 @@ export function TemplateCard({
   template,
   workspaceId,
   canCreate,
+  canCurate = false,
   onPreview,
 }: {
   template: GalleryTemplate;
   workspaceId: string;
   canCreate: boolean;
+  canCurate?: boolean;
   onPreview: (template: GalleryTemplate) => void;
 }) {
-  // Curated Quanta-official templates (no author) carry the "Featured" flame.
-  const featured = !template.author_id;
+  // Featured is now an explicit, curatable flag (was `author_id IS NULL`; the
+  // 0010 backfill set it true for the Quanta-official starters so the look held).
+  const featured = template.is_featured;
+  // Only workspace-scoped templates are curatable — global/public starters
+  // (workspace_id null) belong to no workspace, and the RPC would reject them.
+  const showCuration = canCurate && template.workspace_id != null;
 
   return (
     <div
@@ -148,6 +155,14 @@ export function TemplateCard({
             {fmtUses(template.usage_count)}
           </span>
         </div>
+
+        {showCuration && (
+          <CurationControls
+            templateId={template.id}
+            isFeatured={template.is_featured}
+            isArchived={template.archived_at != null}
+          />
+        )}
       </div>
     </div>
   );

@@ -112,6 +112,27 @@ export function DownloadIcon({ size }: { size?: number }) {
   );
 }
 
+/** Archive box — retire a template out of the active gallery. */
+export function ArchiveIcon({ size }: { size?: number }) {
+  return (
+    <Line size={size}>
+      <path d="M4 7.5h16M5 7.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7.5" />
+      <path d="M4 4.5h16v3H4z" />
+      <path d="M10 11.5h4" />
+    </Line>
+  );
+}
+
+/** Archive box with an up-arrow — restore a retired template to the gallery. */
+export function ArchiveRestoreIcon({ size }: { size?: number }) {
+  return (
+    <Line size={size}>
+      <path d="M4 7.5h16M5 7.5V19a1 1 0 0 0 1 1h4M5 7.5V4.5h14v3M19 7.5V11" />
+      <path d="M12 20v-6m0 0 2.2 2.2M12 14l-2.2 2.2" />
+    </Line>
+  );
+}
+
 /** Filled check-seal — the "verified" badge beside a Quanta byline. */
 export function VerifiedIcon({ size = 18 }: { size?: number }) {
   return (

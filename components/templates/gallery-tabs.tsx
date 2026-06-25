@@ -19,6 +19,7 @@ export function GalleryTabs({
   const items: { id: TemplateTab; label: string; count: number }[] = [
     { id: "all", label: "All templates", count: counts.all },
     { id: "mine", label: "Your templates", count: counts.mine },
+    { id: "public", label: "Public gallery", count: counts.public },
   ];
 
   return (

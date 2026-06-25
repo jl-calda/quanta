@@ -8,17 +8,25 @@ import { z } from "zod";
  */
 
 /** Which slice of the gallery to show. `all` = public + workspace shared
- * templates; `mine` = templates the signed-in user authored. */
-export const templateTabSchema = z.enum(["all", "mine"]).catch("all");
+ * templates; `mine` = templates the signed-in user authored; `public` = the
+ * cross-workspace public gallery (`visibility = 'public'` only). */
+export const templateTabSchema = z.enum(["all", "mine", "public"]).catch("all");
 export type TemplateTab = z.infer<typeof templateTabSchema>;
 
-/** Filters parsed from searchParams — every field optional, blanks dropped. */
+/** Filters parsed from searchParams — every field optional, blanks dropped.
+ * `archived` ("1"/"0") drives the curator-only archived view; it is only ever
+ * honoured server-side for workspace admins, never for ordinary readers. */
 export const templateFiltersSchema = z.object({
   tab: templateTabSchema,
   q: z.string().trim().max(120).optional().catch(undefined),
   discipline: z.string().trim().max(80).optional().catch(undefined),
   standard: z.string().trim().max(80).optional().catch(undefined),
   type: z.string().trim().max(80).optional().catch(undefined),
+  archived: z
+    .union([z.literal("1"), z.literal("0")])
+    .transform((v) => v === "1")
+    .optional()
+    .catch(undefined),
 });
 export type TemplateFilters = z.infer<typeof templateFiltersSchema>;
 
@@ -43,3 +51,13 @@ export type SaveAsTemplateInput = z.infer<typeof saveAsTemplateSchema>;
 export function scopeToVisibility(scope: TemplateScope): string {
   return scope === "author" ? "private" : scope;
 }
+
+/** Curation input for the admins-only feature/archive controls. Either flag may
+ * be omitted (a no-op for that field); the RPC re-checks the caller is a
+ * workspace admin, so this only shapes the request, never grants permission. */
+export const templateCurationSchema = z.object({
+  templateId: z.string().uuid("Pick a template to curate."),
+  isFeatured: z.boolean().optional(),
+  archived: z.boolean().optional(),
+});
+export type TemplateCurationInput = z.infer<typeof templateCurationSchema>;
