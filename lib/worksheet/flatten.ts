@@ -9,9 +9,11 @@ import {
   compileProgram,
   evaluatePlot,
   evaluateProgram,
+  evaluateSheet,
   evaluateSolve,
   evaluateSweep,
   evaluateTable,
+  registerUserUnits,
   serializeForScope,
   syncPrograms,
   SI_SYSTEM,
@@ -112,6 +114,24 @@ export function mapResults(sheet: SheetResult): Map<string, RegionResult> {
   const map = new Map<string, RegionResult>();
   for (const result of sheet.regions) map.set(result.id, result);
   return map;
+}
+
+/**
+ * Read-only engine results for a content snapshot (pure, synchronous) — the same
+ * pipeline the history viewer uses (`history-page-view.resultsFor`): register any
+ * custom units the tree declares, then evaluate the flattened reading-order list
+ * in SI. Drives the template / worksheet thumbnail renderer so a snapshot typesets
+ * real values (math regions get their `tex`/`formatted`), never a placeholder.
+ */
+export function snapshotResults(content: WorksheetContent): Map<string, RegionResult> {
+  if (content.units?.defs?.length) registerUserUnits(content.units.defs);
+  return mapResults(evaluateSheet(flattenToRegionInputs(content), { unitSystem: SI_SYSTEM }));
+}
+
+/** True when the tree has at least one region to render (any cell non-empty) —
+ *  the gate that decides snapshot vs. procedural-thumbnail fallback. */
+export function hasRenderableRegions(content: WorksheetContent): boolean {
+  return content.rows.some((row) => row.cells.some((cell) => cell.regions.length > 0));
 }
 
 /** Every table region, in reading order — drives the provider's table evaluation. */

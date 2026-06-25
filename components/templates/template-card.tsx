@@ -1,4 +1,5 @@
 import { Button } from "@/components/ds";
+import { ContentSnapshot } from "@/components/editor/content-snapshot";
 import type { GalleryTemplate } from "@/server/queries/templates";
 import { TemplateThumb } from "./template-thumb";
 import { Byline } from "./byline";
@@ -41,7 +42,7 @@ export function TemplateCard({
     >
       {/* thumbnail */}
       <div style={{ position: "relative", height: 168, borderBottom: "1px solid var(--border-hairline)" }}>
-        <TemplateThumb seed={template.id} />
+        <ContentSnapshot content={template.content} fallback={<TemplateThumb seed={template.id} />} />
         <div
           style={{
             position: "absolute",

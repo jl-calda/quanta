@@ -36,6 +36,8 @@ export type FileRow = {
   tags: FileTag[];
   updated_at: string;
   size: string;
+  /** Content tree (JSONB) — drives the grid's rendered `ContentSnapshot` thumbnail. */
+  content: Json;
 };
 
 export type FolderContents = {
@@ -222,6 +224,7 @@ export async function listFolderContents(
       tags: tags.get(s.id) ?? [],
       updated_at: s.updated_at,
       size: deriveSize(s.content as Json),
+      content: s.content as Json,
     };
   });
 

@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { CalcStatus } from "@/lib/supabase/types";
+import type { CalcStatus, Json } from "@/lib/supabase/types";
 
 /**
  * Dashboard reads (§4.2). Every query runs through the RLS-scoped server client
@@ -18,6 +18,8 @@ export type RecentWorksheet = {
   updated_at: string;
   project_id: string | null;
   owner_id: string | null;
+  /** Content tree (JSONB) — drives the card's rendered `ContentSnapshot` thumbnail. */
+  content: Json;
 };
 
 /** Most-recently-touched worksheets for "Continue working". */
@@ -29,7 +31,7 @@ export async function getRecentWorksheets(
   const { data } = await supabase
     .from("worksheets")
     .select(
-      "id, title, calc_status, error_count, updated_at, project_id, owner_id",
+      "id, title, calc_status, error_count, updated_at, project_id, owner_id, content",
     )
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
@@ -66,6 +68,8 @@ export type TemplateSummary = {
   discipline: string | null;
   standard: string | null;
   thumbnail_url: string | null;
+  /** Content tree (JSONB) — drives the card's rendered `ContentSnapshot` thumbnail. */
+  content: Json;
 };
 
 /**
@@ -81,7 +85,7 @@ export async function getWorkspaceTemplates(
   const supabase = await createClient();
   const { data } = await supabase
     .from("templates")
-    .select("id, title, description, discipline, standard, thumbnail_url")
+    .select("id, title, description, discipline, standard, thumbnail_url, content")
     .or(
       `visibility.eq.public,and(workspace_id.eq.${workspaceId},visibility.eq.workspace)`,
     )
