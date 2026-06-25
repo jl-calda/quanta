@@ -8,7 +8,7 @@ import { KatexMath } from "../katex-math";
 import { MathInput } from "../math-input";
 import { Icon } from "../icons";
 import { useEditor } from "../state/editor-provider";
-import { splitResultUnit } from "./math-display";
+import { resultEchoesDefinition, splitResultUnit } from "./math-display";
 import { applyModifierSelect } from "./region-select";
 import type { RegionRenderProps } from "./types";
 
@@ -219,7 +219,10 @@ function MathCommitted({
       </span>
     );
 
-  const hasResult = display.result && !!result?.formatted;
+  const hasResult =
+    display.result &&
+    !!result?.formatted &&
+    !resultEchoesDefinition(region.source, result?.formatted ?? "");
   const resultRow = (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35em" }}>
       <span style={{ fontFamily: "var(--font-math)", fontSize: 19, color: "var(--text-math)" }}>=</span>

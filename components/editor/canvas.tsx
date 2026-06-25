@@ -59,6 +59,7 @@ export function Canvas({ worksheetTitle }: { worksheetTitle: string }) {
           canEdit={canEdit}
           dispatch={dispatch}
           liveIds={liveIds}
+          editingId={state.editingId}
         />
       </div>
     </div>
@@ -83,6 +84,7 @@ function PageFrame({
   canEdit,
   dispatch,
   liveIds,
+  editingId,
 }: {
   content: WorksheetContent;
   pageSettings: PageSettings;
@@ -90,6 +92,7 @@ function PageFrame({
   canEdit: boolean;
   dispatch: Dispatch<EditorAction>;
   liveIds: Set<string>;
+  editingId: string | null;
 }) {
   const geom = useMemo(() => resolvePageGeometry(pageSettings), [pageSettings]);
   const virtualize = content.rows.length > VIRTUALIZE_ROWS;
@@ -165,6 +168,19 @@ function PageFrame({
             position: "relative",
             minHeight: pageCount * geom.pageContentH,
             backgroundSize: geom.gridShow ? `${geom.gridSpacing}px ${geom.gridSpacing}px` : undefined,
+            cursor: canEdit ? "text" : undefined,
+          }}
+          // Click the empty space below the content to start a new math region
+          // with an instant caret (Word-like). The `currentTarget` guard fires
+          // only on the page body itself — clicking a region or page break is
+          // unaffected. stopPropagation keeps the `.ed-field` deselect from
+          // clearing the brand-new selection.
+          onClick={(e) => {
+            if (!canEdit || editingId || e.target !== e.currentTarget) return;
+            e.stopPropagation();
+            const anchorId =
+              content.rows.at(-1)?.cells.flatMap((c) => c.regions).at(-1)?.id ?? null;
+            dispatch({ type: "INSERT_REGION", regionType: "math", anchorId, where: "below" });
           }}
         >
           <div ref={rowsRef} style={{ position: "relative", zIndex: 1 }}>
@@ -827,8 +843,28 @@ function GroupBar({ count, dispatch }: { count: number; dispatch: Dispatch<Edito
  * ------------------------------------------------------------------ */
 
 function EmptyState({ canEdit, dispatch }: { canEdit: boolean; dispatch: Dispatch<EditorAction> }) {
+  // The whole empty body is the entry point — click anywhere to drop a math
+  // region with an instant caret (Word-like), no button to aim for.
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "80px 24px", textAlign: "center" }}>
+    <div
+      onClick={
+        canEdit
+          ? (e) => {
+              e.stopPropagation();
+              dispatch({ type: "INSERT_REGION", regionType: "math", anchorId: null, where: "below" });
+            }
+          : undefined
+      }
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 14,
+        padding: "80px 24px",
+        textAlign: "center",
+        cursor: canEdit ? "text" : undefined,
+      }}
+    >
       <span style={{ color: "var(--text-muted)", display: "inline-flex" }}>
         <Icon name="fmt" size={28} />
       </span>
@@ -839,27 +875,9 @@ function EmptyState({ canEdit, dispatch }: { canEdit: boolean; dispatch: Dispatc
         </span>
       </div>
       {canEdit && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            dispatch({ type: "INSERT_REGION", regionType: "math", anchorId: null, where: "below" });
-          }}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            height: 32,
-            padding: "0 14px",
-            borderRadius: "var(--radius-sm)",
-            border: "none",
-            background: "var(--accent)",
-            color: "var(--text-inverse)",
-            font: "500 13px/1 var(--font-sans)",
-            cursor: "pointer",
-          }}
-        >
-          <Icon name="plus" size={15} /> Add region
-        </button>
+        <span style={{ font: "13px/1.4 var(--font-sans)", color: "var(--text-muted)", opacity: 0.85 }}>
+          Click anywhere to start typing — or press =
+        </span>
       )}
     </div>
   );

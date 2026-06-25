@@ -134,7 +134,6 @@ export function RegionItem({ region }: { region: Region }) {
       {canEdit && isPrimary && !multiActive && !editing && (
         <SelectionToolbar region={region} dispatch={dispatch} />
       )}
-      {canEdit && !editing && <InsertBelow anchorId={region.id} dispatch={dispatch} />}
     </div>
   );
 }
@@ -358,7 +357,7 @@ function AreaTitle({ region, canEdit, dispatch }: { region: AreaRegion; canEdit:
 }
 
 /* ------------------------------------------------------------------ *
- * Selection toolbar + insert-below
+ * Selection toolbar
  * ------------------------------------------------------------------ */
 
 function TBtn({ label, icon, onClick }: { label: string; icon: IconName; onClick: () => void }) {
@@ -492,35 +491,3 @@ function SelectionToolbar({ region, dispatch }: { region: Region; dispatch: Disp
   );
 }
 
-function InsertBelow({ anchorId, dispatch }: { anchorId: string; dispatch: Dispatch<EditorAction> }) {
-  return (
-    <div
-      className="insert-below"
-      style={{ position: "absolute", left: 0, right: 0, bottom: -11, height: 20, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5 }}
-    >
-      <span style={{ position: "absolute", left: 6, right: 6, height: 1, background: "var(--accent)", opacity: 0.35 }} />
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          dispatch({ type: "INSERT_REGION", regionType: "math", anchorId, where: "below" });
-        }}
-        style={{
-          position: "relative",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          height: 20,
-          padding: "0 9px",
-          borderRadius: "var(--radius-full)",
-          border: "1px solid var(--accent)",
-          background: "var(--surface-raised)",
-          color: "var(--accent)",
-          font: "500 11px/1 var(--font-sans)",
-          cursor: "pointer",
-        }}
-      >
-        <Icon name="plusSm" size={12} /> Insert below
-      </button>
-    </div>
-  );
-}
