@@ -2,6 +2,8 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
 import type { TemplateFilters, TemplateTab } from "@/lib/schema/templates";
+import { parseContent, type TemplateOrigin } from "@/lib/worksheet/content";
+import { templateUpdateStatus, type TemplateUpdateStatus } from "@/lib/worksheet/template";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 
@@ -35,6 +37,7 @@ export type TemplateFacets = {
 
 export type TemplateCounts = { all: number; mine: number };
 export type WorksheetOption = { id: string; title: string };
+export type TemplateOption = { id: string; title: string };
 
 const LIST_COLS =
   "id, title, description, discipline, standard, template_type, content, visibility, author_id, usage_count";
@@ -161,6 +164,26 @@ export async function getTemplateCounts(
   return { all: all.count ?? 0, mine: mine.count ?? 0 };
 }
 
+/**
+ * Whether the template a worksheet was created from has since published a newer
+ * revision (update propagation). Reads the source template's content under RLS —
+ * returns null when the template is gone or no longer visible to the caller — and
+ * compares revisions via the pure `templateUpdateStatus`. Drives the editor's
+ * notify-only "a newer version is available" banner.
+ */
+export async function getTemplateUpdateStatus(
+  origin: TemplateOrigin,
+): Promise<TemplateUpdateStatus | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("templates")
+    .select("content")
+    .eq("id", origin.templateId)
+    .maybeSingle();
+  if (!data) return null;
+  return templateUpdateStatus(origin, parseContent(data.content).template);
+}
+
 /** The user's worksheets in this workspace — feeds the "Save as template"
  * source picker. Excludes trashed sheets. */
 export async function getMyWorksheets(
@@ -174,5 +197,18 @@ export async function getMyWorksheets(
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
     .limit(100);
+  return data ?? [];
+}
+
+/** Templates the signed-in user authored — feeds the "Update existing template"
+ * picker in the Save-as-template dialog. Newest first. */
+export async function getMyTemplates(userId: string): Promise<TemplateOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("templates")
+    .select("id, title")
+    .eq("author_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(200);
   return data ?? [];
 }

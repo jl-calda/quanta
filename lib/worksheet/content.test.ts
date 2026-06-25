@@ -59,6 +59,41 @@ describe("parseContent", () => {
     expect(parseContent({ rows: "bad" })).toEqual(EMPTY_CONTENT);
   });
 
+  it("round-trips template versioning metadata through parse and validate", () => {
+    const template = {
+      revision: 2,
+      params: [
+        { key: "span", label: "Span", type: "number", unit: "mm", default: "3000" },
+        { key: "grade", label: "Steel grade", type: "text" },
+      ],
+      changelog: [
+        { revision: 1, label: "Initial version", at: "2026-01-01T00:00:00.000Z", by: "u1" },
+        { revision: 2, label: "Tighter deflection limit", at: "2026-02-01T00:00:00.000Z", by: "u1" },
+      ],
+    };
+    const input = { version: 1, rows: [], template };
+    expect(parseContent(input).template).toEqual(template);
+    // The save path (validateContent) preserves it too — the autosave guard.
+    expect(validateContent(input)?.template).toEqual(template);
+  });
+
+  it("round-trips a worksheet's source-template origin (survives the autosave path)", () => {
+    const origin = {
+      templateId: "00000000-0000-0000-0000-000000000001",
+      revision: 1,
+      appliedAt: "2026-03-01T00:00:00.000Z",
+    };
+    const input = {
+      version: 1,
+      rows: [
+        { id: "r1", columns: 1, cells: [{ regions: [{ id: "m1", type: "math", indent: 0, source: "x := 1" }] }] },
+      ],
+      origin,
+    };
+    expect(parseContent(input).origin).toEqual(origin);
+    expect(validateContent(input)?.origin).toEqual(origin);
+  });
+
   it("round-trips a solve block's ODE config and cached solution", () => {
     const solution = {
       v: 1,

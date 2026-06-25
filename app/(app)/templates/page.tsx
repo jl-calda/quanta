@@ -8,6 +8,7 @@ import {
   getTemplateFacets,
   getTemplateCounts,
   getMyWorksheets,
+  getMyTemplates,
 } from "@/server/queries/templates";
 import { templateFiltersSchema } from "@/lib/schema/templates";
 import { TemplateGallery } from "@/components/templates/template-gallery";
@@ -53,11 +54,12 @@ export default async function TemplatesPage({
   const user = await getCurrentUser();
   const userId = user?.id ?? "";
 
-  const [templates, facets, counts, worksheets] = await Promise.all([
+  const [templates, facets, counts, worksheets, myTemplates] = await Promise.all([
     listTemplates(workspaceId, userId, filters),
     getTemplateFacets(workspaceId, userId, filters.tab),
     getTemplateCounts(workspaceId, userId),
     canCreate ? getMyWorksheets(workspaceId) : Promise.resolve([]),
+    canCreate && userId ? getMyTemplates(userId) : Promise.resolve([]),
   ]);
 
   return (
@@ -65,6 +67,7 @@ export default async function TemplatesPage({
       workspaceId={workspaceId}
       canCreate={canCreate}
       worksheets={worksheets}
+      myTemplates={myTemplates}
       templates={templates}
       facets={facets}
       counts={counts}

@@ -59,7 +59,11 @@ export function PreviewDrawer({
 
   if (!template) return null;
 
-  const hasContent = parseContent(template.content).rows.length > 0;
+  const parsedContent = parseContent(template.content);
+  const hasContent = parsedContent.rows.length > 0;
+  const meta = parsedContent.template;
+  // Newest-first changelog for the preview (most recent revision at the top).
+  const changelog = meta ? [...meta.changelog].reverse() : [];
   const v = variantFor(template.id);
 
   function copyLink() {
@@ -166,12 +170,62 @@ export function PreviewDrawer({
             <UsersIcon size={14} />
             {fmtUses(template.usage_count)} uses
           </span>
-          <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+          <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
+            {meta && (
+              <span
+                title={`Revision ${meta.revision}`}
+                style={{
+                  font: "600 11px/1 var(--font-mono)",
+                  color: "var(--accent)",
+                  background: "var(--accent-tint)",
+                  borderRadius: 4,
+                  padding: "3px 6px",
+                }}
+              >
+                v{meta.revision}
+              </span>
+            )}
             {template.discipline && <Chip tone="accent">{template.discipline}</Chip>}
             {template.standard && <Chip>{template.standard}</Chip>}
             {template.template_type && <Chip>{template.template_type}</Chip>}
           </div>
         </div>
+
+        {/* version history — published revisions, newest first */}
+        {changelog.length > 0 && (
+          <div
+            style={{
+              padding: "11px 18px",
+              borderBottom: "1px solid var(--border-hairline)",
+              background: "var(--surface-raised)",
+            }}
+          >
+            <div
+              style={{
+                font: "600 11px/1 var(--font-sans)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                marginBottom: 8,
+              }}
+            >
+              Version history
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+              {changelog.map((c) => (
+                <li
+                  key={c.revision}
+                  style={{ display: "flex", gap: 8, font: "12px/1.4 var(--font-sans)", color: "var(--text-primary)" }}
+                >
+                  <span style={{ font: "600 11.5px/1.4 var(--font-mono)", color: "var(--accent)", flex: "0 0 auto" }}>
+                    v{c.revision}
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>{c.label ?? "Updated"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* body — real content read-only, or seeded thumbnail pages */}
         {hasContent ? (
@@ -251,6 +305,8 @@ export function PreviewDrawer({
             workspaceId={workspaceId}
             templateId={template.id}
             canCreate={canCreate}
+            templateContent={template.content}
+            templateTitle={template.title}
             iconLeft={<PlusIcon size={16} />}
           >
             Use template

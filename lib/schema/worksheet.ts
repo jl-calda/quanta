@@ -11,6 +11,9 @@ export const createWorksheetSchema = z.object({
   workspaceId: z.string().uuid("Pick a workspace."),
   projectId: z.string().uuid().optional(),
   templateId: z.string().uuid().optional(),
+  /** Fill-in values for a parameterized template (`{ paramKey: value }`),
+   * substituted into the seeded content. Ignored without a `templateId`. */
+  fillIns: z.record(z.string(), z.string()).optional(),
 });
 
 export const searchWorksheetsSchema = z.object({

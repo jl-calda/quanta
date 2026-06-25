@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { templateParamSchema } from "@/lib/worksheet/content";
 
 /**
  * Template gallery input schemas (§4.4). `templateFilters` coerces the URL
@@ -6,6 +7,10 @@ import { z } from "zod";
  * `saveAsTemplate` validates the "Save as template" dialog before snapshotting a
  * worksheet into a new `templates` row.
  */
+
+/** Re-export the param shape (single source of truth lives with the content
+ * tree, since fill-in params are stored in `content.template.params`). */
+export { templateParamSchema };
 
 /** Which slice of the gallery to show. `all` = public + workspace shared
  * templates; `mine` = templates the signed-in user authored. */
@@ -36,6 +41,9 @@ export const saveAsTemplateSchema = z.object({
   standard: z.string().trim().max(80).optional(),
   templateType: z.string().trim().max(80).optional(),
   scope: templateScopeSchema,
+  /** Declared fill-in params (the "Save as template" fill-in editor). Omitted →
+   * the action auto-detects them from `{{tokens}}` in the source content. */
+  params: templateParamSchema.array().optional(),
 });
 export type SaveAsTemplateInput = z.infer<typeof saveAsTemplateSchema>;
 
@@ -43,3 +51,23 @@ export type SaveAsTemplateInput = z.infer<typeof saveAsTemplateSchema>;
 export function scopeToVisibility(scope: TemplateScope): string {
   return scope === "author" ? "private" : scope;
 }
+
+/** Fill-in values collected by the create-from-template dialog: `{ key: value }`,
+ * all strings (they're substituted verbatim into region sources). */
+export const createFromTemplateSchema = z.object({
+  workspaceId: z.string().uuid("Pick a workspace."),
+  templateId: z.string().uuid("Pick a template."),
+  projectId: z.string().uuid().optional(),
+  fillIns: z.record(z.string(), z.string()).optional(),
+});
+export type CreateFromTemplateInput = z.infer<typeof createFromTemplateSchema>;
+
+/** Publish a new revision of an existing template from one of the caller's
+ * worksheets (the "Update existing template" mode). */
+export const updateTemplateVersionSchema = z.object({
+  templateId: z.string().uuid("Pick a template to update."),
+  worksheetId: z.string().uuid("Pick a worksheet to publish from."),
+  note: z.string().trim().max(120).optional(),
+  params: templateParamSchema.array().optional(),
+});
+export type UpdateTemplateVersionInput = z.infer<typeof updateTemplateVersionSchema>;

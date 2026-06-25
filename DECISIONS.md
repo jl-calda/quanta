@@ -2213,3 +2213,50 @@ ungroup one). This row fills exactly those, plus light area polish.
   runaway empties. Reuses the existing `mutate`/`locate`/`findRegion`/`touched`
   helpers; `graph.ts`/`recalc.ts` and storage are untouched, and `touched()` drives the
   normal dirty/recalc/autosave path. Covered by two reducer tests.
+
+## Templates — versioning & parameterized create (Phase 2)
+
+- **Everything lives in `content` JSONB — no new tables/columns/migration.** Template
+  versioning and the source-template link are stored as two optional top-level fields on
+  the content tree (`lib/worksheet/content.ts`), mirroring the existing custom-units
+  precedent: `content.template = { revision, params, changelog }` (present when the
+  content *is* a template) and `content.origin = { templateId, revision, appliedAt }`
+  (stamped on a worksheet created from a template). `templates` already store a content
+  tree; worksheets already store one. RLS is unchanged (`templates_update` is author/admin;
+  `templates_select` gates the reads).
+- **`parseContent`/`validateContent` had to be taught the new fields.** Both rebuild the
+  object as `{ version, rows, units }`, dropping any other top-level key, and `contentSchema`
+  is a plain `z.object` (no passthrough). The two new fields are added to the schema *and*
+  re-emitted in both functions, or they'd vanish on the first autosave. Guarded by
+  round-trip tests in `content.test.ts`.
+- **Fill-in token syntax is `{{key}}`** (Handlebars-style). `{{word}}` is not valid mathjs
+  object syntax (an object literal needs `key:value`), so it can't collide with a real
+  formula. Substitution is **allow-listed** to `math.source`, `text.text`, and `table.rows`
+  cells, recursing into areas (`lib/worksheet/template.ts`) — a generic deep-string walk was
+  rejected so it can't corrupt ids/structural strings. Other region string fields are v1
+  out-of-scope.
+- **Blank substitution never injects `""`.** A blank fill-in value falls back to the param's
+  `default`; a still-blank result leaves the `{{token}}` literal rather than producing
+  `name := ` (which would be an engine error). Unit params substitute `value unit` (e.g.
+  `12 mm`), mirroring `controlDefinitionSource`.
+- **Helpers are pure; timestamps are injected.** `lib/worksheet/template.ts` takes ISO
+  timestamps as args (the action layer supplies `new Date().toISOString()`) so the module
+  stays deterministic and testable, and imports nothing from `/lib/calc` (a local region
+  walk, not `flatten`'s) so it's safe in the client bundle.
+- **Revision semantics.** `bumpTemplateMeta(undefined, …)` → revision 1 (initial Save as
+  template); `bumpTemplateMeta(prevMeta, …)` → next revision (Update existing template).
+  Each bump appends one changelog entry. A worksheet's `origin.revision` vs the template's
+  current `content.template.revision` drives the editor's notify banner.
+- **Update propagation is notify-only.** The editor shows a dismissible "a newer version is
+  available (vN→vM)" banner with the changelog; it never re-applies/merges template changes
+  into a diverged worksheet (last-write-wins ethos). `getTemplateUpdateStatus` is an
+  RLS-scoped read; the banner is an additive optional `EditorApp` prop (no reducer/provider
+  changes).
+- **`updateTemplateVersion` treats the two permissions independently.** The template
+  update (`templates_update`) and the source-worksheet read are distinct RLS gates — the
+  caller may hold one but not the other — so each surfaces its own friendly denial.
+- **Fill-ins are auto-detected on save when not declared.** The Save-as-template dialog's
+  light editor (key/label/type/unit/default, plus a "Detect from worksheet" action that
+  reads tokens via the `detectTemplateFillIns` server action) is optional; if the author
+  leaves it empty, `saveAsTemplate`/`updateTemplateVersion` derive params from the content's
+  `{{tokens}}` via `autoParams`.

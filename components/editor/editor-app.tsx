@@ -23,6 +23,8 @@ import { Keypad } from "./keypad";
 import { ReferenceOverlay } from "./reference-overlay";
 import { ExportOverlay } from "./export-overlay";
 import { DialogHost } from "./dialogs";
+import { TemplateUpdateBanner } from "./template-update-banner";
+import type { TemplateUpdateStatus } from "@/lib/worksheet/template";
 
 export interface EditorWorksheet {
   id: string;
@@ -54,6 +56,7 @@ export function EditorApp({
   canComment,
   initialComments,
   me,
+  templateUpdate,
 }: {
   worksheet: EditorWorksheet;
   projectTree: ProjectTree;
@@ -63,6 +66,9 @@ export function EditorApp({
   canComment: boolean;
   initialComments: CommentItem[];
   me: PresenceUser;
+  /** Source-template update status (notify-only banner). Null when the sheet
+   * wasn't created from a template, or the template is current/unavailable. */
+  templateUpdate?: TemplateUpdateStatus | null;
 }) {
   return (
     <EditorProvider
@@ -85,6 +91,7 @@ export function EditorApp({
           <EditorKeyboard />
           <EditorAppBar initialTitle={worksheet.title} canManage={canManage} canExport={canExport} me={me} />
           <Ribbon />
+          {templateUpdate?.updateAvailable && <TemplateUpdateBanner status={templateUpdate} />}
           <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
             <LeftPanel
               worksheetTitle={worksheet.title}

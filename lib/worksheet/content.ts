@@ -661,11 +661,61 @@ const worksheetUnitsSchema = z.object({
   preferred: z.array(z.string()).default([]),
 });
 
+/*
+ * Template metadata (Phase-2 — versioning + parameterized create). Stored in
+ * content JSONB (no new table), the same strategy as the custom units above.
+ * `template` is present when this content IS a template: a monotonic `revision`,
+ * the declared fill-in `params`, and a `changelog` of published revisions.
+ * `origin` is stamped on a worksheet CREATED FROM a template, so the editor can
+ * notify when the source template has since published a newer revision. Both are
+ * tolerant on load (ids are plain strings here; the action-layer schemas enforce
+ * uuids) so seed/legacy content never fails the whole document.
+ */
+export const templateParamSchema = z.object({
+  /** Token name substituted from `{{key}}` in region sources. */
+  key: z.string(),
+  /** Prompt label shown in the fill-ins dialog (falls back to the key). */
+  label: z.string().default(""),
+  type: z.enum(["text", "number"]).default("text"),
+  /** Pre-filled value; also the fallback when the user leaves the field blank. */
+  default: z.string().optional(),
+  /** Unit appended to a value on substitution (`12 mm`). */
+  unit: z.string().optional(),
+  /** Optional helper text under the field. */
+  help: z.string().optional(),
+});
+
+const templateChangeSchema = z.object({
+  revision: z.number().int().min(1),
+  label: z.string().optional(),
+  /** ISO timestamp the revision was published (provenance). */
+  at: z.string(),
+  /** Author id that published the revision. */
+  by: z.string().optional(),
+});
+
+const templateMetaSchema = z.object({
+  revision: z.number().int().min(1).default(1),
+  params: z.array(templateParamSchema).default([]),
+  changelog: z.array(templateChangeSchema).default([]),
+});
+
+const templateOriginSchema = z.object({
+  templateId: z.string(),
+  revision: z.number().int().min(1).default(1),
+  /** ISO timestamp the worksheet was created from the template. */
+  appliedAt: z.string(),
+});
+
 const contentSchema = z.object({
   version: z.literal(1).default(1),
   rows: z.array(rowSchema).default([]),
   /** Worksheet-defined custom units + preferred display list. */
   units: worksheetUnitsSchema.optional(),
+  /** Template versioning metadata — present when this content is a template. */
+  template: templateMetaSchema.optional(),
+  /** Source-template link — present on a worksheet created from a template. */
+  origin: templateOriginSchema.optional(),
 });
 
 /* ------------------------------------------------------------------ *
@@ -713,6 +763,10 @@ export type SweepOutput = z.infer<typeof sweepOutputSchema>;
 export type SymbolicCache = z.infer<typeof symbolicCacheSchema>;
 export type UserUnitDef = z.infer<typeof userUnitDefSchema>;
 export type WorksheetUnits = z.infer<typeof worksheetUnitsSchema>;
+export type TemplateParam = z.infer<typeof templateParamSchema>;
+export type TemplateChange = z.infer<typeof templateChangeSchema>;
+export type TemplateMeta = z.infer<typeof templateMetaSchema>;
+export type TemplateOrigin = z.infer<typeof templateOriginSchema>;
 
 export interface RegionBase {
   id: string;
@@ -933,6 +987,10 @@ export interface WorksheetContent {
   rows: Row[];
   /** Worksheet-defined custom units + preferred display list. */
   units?: WorksheetUnits;
+  /** Template versioning metadata — present when this content is a template. */
+  template?: TemplateMeta;
+  /** Source-template link — present on a worksheet created from a template. */
+  origin?: TemplateOrigin;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1158,7 +1216,15 @@ export function parseContent(json: unknown): WorksheetContent {
   const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return emptyContent();
   const data = result.data as WorksheetContent;
-  return { version: 1, rows: data.rows.map(normalizeRow), units: data.units };
+  return {
+    version: 1,
+    rows: data.rows.map(normalizeRow),
+    units: data.units,
+    // Carry the Phase-2 template fields through — the explicit rebuild here would
+    // otherwise drop any top-level key not named, losing versioning on save.
+    template: data.template,
+    origin: data.origin,
+  };
 }
 
 /** Validate a content tree before persisting; returns the parsed value or null. */
@@ -1166,7 +1232,13 @@ export function validateContent(json: unknown): WorksheetContent | null {
   const result = contentSchema.safeParse(migrateLegacyTables(json));
   if (!result.success) return null;
   const data = result.data as WorksheetContent;
-  return { version: 1, rows: data.rows.map(normalizeRow), units: data.units };
+  return {
+    version: 1,
+    rows: data.rows.map(normalizeRow),
+    units: data.units,
+    template: data.template,
+    origin: data.origin,
+  };
 }
 
 export { contentSchema };
