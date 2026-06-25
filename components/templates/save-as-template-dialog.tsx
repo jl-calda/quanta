@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog, Input, Select } from "@/components/ds";
 import { saveAsTemplate, updateTemplateVersion, detectTemplateFillIns } from "@/server/actions/templates";
-import type { TemplateScope } from "@/lib/schema/templates";
+import { parseTagsInput, type TemplateScope } from "@/lib/schema/templates";
 import type { TemplateParam } from "@/lib/worksheet/content";
 import type { TemplateOption, WorksheetOption } from "@/server/queries/templates";
 import { PlusIcon } from "./icons";
@@ -51,6 +51,8 @@ export function SaveAsTemplateDialog({
   const [discipline, setDiscipline] = useState("");
   const [standard, setStandard] = useState("");
   const [templateType, setTemplateType] = useState("");
+  const [category, setCategory] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
   const [scope, setScope] = useState<TemplateScope>("workspace");
   const [templateId, setTemplateId] = useState(myTemplates[0]?.id ?? "");
   const [note, setNote] = useState("");
@@ -113,6 +115,7 @@ export function SaveAsTemplateDialog({
   function submit() {
     setError(null);
     startTransition(async () => {
+      const tags = parseTagsInput(tagsInput);
       const result =
         mode === "new"
           ? await saveAsTemplate({
@@ -123,6 +126,8 @@ export function SaveAsTemplateDialog({
               discipline: discipline || undefined,
               standard: standard || undefined,
               templateType: templateType || undefined,
+              category: category || undefined,
+              tags: tags.length > 0 ? tags : undefined,
               scope,
               params: cleanedParams(),
             })
@@ -242,6 +247,18 @@ export function SaveAsTemplateDialog({
                     />
                   </Field>
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Category">
+                    <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Beams" />
+                  </Field>
+                  <Field label="Tags">
+                    <Input
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="beam, steel, ULS"
+                    />
+                  </Field>
+                </div>
                 <Field label="Visibility">
                   <Select value={scope} options={SCOPES} onChange={(e) => setScope(e.target.value as TemplateScope)} />
                 </Field>
@@ -264,7 +281,6 @@ export function SaveAsTemplateDialog({
               onUpdate={updateParam}
               onRemove={removeParam}
             />
-
             {error && (
               <p style={{ font: "12.5px/1.4 var(--font-sans)", color: "var(--status-error)" }}>{error}</p>
             )}

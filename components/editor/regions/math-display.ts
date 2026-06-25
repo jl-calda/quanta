@@ -59,3 +59,21 @@ export function splitResultUnit(
   }
   return { magnitude: formatted, unit: null };
 }
+
+/**
+ * True when a definition's formatted result is just its own right-hand side —
+ * e.g. `B := 2 mm` evaluating to `2 mm`. Such an echo is noise (the worksheet
+ * already shows `B := 2 mm`), so the result is suppressed.
+ *
+ * An evaluation (no `:=`) always keeps its result, even if it happens to equal
+ * the source. For a definition we compare the RHS (everything after the first
+ * `:=`) against `formatted`, normalizing both — whitespace stripped, lowercased,
+ * and `·` treated as `*` — so `9.81 m/s^2` matches regardless of spacing.
+ */
+export function resultEchoesDefinition(source: string, formatted: string): boolean {
+  const at = source.indexOf(":=");
+  if (at < 0) return false; // evaluation → keep the echo
+  const rhs = source.slice(at + 2);
+  const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase().replace(/·/g, "*");
+  return norm(rhs) === norm(formatted);
+}

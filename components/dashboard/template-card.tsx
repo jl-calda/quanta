@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createWorksheet } from "@/server/actions/worksheet";
+import { ContentSnapshot } from "@/components/editor/content-snapshot";
 import { MiniPreview } from "./mini-preview";
 import type { TemplateSummary } from "@/server/queries/dashboard";
 
@@ -54,7 +55,12 @@ export function TemplateCard({
         className="tpl-thumb card-lift relative overflow-hidden rounded-md border border-hairline bg-raised"
         style={{ height: "var(--d-thumb)" }}
       >
-        <MiniPreview seed={template.id} scale={scale} />
+        <ContentSnapshot
+          content={template.content}
+          fallback={<MiniPreview seed={template.id} scale={scale} />}
+          scale={0.42}
+          padding={10}
+        />
         <span className="absolute right-2 top-2 rounded-sm bg-accent-tint px-1.5 py-[3px] text-[10px] leading-none text-accent">
           Template
         </span>

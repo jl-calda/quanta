@@ -2,13 +2,20 @@
 
 import type { TemplateFacets } from "@/server/queries/templates";
 
-export type FilterGroup = "discipline" | "standard" | "type";
+export type FilterGroup =
+  | "discipline"
+  | "standard"
+  | "type"
+  | "category"
+  | "tag";
 export type ActiveFilters = Record<FilterGroup, string | undefined>;
 
 const GROUPS: { key: FilterGroup; label: string }[] = [
+  { key: "category", label: "Category" },
   { key: "discipline", label: "Discipline" },
   { key: "standard", label: "Standard" },
   { key: "type", label: "Type" },
+  { key: "tag", label: "Tag" },
 ];
 
 /**
@@ -28,7 +35,13 @@ export function FilterBar({
   onToggle: (group: FilterGroup, value: string) => void;
   onClear: () => void;
 }) {
-  const anyActive = Boolean(active.discipline || active.standard || active.type);
+  const anyActive = Boolean(
+    active.discipline ||
+      active.standard ||
+      active.type ||
+      active.category ||
+      active.tag,
+  );
 
   return (
     <div

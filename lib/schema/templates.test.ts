@@ -5,6 +5,8 @@ import {
   scopeToVisibility,
   createFromTemplateSchema,
   updateTemplateVersionSchema,
+  parseTagsInput,
+  MAX_TEMPLATE_TAGS,
 } from "./templates";
 
 const UUID = "00000000-0000-0000-0000-000000000001";
@@ -27,8 +29,40 @@ describe("templateFiltersSchema", () => {
     expect(parsed.q).toBe("beam");
   });
 
+  it("parses and trims the category and tag filters", () => {
+    const parsed = templateFiltersSchema.parse({
+      category: " Beams ",
+      tag: " steel ",
+    });
+    expect(parsed.category).toBe("Beams");
+    expect(parsed.tag).toBe("steel");
+  });
+
   it("falls back to 'all' for an unknown tab", () => {
     expect(templateFiltersSchema.parse({ tab: "bogus" }).tab).toBe("all");
+  });
+});
+
+describe("parseTagsInput", () => {
+  it("splits on commas, trims, and drops blanks", () => {
+    expect(parseTagsInput(" beam, steel ,, ULS ")).toEqual([
+      "beam",
+      "steel",
+      "ULS",
+    ]);
+  });
+
+  it("de-duplicates case-insensitively, keeping the first form", () => {
+    expect(parseTagsInput("Steel, steel, STEEL")).toEqual(["Steel"]);
+  });
+
+  it("caps the result at MAX_TEMPLATE_TAGS", () => {
+    const raw = Array.from({ length: MAX_TEMPLATE_TAGS + 5 }, (_, i) => `t${i}`).join(",");
+    expect(parseTagsInput(raw)).toHaveLength(MAX_TEMPLATE_TAGS);
+  });
+
+  it("returns an empty array for an empty string", () => {
+    expect(parseTagsInput("   ")).toEqual([]);
   });
 });
 
@@ -71,6 +105,29 @@ describe("saveAsTemplateSchema", () => {
     });
     expect(ok.success).toBe(true);
     expect(ok.success && ok.data.params?.[0].key).toBe("span");
+  });
+
+  it("accepts a category and a tags array", () => {
+    const parsed = saveAsTemplateSchema.safeParse({
+      workspaceId: UUID,
+      worksheetId: UUID,
+      title: "Bolt group",
+      category: "Connections",
+      tags: ["bolt", "steel"],
+      scope: "workspace",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects more than MAX_TEMPLATE_TAGS tags", () => {
+    const parsed = saveAsTemplateSchema.safeParse({
+      workspaceId: UUID,
+      worksheetId: UUID,
+      title: "Too many",
+      tags: Array.from({ length: MAX_TEMPLATE_TAGS + 1 }, (_, i) => `t${i}`),
+      scope: "workspace",
+    });
+    expect(parsed.success).toBe(false);
   });
 });
 

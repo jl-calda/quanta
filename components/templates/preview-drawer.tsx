@@ -170,7 +170,7 @@ export function PreviewDrawer({
             <UsersIcon size={14} />
             {fmtUses(template.usage_count)} uses
           </span>
-          <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginLeft: "auto", alignItems: "center" }}>
             {meta && (
               <span
                 title={`Revision ${meta.revision}`}
@@ -185,9 +185,13 @@ export function PreviewDrawer({
                 v{meta.revision}
               </span>
             )}
+            {template.category && <Chip tone="accent">{template.category}</Chip>}
             {template.discipline && <Chip tone="accent">{template.discipline}</Chip>}
             {template.standard && <Chip>{template.standard}</Chip>}
             {template.template_type && <Chip>{template.template_type}</Chip>}
+            {template.tags.map((tag) => (
+              <Chip key={tag}>#{tag}</Chip>
+            ))}
           </div>
         </div>
 

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ds";
+import { ContentSnapshot } from "@/components/editor/content-snapshot";
 import type { GalleryTemplate } from "@/server/queries/templates";
 import { TemplateThumb } from "./template-thumb";
 import { Byline } from "./byline";
@@ -41,7 +42,7 @@ export function TemplateCard({
     >
       {/* thumbnail */}
       <div style={{ position: "relative", height: 168, borderBottom: "1px solid var(--border-hairline)" }}>
-        <TemplateThumb seed={template.id} />
+        <ContentSnapshot content={template.content} fallback={<TemplateThumb seed={template.id} />} />
         <div
           style={{
             position: "absolute",
@@ -121,9 +122,13 @@ export function TemplateCard({
           </p>
         )}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 11 }}>
+          {template.category && <Chip tone="accent">{template.category}</Chip>}
           {template.discipline && <Chip tone="accent">{template.discipline}</Chip>}
           {template.standard && <Chip>{template.standard}</Chip>}
           {template.template_type && <Chip>{template.template_type}</Chip>}
+          {template.tags.map((tag) => (
+            <Chip key={tag}>#{tag}</Chip>
+          ))}
         </div>
         <div
           style={{

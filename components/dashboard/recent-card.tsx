@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ContentSnapshot } from "@/components/editor/content-snapshot";
 import { MiniPreview } from "./mini-preview";
 import { StatusChip } from "./status-chip";
 import { ClockIcon } from "./icons";
@@ -23,7 +24,12 @@ export function RecentCard({
       className="card-lift flex flex-col overflow-hidden rounded-md border border-hairline bg-raised"
     >
       <div className="relative border-b border-hairline" style={{ height: "var(--d-thumb)" }}>
-        <MiniPreview seed={worksheet.id} />
+        <ContentSnapshot
+          content={worksheet.content}
+          fallback={<MiniPreview seed={worksheet.id} />}
+          scale={0.42}
+          padding={10}
+        />
         {/* Bottom fade into the card body, per the mockup. */}
         <div
           className="pointer-events-none absolute inset-0"

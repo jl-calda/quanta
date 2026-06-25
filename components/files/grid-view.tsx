@@ -1,6 +1,7 @@
 "use client";
 
 import { Checkbox } from "@/components/ds";
+import { ContentSnapshot } from "@/components/editor/content-snapshot";
 import { TemplateThumb } from "@/components/templates/template-thumb";
 import type { FolderRow, FileRow } from "@/server/queries/files";
 import type { RowAction, RowItem } from "./types";
@@ -115,7 +116,11 @@ export function GridView({
               </span>
               <CardKebab kind="sheet" canEdit={canEdit} item={item} onAction={onAction} />
               <div style={{ height: 128, borderBottom: "1px solid var(--border-hairline)", position: "relative" }}>
-                <TemplateThumb seed={s.id} />
+                <ContentSnapshot
+                  content={s.content}
+                  fallback={<TemplateThumb seed={s.id} />}
+                  scale={0.5}
+                />
                 <div
                   style={{
                     position: "absolute",

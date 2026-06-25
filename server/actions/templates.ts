@@ -29,6 +29,8 @@ export async function saveAsTemplate(input: {
   discipline?: string;
   standard?: string;
   templateType?: string;
+  category?: string;
+  tags?: string[];
   scope: "author" | "workspace" | "public";
   params?: TemplateParam[];
 }): Promise<ActionResult<{ id: string }>> {
@@ -46,6 +48,8 @@ export async function saveAsTemplate(input: {
     discipline,
     standard,
     templateType,
+    category,
+    tags,
     scope,
     params,
   } = parsed.data;
@@ -89,6 +93,8 @@ export async function saveAsTemplate(input: {
       discipline: discipline ?? null,
       standard: standard ?? null,
       template_type: templateType ?? null,
+      category: category ?? null,
+      tags: tags ?? [],
       content: content as unknown as Json,
       visibility: scopeToVisibility(scope),
       author_id: user.id,
