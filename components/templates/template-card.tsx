@@ -81,6 +81,8 @@ export function TemplateCard({
             workspaceId={workspaceId}
             templateId={template.id}
             canCreate={canCreate}
+            templateContent={template.content}
+            templateTitle={template.title}
             size="sm"
             style={{ flex: 1, height: 32 }}
             iconLeft={<PlusIcon size={15} />}

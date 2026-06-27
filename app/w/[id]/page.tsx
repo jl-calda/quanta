@@ -5,6 +5,7 @@ import { parseWorkspaceSettings } from "@/lib/schema/settings";
 import { parseLayoutSettings, parsePageSettings } from "@/lib/schema/page";
 import { getWorksheetComments } from "@/server/queries/comments";
 import { getEditorProjectTree } from "@/server/queries/editor";
+import { getTemplateUpdateStatus } from "@/server/queries/templates";
 import { EditorApp } from "@/components/editor/editor-app";
 import { avatarColor, initialsOf, type PresenceUser } from "@/components/editor/presence";
 
@@ -88,12 +89,19 @@ export default async function WorksheetEditorPage({
   // what they displayed before the selector was wired to re-convert.
   const layoutSettings = parseLayoutSettings(worksheet.layout_settings);
 
+  const content = parseContent(worksheet.content);
+  // When the sheet was created from a template, check whether that template has
+  // since published a newer revision (notify-only banner). RLS-scoped read.
+  const templateUpdate = content.origin
+    ? await getTemplateUpdateStatus(content.origin)
+    : null;
+
   return (
     <EditorApp
       worksheet={{
         id: worksheet.id,
         title: worksheet.title,
-        content: parseContent(worksheet.content),
+        content,
         calcMode: worksheet.calc_mode,
         unitsSystem: layoutSettings.unitSystem,
         projectId: worksheet.project_id,
@@ -108,6 +116,7 @@ export default async function WorksheetEditorPage({
       canComment={canComment}
       initialComments={initialComments}
       me={me}
+      templateUpdate={templateUpdate}
     />
   );
 }

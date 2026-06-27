@@ -17,6 +17,8 @@ import {
   setCalcModeSchema,
 } from "@/lib/schema/worksheet";
 import type { CalcStatus, Json } from "@/lib/supabase/types";
+import { parseContent, validateContent } from "@/lib/worksheet/content";
+import { applyFillIns, withOrigin } from "@/lib/worksheet/template";
 import { ok, err, type ActionResult } from "@/server/result";
 
 const EMPTY_CONTENT: Json = { version: 1, rows: [] };
@@ -31,12 +33,13 @@ export async function createWorksheet(input: {
   workspaceId: string;
   projectId?: string;
   templateId?: string;
+  fillIns?: Record<string, string>;
 }): Promise<ActionResult<{ id: string }>> {
   const parsed = createWorksheetSchema.safeParse(input);
   if (!parsed.success) {
     return err("We couldn't start that worksheet. Try again.");
   }
-  const { workspaceId, projectId, templateId } = parsed.data;
+  const { workspaceId, projectId, templateId, fillIns } = parsed.data;
 
   // Use the token-pinned action client: the cookie client's per-request token
   // resolution races inside a Server Action and lets the insert reach Postgres
@@ -56,7 +59,16 @@ export async function createWorksheet(input: {
       .maybeSingle();
     if (template) {
       title = template.title;
-      content = template.content;
+      // Seed from the template: substitute the user's fill-in values into the
+      // `{{token}}` placeholders, then stamp the source-template link (id +
+      // revision) so the editor can later flag when a newer revision ships.
+      const seed = parseContent(template.content);
+      const filled = withOrigin(applyFillIns(seed, fillIns ?? {}), {
+        templateId,
+        revision: seed.template?.revision ?? 1,
+        appliedAt: new Date().toISOString(),
+      });
+      content = (validateContent(filled) ?? filled) as unknown as Json;
       // Bump the template's usage_count. A SECURITY DEFINER RPC handles this
       // because `templates_update` RLS would block a member from updating a
       // public template they don't own. Routed through `rpcAsUser` for the same

@@ -7,6 +7,7 @@ import type {
   GalleryTemplate,
   TemplateCounts,
   TemplateFacets,
+  TemplateOption,
   WorksheetOption,
 } from "@/server/queries/templates";
 import { TemplateCard } from "./template-card";
@@ -20,6 +21,7 @@ export interface TemplateGalleryProps {
   workspaceId: string;
   canCreate: boolean;
   worksheets: WorksheetOption[];
+  myTemplates: TemplateOption[];
   templates: GalleryTemplate[];
   facets: TemplateFacets;
   counts: TemplateCounts;
@@ -39,6 +41,7 @@ export function TemplateGallery({
   workspaceId,
   canCreate,
   worksheets,
+  myTemplates,
   templates,
   facets,
   counts,
@@ -121,7 +124,13 @@ export function TemplateGallery({
             </div>
           </div>
           <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
-            {canCreate && <SaveAsTemplateDialog workspaceId={workspaceId} worksheets={worksheets} />}
+            {canCreate && (
+              <SaveAsTemplateDialog
+                workspaceId={workspaceId}
+                worksheets={worksheets}
+                myTemplates={myTemplates}
+              />
+            )}
             <SearchInput initialQuery={query} onSearch={onSearch} />
           </div>
         </div>

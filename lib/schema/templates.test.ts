@@ -3,6 +3,8 @@ import {
   templateFiltersSchema,
   saveAsTemplateSchema,
   scopeToVisibility,
+  createFromTemplateSchema,
+  updateTemplateVersionSchema,
   parseTagsInput,
   MAX_TEMPLATE_TAGS,
 } from "./templates";
@@ -93,6 +95,18 @@ describe("saveAsTemplateSchema", () => {
     expect(bad.success).toBe(false);
   });
 
+  it("accepts optional fill-in params", () => {
+    const ok = saveAsTemplateSchema.safeParse({
+      workspaceId: UUID,
+      worksheetId: UUID,
+      title: "Beam check",
+      scope: "workspace",
+      params: [{ key: "span", label: "Span", type: "number", unit: "mm" }],
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data.params?.[0].key).toBe("span");
+  });
+
   it("accepts a category and a tags array", () => {
     const parsed = saveAsTemplateSchema.safeParse({
       workspaceId: UUID,
@@ -114,5 +128,42 @@ describe("saveAsTemplateSchema", () => {
       scope: "workspace",
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("createFromTemplateSchema", () => {
+  it("accepts a fill-in value map", () => {
+    const ok = createFromTemplateSchema.safeParse({
+      workspaceId: UUID,
+      templateId: UUID,
+      fillIns: { span: "3000", grade: "S355" },
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it("rejects a non-uuid templateId", () => {
+    const bad = createFromTemplateSchema.safeParse({
+      workspaceId: UUID,
+      templateId: "not-a-uuid",
+    });
+    expect(bad.success).toBe(false);
+  });
+});
+
+describe("updateTemplateVersionSchema", () => {
+  it("requires both the template and the source worksheet", () => {
+    expect(updateTemplateVersionSchema.safeParse({ templateId: UUID }).success).toBe(false);
+    expect(
+      updateTemplateVersionSchema.safeParse({ templateId: UUID, worksheetId: UUID }).success,
+    ).toBe(true);
+  });
+
+  it("caps the changelog note at 120 characters", () => {
+    const bad = updateTemplateVersionSchema.safeParse({
+      templateId: UUID,
+      worksheetId: UUID,
+      note: "x".repeat(121),
+    });
+    expect(bad.success).toBe(false);
   });
 });
